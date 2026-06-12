@@ -1,0 +1,30 @@
+{
+  "name": "openspec-doc",
+  "version": "0.1.0",
+  "description": "OpenSpec documentation and review CLI for local projects.",
+  "type": "module",
+  "bin": {
+    "openspec-doc": "./dist/cli/index.js"
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "type-check": "tsc -p tsconfig.check.json --noEmit",
+    "test": "vitest run",
+    "lint": "biome lint .",
+    "format-check": "biome format .",
+    "validate": "npm run format-check && npm run lint && npm run type-check && npm run build && npm run test"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^20.17.10",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
