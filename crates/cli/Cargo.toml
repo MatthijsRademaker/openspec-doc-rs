@@ -1,0 +1,17 @@
+[package]
+name = "openspec-doc-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "openspec-doc"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+openspec-doc-core.workspace = true
+openspec-doc-server.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

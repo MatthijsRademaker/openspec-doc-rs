@@ -1,0 +1,16 @@
+[package]
+name = "openspec-doc-server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum.workspace = true
+notify.workspace = true
+openspec-doc-core.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

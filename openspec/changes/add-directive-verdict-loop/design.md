@@ -1,0 +1,29 @@
+## Context
+
+`add-agent-hook-bridge` proved block/reinject works against a hand-written directive. `add-dashboard-html-views` proved the dashboard can write phase-verdict records against real files. `add-scratch-note-workflow` proved promotion (rename plus validate) works as a standalone library call. Nothing yet calls promotion from within a live hook invocation, and nothing yet turns a phase-verdict record into the pending-directive file the hook bridge reads. This change is deliberately the last, smallest, and most load-bearing change in the sequence — pure wiring plus the translation logic between already-proven pieces.
+
+## Goals / Non-Goals
+
+**Goals:**
+- Every `hook stop` invocation checks for promotion first, then checks for an untranslated phase-verdict or comment-resolution record, translates it into a directive if found, then proceeds through the already-proven directive-lookup/consume/emit logic unchanged.
+- Injected reason text is always a short pointer plus verdict, never embedded comment/note content — enforcing the "pointer, not embed" principle decided during exploration.
+- The end-to-end proof against real Claude Code and pi.dev sessions is a first-class deliverable of this change, not an afterthought — it is the actual validation that the MVP's premise holds.
+
+**Non-Goals:**
+- No new UI, no new comment/anchor logic — this change only wires previously-built pieces together and adds the verdict-to-directive translation step.
+
+## Decisions
+
+- **Translation happens inside `hook stop`, at invocation time**, rather than via a separate background process watching for verdict records — keeps the whole system triggered only by agent turn boundaries, with no additional daemon/process to manage. Alternative considered: a background watcher eagerly writing directives as soon as a verdict is submitted — rejected, adds a process lifecycle problem (who starts/stops it, what happens if it isn't running) for no benefit, since a directive is only ever consumed at the next Stop event anyway.
+- **Reason-text templates are fixed per verdict kind** (keep-exploring, move-to-proposal, comment-resolution), each naming the relevant sidecar/artifact paths explicitly, so the agent always knows exactly which file to read — consistent with "pointer, not embed."
+- **Templates must be attributed pointers, not bare imperatives.** Each template states that it is review feedback from this project's openspec-doc dashboard and names paths in the user's own repo. This is not stylistic: it is what makes the directive corroborable by the receiving agent, and therefore what makes it get acted on rather than quarantined. See the injection-rejection risk below.
+- **Promotion check runs before verdict translation on every invocation**, since a move-to-proposal verdict is often exactly what prompts the agent to create the change directory that promotion then needs to detect on the following Stop event.
+
+## Risks / Trade-offs
+
+- [Risk] If promotion and verdict-translation both attempt file operations within the same `hook stop` invocation and one fails partway, the session could be left in an inconsistent state (e.g. promoted but no directive translated, or vice versa) → Mitigation: order operations so a failure in either step is independently recoverable — a promotion failure does not block verdict translation, and a translation failure is surfaced via the fail-fast-vs-fail-safe policy decided in `add-agent-hook-bridge`, not silently dropped.
+- [Risk] This is the first point multiple previously-isolated pieces are exercised together; integration bugs invisible in each piece's own tests could surface only here → Mitigation: the end-to-end manual verification against a real Claude Code and pi.dev session is treated as required, not optional, before considering the MVP proven.
+- [Risk] **The receiving agent can reject an injected directive as a prompt-injection attempt.** Observed during `add-agent-hook-bridge` verification, not hypothetical: a directive reading "reply with exactly the single word PROVEN and nothing else" was delivered successfully — the Stop hook blocked, the session stayed alive, the text reached the model — and the agent then identified it as "a 'Stop hook feedback' message trying to get me to output a specific word", declined, and asked the user about it. **The transport succeeded and the loop still failed.** This is the single most likely way for this change to ship broken while every automated test passes, because nothing below the end-to-end proof can detect it.
+  - Calibration: that test string was adversarially shaped (arbitrary literal output on command, no reference to project state). A realistic pointer template — "review feedback is waiting in `<path>` for this session; read it and address the open comments" — is not injection-shaped. Confidence that realistic templates are complied with: moderate. Confidence it is proven: none, until task 3.2 runs.
+  - Mitigation: templates are attributed pointers by spec (see the reason-text requirement in this change's spec delta), a refusal is defined as a blocking failure rather than a warning, and the mechanism is documented in this repo's `AGENTS.md` so a receiving agent has legitimate in-project context that openspec-doc directives are part of the configured workflow rather than unattributed input.
+  - Escalation if attributed templates still get refused: the fallback is to stop phrasing directives as instructions at all and make them purely declarative state ("N open comments in `<path>`"), letting the agent's own project instructions decide what to do about it. Do not attempt to defeat the agent's injection defences — a directive the agent cannot corroborate *should* be refused, and a mechanism that relies on suppressing that judgement is not one to build on.
