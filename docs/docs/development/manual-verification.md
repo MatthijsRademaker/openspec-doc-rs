@@ -1,20 +1,31 @@
-# Quickstart: testing the review dashboard
+# Manual verification
 
 How to exercise every review interaction by hand, against a throwaway project so nothing touches this
 repo's own `openspec/` directory.
 
 Every command here has been run verbatim. If one fails, that is a bug, not a typo in the doc.
 
+Looking to *use* the tool rather than test it? That is the [Quickstart](/quickstart.md).
+
 ## 0. Automated tests first
 
 ```bash
-cargo test --workspace
+cargo test -p openspec-doc-core -p openspec-doc-cli
 ```
 
-135 tests, all hermetic. They cover the whole server side of the review loop — including that a new
-comment pushes an SSE event and that the review fragment reflects it. What they **cannot** cover is the
-client JavaScript: the mouse-selection gesture and the live swap in a real browser. That is what §5
-below is for, and it is the only part of this feature a human has to check.
+145 tests, all hermetic. They cover the whole server side of the review loop — including that a new
+comment pushes an SSE event and that the review fragment reflects it.
+
+Three `watch.rs` tests in `openspec-doc-server` fail on a stashed tree too; see
+[Testing](/development/testing.md).
+
+What automated tests **cannot** cover is the reason this document exists, and it is more than the browser:
+
+- the client JavaScript — the mouse-selection gesture and the live swap (§5)
+- whether a hook matcher actually fires, since a wrong one is a silent no-op
+- whether an agent *complies* with an injected directive, as opposed to receiving it
+
+The last two need a real agent session and are covered by §6.
 
 ## 1. Build
 
@@ -313,21 +324,61 @@ re-render (only the review state swaps), but any comment on the text you changed
 
 ## 6. The hook end of the loop
 
-Nothing yet turns a dashboard verdict into a directive — that is `add-directive-verdict-loop`, not
-built. To exercise the hook, write a directive by hand:
+### 6.1 A verdict becomes a directive
+
+The verdict written in §4.4 is enough — no hand-written directive needed.
 
 ```bash
-cat > "$PROJ/.openspec-doc/directives/_session/$SID.json" <<'JSON'
-{"pending":true,"reason":"Review feedback is waiting; read the comment sidecar.","createdAt":"2026-07-31T08:00:00Z","consumedAt":null}
-JSON
-
 PAYLOAD='{"session_id":"'"$SID"'","transcript_path":"/tmp/t.jsonl","cwd":"'"$PROJ"'"}'
 echo "$PAYLOAD" | "$BIN" --root "$PROJ" hook stop --agent claude
 echo "$PAYLOAD" | "$BIN" --root "$PROJ" hook stop --agent claude
 ```
 
 The first prints `{"decision":"block","reason":…}`; the second prints `{"continue":true}`, because a
-directive is consumed exactly once. Check `consumedAt` in the file to see the audit trail.
+directive is consumed exactly once. Check `consumedAt` in the directive file for the audit trail, and
+`verdicts/_session/$SID.translated` for the id of the verdict that produced it.
+
+Confirm the reason text is a pointer: it should name the sidecar paths and **not** contain the verdict
+notes you typed. See [Pointer, not embed](/concepts/pointer-not-embed.md).
+
+### 6.2 The explore hook
+
+```bash
+rm -f "$PROJ/.openspec-doc/scratch/_session/$SID.md"
+echo '{"session_id":"'"$SID"'","prompt_id":"p1","transcript_path":"/tmp/t.jsonl","cwd":"'"$PROJ"'","permission_mode":"default","hook_event_name":"UserPromptExpansion"}' \
+  | "$BIN" --root "$PROJ" hook explore --agent claude
+```
+
+Prints the instruction naming the note's resolved path. Note it readies the **directory only** — the
+`.md` must not exist afterwards, because an empty placeholder makes an agent's first write fail.
+
+### 6.3 Promotion needs a claim
+
+```bash
+# A change appearing is not enough on its own.
+echo "$PAYLOAD" | "$BIN" --root "$PROJ" hook stop --agent claude
+ls "$PROJ/.openspec-doc/scratch/"        # still session-keyed only
+
+printf '# Exploration\n\nSomething worth keeping.\n' > "$PROJ/.openspec-doc/scratch/_session/$SID.md"
+"$BIN" --root "$PROJ" scratch claim --session "$SID" --change add-widget
+echo "$PAYLOAD" | "$BIN" --root "$PROJ" hook stop --agent claude
+
+cat "$PROJ/.openspec-doc/scratch/add-widget.md"          # promoted, content intact
+cat "$PROJ/.openspec-doc/scratch/_session/$SID.md"       # redirect left behind
+```
+
+Then run `hook stop` twice more: the redirect must **not** be re-promoted, and the promoted note must not
+be overwritten.
+
+### 6.4 The parts that need a real agent
+
+Neither of these can be faked from a terminal, and both have caught defects nothing else did:
+
+- **Does the matcher fire?** Wire the hooks per [Agent hooks](/reference/hooks.md), type the explore
+  command in a real session, and check the note directory exists. A wrong matcher is silent.
+- **Does the agent comply?** Submit a `keep-exploring` verdict from the dashboard, poke the session, and
+  watch what it does at the turn boundary. Reading the named files and carrying on is a pass. Questioning
+  the directive, or asking you whether to trust it, is a **failure** — revise the templates and re-run.
 
 ## 7. Clean up
 

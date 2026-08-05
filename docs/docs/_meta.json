@@ -1,0 +1,12 @@
+[
+  { "type": "section-header", "label": "Start here" },
+  "index",
+  "vision",
+  "roadmap",
+  "quickstart",
+  { "type": "divider" },
+  { "type": "dir-section-header", "name": "concepts", "label": "Concepts" },
+  { "type": "dir-section-header", "name": "reference", "label": "Reference" },
+  { "type": "divider" },
+  { "type": "dir-section-header", "name": "development", "label": "Development" }
+]

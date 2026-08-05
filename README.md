@@ -1,26 +1,54 @@
 # openspec-doc
 
 A local review dashboard for [OpenSpec](https://github.com/Fission-AI/OpenSpec) projects, plus an agent
-hook bridge. You read a coding agent's proposal or exploration notes in a browser, select text, leave
-anchored comments, and submit a verdict; the hook bridge feeds that verdict back into the agent at its
-next turn boundary.
+hook bridge.
 
-Rust rewrite of a TypeScript prototype, which is kept under `openspec-doc-rs-example/` for reference.
+You read a coding agent's exploration or proposal in a browser **while it is happening**, select text,
+leave anchored comments, and submit a phase verdict. The hook bridge feeds that verdict back to the agent
+at its next turn boundary, as a directive it acts on.
 
-> **Status: MVP in progress.** The dashboard renders artifacts, records comments and verdicts, and
-> pushes live updates. The hook bridge blocks and reinjects a *hand-written* directive. The wiring
-> between the two — turning a dashboard verdict into a directive the agent consumes — is not built
-> yet (`openspec/changes/add-directive-verdict-loop`). See [Capability status](#capability-status).
+Everything is a plain file under `.openspec-doc/`. No database, no daemon, no cloud.
 
-## Quickstart
+```
+   agent explores                              reviewer reads
+        │                                             │
+        ▼                                             ▼
+  hook explore ──► .openspec-doc/scratch/…  ──►  127.0.0.1 dashboard
+                                                      │
+                                        comment + phase verdict
+                                                      │
+                                                      ▼
+   agent acts  ◄── hook stop blocks ◄── directive ◄── verdicts/…
+        │
+        └──► creates the change, runs `scratch claim` ──► note promoted
+```
 
-See **[QUICKSTART.md](QUICKSTART.md)** for a copy-pasteable throwaway project and a walkthrough of
-every review interaction, including the two-tab live-update check.
+## Install
 
 ```bash
-cargo build
-cargo run -- serve              # discovers the project root by walking up from the cwd
+cargo install --path crates/cli
+openspec-doc serve          # discovers the project root by walking up from the cwd
 ```
+
+The `openspec` CLI must also be on `PATH` — promotion runs `openspec validate`.
+
+## Documentation
+
+```bash
+cd docs && bun install && bun dev
+```
+
+| | |
+|---|---|
+| **Quickstart** | `docs/docs/quickstart.md` — install, wire hooks, drive one loop |
+| **Vision & MVP scope** | `docs/docs/vision.md` — what is in scope, what is not, when it is done |
+| **Roadmap** | `docs/docs/roadmap.md` — shipped capabilities and open changes |
+| **Concepts** | `docs/docs/concepts/` — the review loop, scoping, anchoring, pointer-not-embed |
+| **Reference** | `docs/docs/reference/` — CLI, on-disk state, routes, agent hooks |
+| **Development** | `docs/docs/development/` — testing, manual verification, conventions |
+
+The site also emits `llms.txt` and per-section `llms-*.txt` indexes, since this tool's audience is
+substantially agents.
 
 ## Layout
 
@@ -30,182 +58,28 @@ crates/server   the axum dashboard: routes, pages, filesystem watcher, SSE
 crates/cli      the openspec-doc binary
 ```
 
-`core` holds every rule and every file format. `server` and `cli` are two front ends over it and
-contain no persistence logic of their own.
+`core` holds every rule and every file format; `server` and `cli` are two front ends over it with no
+persistence logic of their own.
 
 ## Build and test
 
 ```bash
-cargo test --workspace      # 135 tests, all hermetic (each builds its own temp project)
+cargo test -p openspec-doc-core -p openspec-doc-cli    # 145 tests, hermetic
 cargo clippy --workspace --all-targets
 cargo fmt --all --check
 ```
 
-No test needs a network, a browser, or an installed `openspec` binary — except
-`scratch::promote`'s validation tests, which shell out to `openspec validate` and will fail if
-`openspec` is not on `PATH`.
+Three `watch.rs` tests in `openspec-doc-server` fail on a clean tree — pre-existing, see
+`docs/docs/development/testing.md`.
 
-## CLI
+## Status
 
-```
-openspec-doc [--root <PATH>] <COMMAND>
+The loop is closed and verified on live sessions across Claude Code and pi.dev, including the one thing no
+test can establish: that an agent acts on an injected directive rather than refusing it as prompt
+injection.
 
-  summary                    print the resolved project root, its changes, and its specs
-  serve [--host] [--port]    serve the dashboard; --no-open prints the URL instead of opening a browser
-  comment add|list|reply|resolve
-  hook stop --agent <claude|pi>
-```
+Two things still need a terminal or insider knowledge — closing out a comment, and remembering to start
+`serve`. Whether those sit inside the MVP boundary is an open scope question; see the roadmap.
 
-`--root` skips project discovery, which is what the test walkthroughs use to point at a throwaway
-project. Every subcommand accepts it.
-
-`comment` operates on the same sidecars the dashboard writes, so `comment list --change <name>` is the
-quickest way to confirm what a browser interaction actually recorded:
-
-```bash
-openspec-doc comment add --change add-widget \
-  --artifact openspec/changes/add-widget/proposal.md \
-  --selected-text 'Widgets are slow today.' \
-  --body 'Slow by what measure?'
-openspec-doc comment list --change add-widget
-```
-
-## On-disk state
-
-Everything the tool writes lives under `.openspec-doc/` at the project root. Nothing is stored in a
-database, and every file is readable and hand-editable.
-
-```
-.openspec-doc/
-  directives/_session/<session_id>.json   pending directive for a session; also what makes a
-                                          session appear in the dashboard at all
-  scratch/_session/<session_id>.md        exploration notes, before a change directory exists
-  scratch/<change_name>.md                the same note after promotion
-  comments/_session/<session_id>.jsonl    append-only comment stream, session-keyed
-  comments/<change_name>.jsonl            append-only comment stream, change-keyed
-  verdicts/_session/<session_id>.jsonl    append-only phase-verdict stream, session-keyed
-  verdicts/<change_name>.jsonl            append-only phase-verdict stream, change-keyed
-```
-
-Session-keyed files sit one directory deeper than change-keyed ones so a session id can never collide
-with a change name. Comment and verdict sidecars are append-only: replaying them in order is what
-reconstructs current state, and a later record never rewrites an earlier one.
-
-### Scoping
-
-Every route and every sidecar is keyed one of two ways, and this is the single most load-bearing idea
-in the codebase:
-
-- **Session-keyed** while an exploration is still pre-proposal. There is no change directory yet, so
-  the only artifact is a scratch note.
-- **Change-keyed** once the exploration has been formalized into `openspec/changes/<name>/`.
-
-Promotion renames the note and relocates its comment sidecar in lockstep, recording a relocation event
-so anchors made against the old path keep resolving. It happens only for a session that has claimed the
-change its exploration became, with `openspec-doc scratch claim --session <id> --change <name>`: a
-change directory appearing says nothing about which session created it, so an unclaimed exploration
-stays at its session key rather than being guessed onto someone else's change.
-
-## Routes
-
-| Route | Method | Purpose |
-|---|---|---|
-| `/` | GET | every discovered session and active change |
-| `/sessions/<id>` `/changes/<name>` | GET | the review page |
-| `…/events` | GET | server-sent events; emits `data: changed` when the scope's files change |
-| `…/review` | GET | the comment-list + verdict-state fragment an open page refetches |
-| `…/comments` | POST | `artifact_path`, `selected_text`, `body` |
-| `…/verdict` | POST | `verdict`, `notes` |
-
-An unknown session id or change name is a 404, not an empty page.
-
-### Verdicts
-
-| Verdict | Valid scope | Meaning |
-|---|---|---|
-| `keep-exploring` | session | stay in the explore phase; `notes` say what is still open (required) |
-| `move-to-proposal` | session | the exploration is ready to be formalized |
-| `comment-resolution` | change | address the change's open comments |
-
-Submitting a verdict to the wrong kind of scope is a 400, as is `keep-exploring` with empty notes.
-
-## How anchoring works
-
-Artifacts are rendered as their **own markdown source** in a `<pre>`, not converted to HTML. A browser
-selection is therefore byte-for-byte a substring of the file, so there is no mapping from rendered DOM
-ranges back onto source offsets to get wrong.
-
-The client sends only `selection.toString()`. The server re-finds that text in the file as it stands on
-disk and builds the anchor itself — recording the selected text, its enclosing heading path, 80 bytes of
-context either side, and byte offsets. A selection that is no longer in the file is refused with a 400
-telling the reviewer to reselect, rather than anchored to a guess.
-
-When a comment is read back, its anchor is re-resolved against the current file and reported honestly:
-
-| State | Meaning |
-|---|---|
-| `exact` | the recorded offset still holds the selected text |
-| `fuzzy` | found elsewhere, via heading path or surrounding context |
-| `orphaned` | the file is there, but nothing in it matches |
-| `missing` | the file is gone |
-
-The page colours a comment's left border by this state. A comment whose text was rewritten out from
-under it is shown as such rather than presented as confidently placed.
-
-## Live updates
-
-Each scope gets one filesystem watcher and one broadcast channel. A watcher covers both the scope's
-own tree (`openspec/changes/<name>/`) and the whole of `.openspec-doc/`, because comments and verdicts
-land in a different tree from the artifacts they discuss. Events are filtered down to the scope's own
-paths, and a burst of writes from one edit is coalesced into one update.
-
-When the SSE endpoint pushes, the page refetches `…/review` and swaps that one element — it does not
-reload. A reviewer half-way through typing a comment does not lose it because someone else commented.
-
-If the watcher backend fails to initialize, the scope falls back to polling every second and says so on
-stderr rather than silently serving no updates.
-
-## Agent hook bridge
-
-`openspec-doc hook stop --agent <claude|pi>` reads the agent's turn-end payload on stdin and prints
-that agent's stop decision on stdout. If the session has a pending directive, the turn is blocked and
-the directive's reason is reinjected; the directive is marked consumed first, so it cannot fire twice.
-
-```bash
-echo '{"session_id":"abc","transcript_path":"/tmp/t.jsonl","cwd":"'"$PWD"'"}' \
-  | openspec-doc hook stop --agent claude
-```
-
-With no pending directive this prints `{"continue":true}`. With one, `{"decision":"block","reason":…}`.
-
-`--agent pi` speaks a deliberately *different* wire format (camelCase in, `{"action":…}` out), because
-pi.dev has no external-process hook — its turn boundary is only reachable from a TypeScript extension.
-Pointing one agent's flag at the other's payload fails loudly instead of half-working.
-
-Errors propagate and exit non-zero having emitted no decision. Neither agent treats that as "block",
-so a bug here ends the turn noisily rather than wedging the session.
-
-## Capability status
-
-| Capability | State |
-|---|---|
-| `project-scanner` | done |
-| `cli-surface` | done |
-| `agent-hook-bridge` | done — consumes hand-written directives |
-| `anchored-comments` | done |
-| `scratch-note-workflow` | done — promotion is a library call, not yet invoked from the hook |
-| `dashboard-server` | done |
-| `dashboard-html-views` | done except the two-tab browser check (`tasks.md` 4.2) |
-| `directive-verdict-loop` | **not started** — nothing turns a verdict into a directive yet |
-
-Until `directive-verdict-loop` lands, a verdict submitted in the dashboard is recorded and visible but
-has no effect on any agent. Write a directive file by hand to exercise the hook end of the loop.
-
-## Conventions
-
-`AGENTS.md` holds the working rules for this repo. The ones that show up most in the code:
-
-- Invalid states fail loudly. No silent defaults, swallowed errors, or fake success values.
-- Errors propagate with their source chain intact; the CLI prints `caused by:` lines.
-- Prefer small feature-named files over large ones.
-- Prefer executable truth in `src/` when docs disagree.
+Rust rewrite of a TypeScript prototype, kept under `openspec-doc-rs-example/` for reference.
+`AGENTS.md` holds the working rules for this repo.
