@@ -8,3 +8,9 @@ coverage/
 .DS_Store
 *.log
 .pi/openspec-review/
+.claude/settings.local.json
+
+# Local review state: exploration notes, comments, verdicts and directives.
+# The repo keeps the approved outcome in openspec/, not the back and forth that
+# produced it, so this is machine-local by design.
+.openspec-doc/
