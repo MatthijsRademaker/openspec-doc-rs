@@ -8,6 +8,7 @@ The reviewing rhythm is: the agent finishes and goes idle, the reviewer reads th
 
 ## What Changes
 
+- Points the move-to-proposal reason text at the session's comment sidecar, and instructs that the open comments be accounted for in the proposal. It currently names the exploration note and the verdict record but not the comments, so an agent told to formalize an exploration is not told that anchored feedback on it exists — the keep-exploring template names the sidecar, this one never did. Folded in here rather than shipped separately because it is the same defect as the timing one seen from a different angle: both are about the reviewer's comments failing to reach the agent at the moment it needs them.
 - Adds a `hook prompt` command that delivers any standing directive as context at prompt time, reusing the existing verdict translation and consume-once machinery unchanged.
 - Wires it to `UserPromptSubmit`, alongside the existing `Stop` and `UserPromptExpansion` entries.
 - Whichever hook fires first consumes the directive, so a directive is delivered exactly once whether it arrives at prompt time or turn end. The `Stop` path keeps its role: it is what stops an agent from ending a turn while feedback is outstanding, and it remains the only path that works when no human prompt is coming.
@@ -19,7 +20,7 @@ The reviewing rhythm is: the agent finishes and goes idle, the reviewer reads th
 - `prompt-time-directive-delivery`: delivering a standing directive as prompt context, and sharing consume-once with the turn-end path.
 
 ### Modified Capabilities
-(none — the `Stop` path's behaviour is unchanged; this adds a second delivery point in front of it.)
+- `directive-verdict-loop`: the move-to-proposal reason text gains the session's comment sidecar path and an instruction to account for the open comments. The `Stop` path's delivery behaviour is otherwise unchanged; this change adds a second delivery point in front of it.
 
 ## Impact
 
