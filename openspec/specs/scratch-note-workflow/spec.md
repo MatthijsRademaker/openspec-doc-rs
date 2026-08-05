@@ -75,6 +75,10 @@ The system SHALL rename a promoted session's scratch note from `.openspec-doc/sc
 - **WHEN** a scratch note has been renamed due to promotion
 - **THEN** the system SHALL leave a record at the old session-scoped path identifying the new change-name-scoped path
 
+#### Scenario: The promoted note records what it came from
+- **WHEN** a scratch note carrying a claim marker is promoted
+- **THEN** the promoted note SHALL retain that marker, so the formalized exploration states which change it became
+
 ### Requirement: Validate on promotion
 The system SHALL run `openspec validate <name>` immediately after renaming a promoted scratch note and SHALL record the validation outcome, including failure, as part of the promotion result.
 
