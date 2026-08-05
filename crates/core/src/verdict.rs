@@ -26,6 +26,11 @@ const VERDICTS_DIR: &str = ".openspec-doc/verdicts";
 /// collide with a change name.
 const SESSION_DIR: &str = "_session";
 
+/// The marker file recording which of a scope's verdicts was last translated
+/// into a directive. It sits beside the sidecar rather than in it, because the
+/// sidecar is append-only and a translation is not a verdict.
+const TRANSLATED_SUFFIX: &str = "translated";
+
 /// What a reviewer decided should happen to a scope next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -70,17 +75,28 @@ pub struct Record {
     pub created_at: String,
 }
 
+/// The verdict sidecar for `key`, relative to the project root — the form a
+/// directive names it in, so the agent is pointed at a path it can read.
+pub fn relative(key: &ScopeKey) -> Result<String, Error> {
+    sidecar_relative(key, "jsonl")
+}
+
 /// The verdict sidecar for `key` under the project at `root`.
 pub fn path(root: &Path, key: &ScopeKey) -> Result<PathBuf, Error> {
-    let dir = root.join(VERDICTS_DIR);
+    Ok(root.join(relative(key)?))
+}
 
+/// A file named after `key` under the verdicts directory, with `extension`.
+fn sidecar_relative(key: &ScopeKey, extension: &str) -> Result<String, Error> {
     match key {
         ScopeKey::Session(session_id) => {
             check_session_id(session_id)?;
-            Ok(dir.join(SESSION_DIR).join(format!("{session_id}.jsonl")))
+            Ok(format!(
+                "{VERDICTS_DIR}/{SESSION_DIR}/{session_id}.{extension}"
+            ))
         }
         // The name comes from a change directory, so it needs no guard.
-        ScopeKey::Change(name) => Ok(dir.join(format!("{name}.jsonl"))),
+        ScopeKey::Change(name) => Ok(format!("{VERDICTS_DIR}/{name}.{extension}")),
     }
 }
 
@@ -137,6 +153,38 @@ pub fn read(root: &Path, key: &ScopeKey) -> Result<Vec<Record>, Error> {
             })
         })
         .collect()
+}
+
+/// The scope's standing verdict when it has not yet been translated into a
+/// directive, or `None` when the scope has no verdict or its latest one was
+/// already translated.
+///
+/// Only the latest record is a candidate: a scope's standing verdict is the
+/// last one submitted, so an earlier one it superseded is history, not work.
+pub fn untranslated(root: &Path, key: &ScopeKey) -> Result<Option<Record>, Error> {
+    let Some(latest) = read(root, key)?.pop() else {
+        return Ok(None);
+    };
+
+    let translated_path = root.join(sidecar_relative(key, TRANSLATED_SUFFIX)?);
+    let translated = match fs::read_to_string(&translated_path) {
+        Ok(contents) => Some(contents),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => None,
+        Err(source) => return Err(Error::io(translated_path, source)),
+    };
+
+    Ok((translated.as_deref() != Some(latest.id.as_str())).then_some(latest))
+}
+
+/// Record `record_id` as the verdict `key` has been translated into a directive
+/// from, so a later `hook stop` does not translate it a second time.
+pub fn mark_translated(root: &Path, key: &ScopeKey, record_id: &str) -> Result<(), Error> {
+    let path = root.join(sidecar_relative(key, TRANSLATED_SUFFIX)?);
+
+    let dir = path.parent().expect("sidecar paths have a parent");
+    fs::create_dir_all(dir).map_err(|source| Error::write(dir, source))?;
+
+    fs::write(&path, record_id).map_err(|source| Error::write(path, source))
 }
 
 /// Add one line to `key`'s sidecar, leaving every line already in it untouched.
@@ -315,6 +363,50 @@ mod tests {
         let temp = TempDir::new().expect("temp dir");
 
         assert!(read(temp.path(), &change()).expect("read").is_empty());
+    }
+
+    #[test]
+    fn the_standing_verdict_is_untranslated_until_it_is_marked() {
+        let temp = TempDir::new().expect("temp dir");
+        let record = add(temp.path(), &change(), Verdict::CommentResolution, "").expect("add");
+
+        assert_eq!(
+            untranslated(temp.path(), &change()).expect("untranslated"),
+            Some(record.clone())
+        );
+
+        mark_translated(temp.path(), &change(), &record.id).expect("mark");
+
+        assert_eq!(
+            untranslated(temp.path(), &change()).expect("untranslated"),
+            None
+        );
+    }
+
+    /// The standing verdict is the last one submitted, so a newer verdict is
+    /// untranslated even though the one it superseded was translated.
+    #[test]
+    fn a_newer_verdict_supersedes_a_translated_one() {
+        let temp = TempDir::new().expect("temp dir");
+        let first = add(temp.path(), &session(), Verdict::KeepExploring, "One.").expect("first");
+        mark_translated(temp.path(), &session(), &first.id).expect("mark");
+
+        let second = add(temp.path(), &session(), Verdict::MoveToProposal, "").expect("second");
+
+        assert_eq!(
+            untranslated(temp.path(), &session()).expect("untranslated"),
+            Some(second)
+        );
+    }
+
+    #[test]
+    fn a_scope_with_no_verdict_has_nothing_to_translate() {
+        let temp = TempDir::new().expect("temp dir");
+
+        assert_eq!(
+            untranslated(temp.path(), &change()).expect("untranslated"),
+            None
+        );
     }
 
     #[test]

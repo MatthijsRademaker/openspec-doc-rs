@@ -1,11 +1,27 @@
-## ADDED Requirements
+# directive-verdict-loop Specification
 
+## Purpose
+TBD - created by archiving change add-directive-verdict-loop. Update Purpose after archive.
+## Requirements
 ### Requirement: Promotion check on every hook stop invocation
 The system SHALL run the scratch-note promotion check for the session before directive lookup on every `hook stop` invocation.
 
 #### Scenario: Promotion runs before directive lookup
 - **WHEN** `openspec-doc hook stop` is invoked for a session with a pending scratch note
 - **THEN** the system SHALL run the promotion check first, recording any validate outcome, before proceeding to directive lookup
+
+### Requirement: Session registration on every hook stop invocation
+The system SHALL ensure a session has a directive record on every `hook stop` invocation, so the dashboard can discover the session before any directive has been written for it.
+
+Without this the loop has no entry point: a session is discoverable because it has a directive record, a directive is produced from a verdict, and a verdict is submitted from the session's own page.
+
+#### Scenario: A session that has never been sent a directive is still discoverable
+- **WHEN** `openspec-doc hook stop` is invoked for a session with no directive record
+- **THEN** the system SHALL write an empty directive record for that session, and SHALL NOT produce a block decision from it
+
+#### Scenario: Registration leaves an existing record untouched
+- **WHEN** `openspec-doc hook stop` is invoked for a session that already has a directive record
+- **THEN** the system SHALL leave that record exactly as it stands, including a directive still waiting to be injected
 
 ### Requirement: Phase-verdict to directive translation
 The system SHALL translate an untranslated phase-verdict record (keep-exploring, move-to-proposal, or comment-resolution) into the pending-directive file format at hook-stop time, using fixed reason-text templates that name relevant sidecar and artifact paths rather than embedding their content.
@@ -45,3 +61,4 @@ The system SHALL mark a phase-verdict record as translated after producing its d
 #### Scenario: Translated verdict is not retranslated
 - **WHEN** `openspec-doc hook stop` is invoked again after a phase-verdict record has already been translated into a directive
 - **THEN** the system SHALL NOT produce a second directive from that same verdict record
+

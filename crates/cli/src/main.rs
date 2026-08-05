@@ -6,6 +6,7 @@ mod comment;
 mod error;
 mod hook;
 mod root;
+mod scratch;
 mod serve;
 mod summary;
 
@@ -13,7 +14,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
-use crate::cli::{Cli, Command, CommentCommand, HookCommand};
+use crate::cli::{Cli, Command, CommentCommand, HookCommand, ScratchCommand};
 use crate::error::Error;
 
 fn main() -> ExitCode {
@@ -39,6 +40,7 @@ fn run() -> Result<(), Error> {
         } => serve::run(project, host, port, no_open),
         Command::Hook { command } => match command {
             HookCommand::Stop { agent } => hook::stop(project, agent),
+            HookCommand::Explore { agent } => hook::explore(project, agent),
         },
         Command::Comment { command } => match command {
             CommentCommand::Add {
@@ -57,10 +59,13 @@ fn run() -> Result<(), Error> {
                 comment::resolve(project, scope.key(), &comment)
             }
         },
+        Command::Scratch { command } => match command {
+            ScratchCommand::Claim { session, change } => scratch::claim(project, &session, &change),
+        },
     }
 }
 
-fn eprint_chain(error: &dyn std::error::Error) {
+pub(crate) fn eprint_chain(error: &dyn std::error::Error) {
     eprintln!("error: {error}");
     let mut source = error.source();
     while let Some(cause) = source {

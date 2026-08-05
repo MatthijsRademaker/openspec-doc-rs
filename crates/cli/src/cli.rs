@@ -47,6 +47,27 @@ pub enum Command {
         #[command(subcommand)]
         command: CommentCommand,
     },
+
+    /// Manage the exploration scratch note
+    Scratch {
+        #[command(subcommand)]
+        command: ScratchCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ScratchCommand {
+    /// Record which change a session's exploration became, so the next turn
+    /// boundary promotes its scratch note onto that change
+    Claim {
+        /// Session whose exploration was formalized
+        #[arg(long, value_name = "ID")]
+        session: String,
+
+        /// Change the exploration became
+        #[arg(long, value_name = "NAME")]
+        change: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -130,6 +151,15 @@ pub enum HookCommand {
     /// Decide, from the agent's turn-end payload on stdin, whether its turn may
     /// end; prints that agent's decision on stdout
     Stop {
+        /// Coding agent whose hook wire format to speak [possible values:
+        /// claude, pi]
+        #[arg(long, value_name = "AGENT")]
+        agent: Agent,
+    },
+
+    /// Start an exploration for the session named on stdin: create its scratch
+    /// note and print, for the agent to act on, where to keep the exploration
+    Explore {
         /// Coding agent whose hook wire format to speak [possible values:
         /// claude, pi]
         #[arg(long, value_name = "AGENT")]

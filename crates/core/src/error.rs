@@ -51,12 +51,10 @@ pub enum Error {
     #[error("invalid session id {session_id:?}: must not be empty or contain a path separator")]
     InvalidSessionId { session_id: String },
 
-    #[error("malformed scratch snapshot file {}", path.display())]
-    Snapshot {
-        path: PathBuf,
-        #[source]
-        source: serde_json::Error,
-    },
+    #[error(
+        "session {session_id} has no scratch note, so there is no exploration to claim {change} for"
+    )]
+    MissingNote { session_id: String, change: String },
 
     #[error("failed to move {} to {}", from.display(), to.display())]
     Rename {

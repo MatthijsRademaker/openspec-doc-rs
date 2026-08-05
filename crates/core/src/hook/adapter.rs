@@ -54,6 +54,32 @@ pub fn parse_event(agent: Agent, payload: &str) -> Result<HookEvent, Error> {
     })
 }
 
+/// The session id out of `agent`'s payload for an event nothing else is needed
+/// from.
+///
+/// Reading one field rather than a whole event shape keeps this usable for any
+/// of the agent's events, not just the turn boundary — the session id is the
+/// field every one of them carries. The spelling is still agent-specific, so a
+/// payload from the wrong agent fails here exactly as it does in
+/// [`parse_event`].
+pub fn parse_session_id(agent: Agent, payload: &str) -> Result<String, Error> {
+    #[derive(Deserialize)]
+    struct ClaudeSession {
+        session_id: String,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct PiSession {
+        session_id: String,
+    }
+
+    Ok(match agent {
+        Agent::Claude => parse::<ClaudeSession>(agent, payload)?.session_id,
+        Agent::Pi => parse::<PiSession>(agent, payload)?.session_id,
+    })
+}
+
 /// Serialize `decision` in the shape `agent` expects on the hook's stdout.
 pub fn encode_decision(agent: Agent, decision: &HookDecision) -> String {
     let value = match (agent, decision) {
@@ -158,6 +184,54 @@ mod tests {
                 "accepted {payload:?}"
             );
         }
+    }
+
+    /// Captured verbatim from a real Claude Code `UserPromptExpansion` hook
+    /// (only the session id and paths are rewritten), fired by typing
+    /// `/openspec-explore`. It carries the common fields and its own
+    /// command-specific ones, but none of the Stop-specific ones — reading only
+    /// the session id is what lets the explore hook accept it.
+    ///
+    /// `command_name` is the bare command, with no leading slash: that is the
+    /// value a `UserPromptExpansion` matcher is matched against.
+    const CLAUDE_EXPANSION: &str = r#"{
+      "session_id": "0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d74",
+      "cwd": "/home/dev/proj",
+      "prompt_id": "9faee9ca-e867-4f8e-a2a1-91eb5cad5cff",
+      "transcript_path": "/home/dev/.claude/projects/-home-dev-proj/0199a4c6.jsonl",
+      "permission_mode": "bypassPermissions",
+      "hook_event_name": "UserPromptExpansion",
+      "expansion_type": "slash_command",
+      "command_name": "openspec-explore",
+      "command_args": "I want the dashboard startable from a session",
+      "command_source": "projectSettings",
+      "prompt": "/openspec-explore I want the dashboard startable from a session"
+    }"#;
+
+    #[test]
+    fn a_session_id_is_read_from_any_of_an_agents_events() {
+        for payload in [CLAUDE_STOP, CLAUDE_EXPANSION] {
+            assert_eq!(
+                parse_session_id(Agent::Claude, payload).expect("session id"),
+                "0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d74"
+            );
+        }
+        assert_eq!(
+            parse_session_id(Agent::Pi, PI_STOP).expect("session id"),
+            "019fb777-10e8-7e63-9a82-7632a31bc124"
+        );
+    }
+
+    #[test]
+    fn reading_only_the_session_id_still_rejects_the_other_agents_payload() {
+        assert!(matches!(
+            parse_session_id(Agent::Claude, PI_STOP),
+            Err(Error::HookPayload { .. })
+        ));
+        assert!(matches!(
+            parse_session_id(Agent::Pi, CLAUDE_STOP),
+            Err(Error::HookPayload { .. })
+        ));
     }
 
     #[test]

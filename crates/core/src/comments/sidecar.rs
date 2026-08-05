@@ -25,21 +25,25 @@ pub enum ScopeKey {
 }
 
 impl ScopeKey {
-    /// The sidecar file for this scope under the project at `root`.
+    /// The sidecar file for this scope, relative to the project root — the form
+    /// a directive names it in, so the agent is pointed at a path it can read.
     ///
     /// Session-keyed sidecars sit one level deeper, so a session id can never
     /// collide with a change name — the same split the scratch notes use.
-    pub fn path(&self, root: &Path) -> Result<PathBuf, Error> {
-        let dir = root.join(COMMENTS_DIR);
-
+    pub fn relative(&self) -> Result<String, Error> {
         match self {
             Self::Session(session_id) => {
                 check_session_id(session_id)?;
-                Ok(dir.join(SESSION_DIR).join(format!("{session_id}.jsonl")))
+                Ok(format!("{COMMENTS_DIR}/{SESSION_DIR}/{session_id}.jsonl"))
             }
             // The name comes from a change directory, so it needs no guard.
-            Self::Change(name) => Ok(dir.join(format!("{name}.jsonl"))),
+            Self::Change(name) => Ok(format!("{COMMENTS_DIR}/{name}.jsonl")),
         }
+    }
+
+    /// The sidecar file for this scope under the project at `root`.
+    pub fn path(&self, root: &Path) -> Result<PathBuf, Error> {
+        Ok(root.join(self.relative()?))
     }
 }
 

@@ -82,23 +82,74 @@ pub fn load_pending(root: &Path, session_id: &str) -> Result<Option<Directive>, 
     Ok(directive.pending.then_some(directive))
 }
 
+/// Ensure `session_id` has a directive file, so the dashboard can discover the
+/// session before any directive has been written for it.
+///
+/// Without this the discovery loop has no entry point: a session is listed
+/// because it has a directive record, a directive comes from a verdict, and a
+/// verdict is submitted from the session's page. The record left here is an
+/// empty slot — never pending, so it is never injected, and never consumed, so
+/// it does not read as an injection that already happened. A session that
+/// already has a record keeps it untouched.
+pub fn ensure_session(root: &Path, session_id: &str) -> Result<(), Error> {
+    let path = path(root, session_id)?;
+    if path.exists() {
+        return Ok(());
+    }
+
+    let slot = Directive {
+        pending: false,
+        reason: String::new(),
+        created_at: Utc::now().to_rfc3339(),
+        consumed_at: None,
+    };
+
+    write(&path, &slot)
+}
+
+/// Write `reason` as `session_id`'s pending directive, replacing whatever
+/// record was there before.
+///
+/// Callers must not use this to overwrite a directive that is still pending:
+/// there is one directive per session, so writing over an uninjected one drops
+/// it.
+pub fn write_pending(root: &Path, session_id: &str, reason: &str) -> Result<Directive, Error> {
+    let directive = Directive {
+        pending: true,
+        reason: reason.to_owned(),
+        created_at: Utc::now().to_rfc3339(),
+        consumed_at: None,
+    };
+
+    write(&path(root, session_id)?, &directive)?;
+
+    Ok(directive)
+}
+
 /// Record `directive` as consumed so a later turn boundary in the same session
 /// does not re-inject it. The file is kept as an audit trail, not deleted.
 pub fn mark_consumed(root: &Path, session_id: &str, directive: &Directive) -> Result<(), Error> {
-    let path = path(root, session_id)?;
-
     let consumed = Directive {
         pending: false,
         consumed_at: Some(Utc::now().to_rfc3339()),
         ..directive.clone()
     };
 
-    let contents = serde_json::to_string_pretty(&consumed).map_err(|source| Error::Directive {
-        path: path.clone(),
+    write(&path(root, session_id)?, &consumed)
+}
+
+/// Replace the directive file at `path` with `directive`, creating the
+/// directives directory the first time a session needs one.
+fn write(path: &Path, directive: &Directive) -> Result<(), Error> {
+    let dir = path.parent().expect("directive paths have a parent");
+    fs::create_dir_all(dir).map_err(|source| Error::write(dir, source))?;
+
+    let contents = serde_json::to_string_pretty(directive).map_err(|source| Error::Directive {
+        path: path.to_owned(),
         source,
     })?;
 
-    fs::write(&path, contents).map_err(|source| Error::write(path, source))
+    fs::write(path, contents).map_err(|source| Error::write(path, source))
 }
 
 #[cfg(test)]
@@ -173,6 +224,61 @@ mod tests {
         assert_eq!(stored.reason, directive.reason);
         assert_eq!(stored.created_at, directive.created_at);
         assert!(stored.consumed_at.is_some(), "injection is timestamped");
+    }
+
+    #[test]
+    fn a_written_directive_is_pending_and_reads_back_with_its_reason() {
+        let temp = TempDir::new().expect("temp dir");
+
+        let written = write_pending(temp.path(), "session-a", "Open comments are waiting.")
+            .expect("write directive");
+
+        assert!(written.pending);
+        assert_eq!(written.consumed_at, None);
+        assert_eq!(
+            load_pending(temp.path(), "session-a").expect("load"),
+            Some(written)
+        );
+    }
+
+    /// The dashboard discovers a session by its directive record, so a session
+    /// that has never been sent one still needs the file to exist.
+    #[test]
+    fn registering_a_session_makes_it_discoverable_without_injecting_anything() {
+        let temp = TempDir::new().expect("temp dir");
+
+        ensure_session(temp.path(), "session-a").expect("register");
+
+        assert_eq!(sessions(temp.path()).expect("sessions"), ["session-a"]);
+        assert_eq!(
+            load_pending(temp.path(), "session-a").expect("load"),
+            None,
+            "registration must not put a directive in front of the agent"
+        );
+        let stored: Directive = serde_json::from_str(
+            &fs::read_to_string(path(temp.path(), "session-a").expect("path")).expect("read back"),
+        )
+        .expect("parse");
+        assert!(
+            stored.consumed_at.is_none() && stored.reason.is_empty(),
+            "an empty slot must not read as a directive that was already injected: {stored:?}"
+        );
+    }
+
+    #[test]
+    fn registering_a_session_twice_leaves_the_first_record_alone() {
+        let root = root_with_directive("session-a", &pending_json("Resolve open comments."));
+
+        ensure_session(root.path(), "session-a").expect("register");
+
+        assert_eq!(
+            load_pending(root.path(), "session-a")
+                .expect("load")
+                .expect("pending directive")
+                .reason,
+            "Resolve open comments.",
+            "a waiting directive must survive registration"
+        );
     }
 
     #[test]

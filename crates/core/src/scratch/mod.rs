@@ -3,14 +3,15 @@
 //! against before any `openspec/changes/<name>/` directory does.
 //!
 //! A note starts out keyed by session id and is promoted to a change-name key
-//! ([`check`]) once the session's exploration is formalized into a change.
+//! ([`check`]) once the session has claimed ([`claim`]) the change its
+//! exploration became.
 
 mod note;
 mod promote;
-mod snapshot;
 
 pub use note::{
-    change_path, change_relative, ensure_session, read_session, session_path, session_relative,
+    change_path, change_relative, claim, claimed_change, prepare_session, promoted_to,
+    read_session, session_path, session_relative,
 };
 pub use promote::{Promotion, Validation, check};
 

@@ -18,9 +18,18 @@
  * the agent started a fresh turn acting on it. A real captured payload from this
  * extension is the PI_STOP fixture in crates/core/src/hook/adapter.rs.
  *
- * Two pi quirks make this impossible to reproduce from a scripted `pi -p`
- * harness. Both are harness-only — interactive use is unaffected — but they will
- * cost anyone who tries to automate this a lot of time:
+ * It is also proven from a single scripted `pi -p` run, against a verdict rather
+ * than a hand-written directive: the agent seeds a scratch note and a
+ * keep-exploring verdict for its own session via $PI_SESSION_ID, and at
+ * `agent_end` the hook translates that verdict, the directive comes back, and the
+ * agent answers the reviewer's question instead of the prompt it was given. No
+ * session resume is involved — the injection happens in-process through
+ * `sendUserMessage`, so one invocation covers the whole loop.
+ *
+ * Two pi quirks make that harness fiddlier than it looks. Both are tied to the
+ * session flags, so the recipe above (neither flag, agent seeds its own state)
+ * sidesteps them; interactive use is unaffected either way. They will still cost
+ * anyone who reaches for the obvious approach a lot of time:
  *   1. `--session-id` for a session that does not exist yet, and `--continue`,
  *      both perform a session *replacement*. A handler that then touches the
  *      captured `pi`/`ctx` throws "extension ctx is stale after session
@@ -30,8 +39,8 @@
  *   2. An `agent_end` handler combined with `--session-id` hangs pi before any
  *      output, handler never firing. Without `--session-id` it works. Cause
  *      unknown.
- * To exercise this by hand, launch pi with neither flag and have the agent write
- * the directive for its own session via $PI_SESSION_ID from the bash tool.
+ * So: launch pi with neither flag and have the agent write its own session's
+ * state via $PI_SESSION_ID from the bash tool.
  */
 import { spawn } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";

@@ -18,7 +18,7 @@
 ## 4. Live updates
 
 - [x] 4.1 Wire client-side SSE subscription (from `add-dashboard-server`) to re-render the comment list and verdict state without a full page reload — required extending the watcher to span both the change tree and the `.openspec-doc` sidecar tree, which it previously did not watch at all
-- [ ] 4.2 Manually verify a comment added in one browser tab appears in a second tab open on the same page without reload — **needs a human with a browser.** The server half is proven: `a_new_comment_is_pushed_to_the_scopes_event_stream` and `a_new_verdict_is_pushed_to_the_scopes_event_stream` cover the push, `the_review_fragment_reflects_a_comment_added_after_the_page_was_served` covers the refetch, and both were also exercised against a running server. What is unverified is the ~30 lines of client JS that join them.
+- [x] 4.2 Manually verify a comment added in one browser tab appears in a second tab open on the same page without reload — **verified in a browser against a change page: a comment added in one tab appeared in the other with no reload, in both directions.** The client JS is proven. Server half was independently confirmed over HTTP beforehand. The server half is proven: `a_new_comment_is_pushed_to_the_scopes_event_stream` and `a_new_verdict_is_pushed_to_the_scopes_event_stream` cover the push, `the_review_fragment_reflects_a_comment_added_after_the_page_was_served` covers the refetch, and both were also exercised against a running server. What is unverified is the ~30 lines of client JS that join them.
 
 ## 5. Manual verification
 

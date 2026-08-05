@@ -345,8 +345,11 @@ fn hook_stop_injects_a_pending_directive_then_allows_the_next_turn_to_end() {
     }
 }
 
+/// The session still has to become visible to the dashboard, or the reviewer
+/// has nothing to submit a verdict against — but registering it must not put a
+/// directive in front of the agent.
 #[test]
-fn hook_stop_allows_and_writes_nothing_when_the_session_has_no_directive() {
+fn hook_stop_allows_and_registers_the_session_when_it_has_no_directive() {
     for (agent, payload, _, expected_allow) in AGENTS {
         let fixture = project_fixture(&[]);
         let root = fixture.path().to_str().unwrap().to_owned();
@@ -359,11 +362,31 @@ fn hook_stop_allows_and_writes_nothing_when_the_session_has_no_directive() {
 
         assert!(output.status.success(), "{}", stderr(&output));
         assert_eq!(stdout(&output).trim(), expected_allow, "agent {agent}");
+        let record = fs::read_to_string(directive_path(fixture.path(), SESSION_ID))
+            .expect("the session is registered for the dashboard to discover");
         assert!(
-            !directive_path(fixture.path(), SESSION_ID).exists(),
-            "agent {agent} wrote a directive file for an allow decision"
+            record.contains(r#""pending": false"#),
+            "agent {agent} registered the session with a directive waiting: {record}"
         );
     }
+}
+
+/// Registration is a slot, not a record of something that happened: a session
+/// that has never been sent a directive must not read as one that was.
+#[test]
+fn registering_a_session_does_not_overwrite_a_directive_it_already_has() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+    write_pending_directive(fixture.path(), SESSION_ID, REASON);
+
+    let blocked = claude_stop(&root);
+
+    assert!(blocked.status.success(), "{}", stderr(&blocked));
+    assert!(
+        stdout(&blocked).contains(REASON),
+        "the waiting directive was registered over: {}",
+        stdout(&blocked)
+    );
 }
 
 #[test]
@@ -386,13 +409,291 @@ fn hook_stop_fails_loudly_on_a_payload_from_the_wrong_agent() {
     );
 }
 
+/// A session scratch note holding `contents`, the state an exploration is in
+/// before its change directory exists.
+fn write_session_note(root: &Path, contents: &str) {
+    let dir = root.join(".openspec-doc/scratch/_session");
+    fs::create_dir_all(&dir).expect("create scratch dir");
+    fs::write(dir.join(format!("{SESSION_ID}.md")), contents).expect("write note");
+}
+
+/// A change directory `openspec validate` accepts.
+fn write_valid_change(root: &Path, name: &str) {
+    let dir = root.join("openspec/changes").join(name);
+    fs::create_dir_all(dir.join("specs/some-cap")).expect("create change dir");
+    fs::write(
+        dir.join("proposal.md"),
+        "## Why\nBecause.\n\n## What Changes\n- A thing.\n",
+    )
+    .expect("write proposal");
+    fs::write(
+        dir.join("specs/some-cap/spec.md"),
+        "## ADDED Requirements\n\n### Requirement: A thing\nThe system SHALL do a thing.\n\n#### Scenario: It works\n- **WHEN** asked\n- **THEN** it does the thing\n",
+    )
+    .expect("write spec");
+    fs::write(dir.join("tasks.md"), "- [ ] 1.1 Do the thing\n").expect("write tasks");
+}
+
+/// The verdict record the dashboard appends when a reviewer submits a verdict.
+fn write_verdict(root: &Path, sidecar: &str, verdict: &str, notes: &str) {
+    let path = root.join(".openspec-doc/verdicts").join(sidecar);
+    fs::create_dir_all(path.parent().unwrap()).expect("create verdicts dir");
+    fs::write(
+        &path,
+        format!(
+            r#"{{"id":"v1","verdict":"{verdict}","notes":"{notes}","createdAt":"2026-08-01T08:00:00Z"}}"#
+        ),
+    )
+    .expect("write verdict");
+}
+
+/// `hook stop` for `SESSION_ID`, speaking Claude Code's wire format.
+fn claude_stop(root: &str) -> Output {
+    let (_, payload, ..) = AGENTS[0];
+    run_with_stdin(
+        &["hook", "stop", "--agent", "claude", "--root", root],
+        &payload.replace("SESSION", SESSION_ID),
+    )
+}
+
+/// `scratch claim` for `SESSION_ID`, the command the move-to-proposal directive
+/// asks the agent to run once its change directory exists.
+fn claim(root: &str, change: &str) -> Output {
+    run(&[
+        "scratch",
+        "claim",
+        "--session",
+        SESSION_ID,
+        "--change",
+        change,
+        "--root",
+        root,
+    ])
+}
+
+#[test]
+fn hook_stop_promotes_the_scratch_note_and_reports_the_validate_outcome() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+    write_session_note(fixture.path(), "# Exploration\n");
+
+    // A change appearing promotes nothing on its own; the claim is what does.
+    write_valid_change(fixture.path(), "add-thing");
+    let unclaimed = claude_stop(&root);
+    assert!(
+        !stderr(&unclaimed).contains("promoted"),
+        "an unclaimed change was promoted: {}",
+        stderr(&unclaimed)
+    );
+
+    assert!(claim(&root, "add-thing").status.success());
+    let promoted = claude_stop(&root);
+
+    assert!(promoted.status.success(), "{}", stderr(&promoted));
+    let stderr = stderr(&promoted);
+    assert!(
+        stderr.contains("promoted the scratch note to add-thing"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("`openspec validate add-thing` passed"),
+        "{stderr}"
+    );
+    assert!(
+        fixture
+            .path()
+            .join(".openspec-doc/scratch/add-thing.md")
+            .is_file(),
+        "the note now lives at the change key"
+    );
+}
+
+/// A promotion whose change does not validate still happened; the hook has to
+/// say so rather than let the failure pass unremarked.
+#[test]
+fn hook_stop_reports_a_failing_validate_rather_than_hiding_it() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+    write_session_note(fixture.path(), "# Exploration\n");
+
+    let dir = fixture.path().join("openspec/changes/add-broken");
+    fs::create_dir_all(&dir).expect("create change dir");
+    fs::write(dir.join("proposal.md"), "## Why\nBecause.\n").expect("write proposal");
+    assert!(claim(&root, "add-broken").status.success());
+    let promoted = claude_stop(&root);
+
+    assert!(
+        promoted.status.success(),
+        "a failing validate must not wedge the hook"
+    );
+    assert!(
+        stderr(&promoted).contains("`openspec validate add-broken` FAILED"),
+        "{}",
+        stderr(&promoted)
+    );
+}
+
+#[test]
+fn hook_stop_turns_a_dashboard_verdict_into_the_directive_it_injects() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+    write_session_note(fixture.path(), "# Exploration\n");
+    write_verdict(
+        fixture.path(),
+        &format!("_session/{SESSION_ID}.jsonl"),
+        "keep-exploring",
+        "The promotion trigger is still hand-waved.",
+    );
+
+    let blocked = claude_stop(&root);
+
+    assert!(blocked.status.success(), "{}", stderr(&blocked));
+    let decision = stdout(&blocked);
+    assert!(decision.contains(r#""decision":"block""#), "{decision}");
+    assert!(
+        decision.contains("openspec-doc dashboard"),
+        "the reason says where it came from: {decision}"
+    );
+    assert!(
+        decision.contains(&format!(".openspec-doc/scratch/_session/{SESSION_ID}.md")),
+        "the reason names the note to read: {decision}"
+    );
+    assert!(
+        !decision.contains("The promotion trigger is still hand-waved."),
+        "the reviewer's notes are pointed at, not embedded: {decision}"
+    );
+
+    // The verdict is translated once: a second turn boundary must not re-inject
+    // it, which would loop the agent forever.
+    let allowed = claude_stop(&root);
+
+    assert!(allowed.status.success(), "{}", stderr(&allowed));
+    assert_eq!(stdout(&allowed).trim(), r#"{"continue":true}"#);
+}
+
+/// A command-expansion payload: the common fields, none of the Stop-specific
+/// ones.
+const EXPANSION_PAYLOAD: &str = r#"{"session_id":"SESSION","prompt_id":"p1","transcript_path":"/t.jsonl","cwd":"/x","permission_mode":"default","hook_event_name":"UserPromptExpansion"}"#;
+
+fn session_note_path(root: &Path) -> PathBuf {
+    root.join(".openspec-doc/scratch/_session")
+        .join(format!("{SESSION_ID}.md"))
+}
+
+#[test]
+fn hook_explore_readies_the_note_location_and_says_where_it_is() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+
+    let output = run_with_stdin(
+        &["hook", "explore", "--agent", "claude", "--root", &root],
+        &EXPANSION_PAYLOAD.replace("SESSION", SESSION_ID),
+    );
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    let note = session_note_path(fixture.path());
+    assert!(
+        note.parent().expect("parent").is_dir(),
+        "the note has nowhere to be written"
+    );
+    assert!(
+        !note.exists(),
+        "an empty note breaks the agent's first write: it cannot write over a file it has not read"
+    );
+    let stdout = stdout(&output);
+    assert!(
+        stdout.contains(&format!(".openspec-doc/scratch/_session/{SESSION_ID}.md")),
+        "the agent is not told the resolved path: {stdout}"
+    );
+    assert!(stdout.contains("reviewer"), "{stdout}");
+}
+
+#[test]
+fn hook_explore_leaves_an_exploration_already_written_alone() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+    let args = ["hook", "explore", "--agent", "claude", "--root", &root];
+    let payload = EXPANSION_PAYLOAD.replace("SESSION", SESSION_ID);
+    run_with_stdin(&args, &payload);
+    fs::write(
+        session_note_path(fixture.path()),
+        "# Exploration\n\nKept.\n",
+    )
+    .expect("write note");
+
+    let output = run_with_stdin(&args, &payload);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(
+        fs::read_to_string(session_note_path(fixture.path())).expect("read back"),
+        "# Exploration\n\nKept.\n",
+        "re-entering explore mode cleared the note"
+    );
+}
+
+/// Promotion reads "no note" as "nothing to promote". If an ordinary turn
+/// boundary created one, every open session would promote on the first new
+/// change directory and concurrent sessions would collide on the same path.
+#[test]
+fn hook_stop_creates_no_note_for_a_session_that_never_explored() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+
+    claude_stop(&root);
+
+    assert!(
+        !session_note_path(fixture.path()).exists(),
+        "a session that never explored must not look like one that did"
+    );
+}
+
+/// A claim is a statement about an exploration. Claiming with no note would
+/// otherwise write a note holding nothing but the marker, and promote that.
+#[test]
+fn scratch_claim_without_an_exploration_fails_loudly() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+    write_valid_change(fixture.path(), "add-thing");
+
+    let output = claim(&root, "add-thing");
+
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("has no scratch note"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(
+        !session_note_path(fixture.path()).exists(),
+        "a note was created from nothing"
+    );
+}
+
+#[test]
+fn hook_explore_fails_loudly_on_a_payload_from_the_wrong_agent() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+
+    let output = run_with_stdin(
+        &["hook", "explore", "--agent", "pi", "--root", &root],
+        &EXPANSION_PAYLOAD.replace("SESSION", SESSION_ID),
+    );
+
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).starts_with("error: failed to parse the pi hook payload from stdin"),
+        "{}",
+        stderr(&output)
+    );
+}
+
 #[test]
 fn top_level_help_lists_every_subcommand() {
     let output = run(&["--help"]);
 
     assert!(output.status.success());
     let stdout = stdout(&output);
-    for command in ["summary", "serve", "hook", "comment"] {
+    for command in ["summary", "serve", "hook", "comment", "scratch"] {
         assert!(
             stdout.contains(command),
             "`{command}` missing from:\n{stdout}"
@@ -403,7 +704,7 @@ fn top_level_help_lists_every_subcommand() {
 
 #[test]
 fn subcommand_help_does_not_execute_the_subcommand() {
-    for command in ["summary", "serve", "hook", "comment"] {
+    for command in ["summary", "serve", "hook", "comment", "scratch"] {
         let output = run(&[command, "--help"]);
 
         assert!(output.status.success(), "`{command} --help` should succeed");

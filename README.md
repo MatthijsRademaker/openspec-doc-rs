@@ -85,7 +85,6 @@ database, and every file is readable and hand-editable.
   comments/<change_name>.jsonl            append-only comment stream, change-keyed
   verdicts/_session/<session_id>.jsonl    append-only phase-verdict stream, session-keyed
   verdicts/<change_name>.jsonl            append-only phase-verdict stream, change-keyed
-  scratch-snapshots/                      per-session active-change snapshots, for promotion detection
 ```
 
 Session-keyed files sit one directory deeper than change-keyed ones so a session id can never collide
@@ -102,7 +101,10 @@ in the codebase:
 - **Change-keyed** once the exploration has been formalized into `openspec/changes/<name>/`.
 
 Promotion renames the note and relocates its comment sidecar in lockstep, recording a relocation event
-so anchors made against the old path keep resolving.
+so anchors made against the old path keep resolving. It happens only for a session that has claimed the
+change its exploration became, with `openspec-doc scratch claim --session <id> --change <name>`: a
+change directory appearing says nothing about which session created it, so an unclaimed exploration
+stays at its session key rather than being guessed onto someone else's change.
 
 ## Routes
 

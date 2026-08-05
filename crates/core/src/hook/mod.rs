@@ -4,9 +4,14 @@
 mod adapter;
 mod directive;
 mod event;
+mod explore;
+mod translate;
 
-pub use adapter::{encode_decision, parse_event};
+pub use adapter::{encode_decision, parse_event, parse_session_id};
 pub use directive::{
-    Directive, load_pending, mark_consumed, path as directive_path, sessions, sessions_dir,
+    Directive, ensure_session, load_pending, mark_consumed, path as directive_path, sessions,
+    sessions_dir, write_pending,
 };
 pub use event::{Agent, HookDecision, HookEvent};
+pub use explore::start as start_explore;
+pub use translate::translate;
