@@ -21,15 +21,20 @@ The loop these compose is closed and verified on live sessions across both agent
 
 ## Open
 
-Four changes, all with complete artifacts and no implementation. The MVP column is **my reading, not a
-decision** — the scope call is the owner's.
+Triaged against [the completion criterion](/vision.md#how-the-mvp-is-judged-complete): the reviewer
+comments in the browser, says "move to proposal" in the terminal, and the agent produces a proposal that
+accounts for those comments.
 
-| Change | Tasks | In MVP? | Why it exists |
+That criterion is what decides this table, and it reorders it. What matters is whether the comments reach
+the agent **before** it writes the proposal; whether the reviewer used a terminal does not.
+
+| Change | Tasks | In MVP? | Why |
 |---|---|---|---|
-| `add-comment-thread-actions` | 20 | **Probably yes** | The dashboard can only *create* comments. Replying or closing one means leaving the browser, running `comment list` to recover a UUID, and pasting it into `comment resolve` — in a tool whose whole premise is browser-based review. Also adds the `addressed` status the loop needs for honest closure: today the agent either marks its own work resolved, or nothing records that it responded. `directive-verdict-loop` already refers to this status as a dependency. |
-| `add-dashboard-lifecycle` | 28 | **Probably yes** | The loop has a precondition nobody remembers: `serve` must already be running. Forget it and nothing fails — the explore hook still readies the note, the agent still writes, the turn boundary still checks for a verdict, and there is simply no reviewer at the other end. A silent no-op is worse than an error. |
-| `add-prompt-time-directive-delivery` | 13 | **No** | A directive only arrives when a turn *ends*, so the reviewer's own poke runs blind: you submit a verdict, prompt the agent, and it spends that whole turn unaware before the feedback lands at the end. Real annoyance, observed; the loop works regardless. |
-| `add-change-approval-gate` | 28 | **No** | Nothing requires anyone to say a change is ready before implementation starts. That is a new concept rather than a missing piece of the review loop, and it would change what the tool *is*. |
+| *(new)* point the move-to-proposal directive at the comments | ~3 | **Yes — blocking** | The template names the note and the verdict sidecar but never the comment sidecar, so an agent formalizing an exploration is not told the reviewer's comments exist. Directly defeats the criterion. Smallest fix on this list: one template, one test. No change written yet. |
+| `add-prompt-time-directive-delivery` | 13 | **Yes — blocking** | A directive arrives when a turn *ends*. So "let's move to proposal" produces a turn that writes the proposal and only then hears about the comments. Delivering at `UserPromptSubmit` puts them in context at the start of that turn, which is exactly the interaction the criterion describes. Previously triaged as a nice-to-have; the reframing moved it onto the critical path. |
+| `add-comment-thread-actions` | 20 | **No** — quality of life | Replying or closing a comment means leaving the browser for the CLI. Under the old "no terminal" framing that was MVP-blocking; it no longer is. The `addressed` status it adds is still how an agent records that it responded to a comment rather than marking its own work resolved, and `directive-verdict-loop` already refers to it as a dependency. |
+| `add-dashboard-lifecycle` | 28 | **No** — quality of life | `serve` must already be running or the loop silently does nothing: hooks fire, the agent writes, and there is no reviewer at the other end. A silent no-op is worse than an error, but it is a trap for the operator rather than a break in the loop. |
+| `add-change-approval-gate` | 28 | **No** — post-MVP | Nothing requires anyone to say a change is ready before implementation starts. A genuinely new concept rather than a missing piece of the review loop, and it would change what the tool *is*. |
 
 ## Known defects and debt
 
@@ -41,8 +46,15 @@ decision** — the scope call is the owner's.
 
 ## Suggested order
 
-1. `add-comment-thread-actions` — closes the loop inside the browser, and unblocks the `addressed`
-   status that `directive-verdict-loop` already references.
-2. `add-dashboard-lifecycle` — removes the silent-no-op trap.
-3. Declare the MVP done, or don't, against [the completion criterion](/vision.md).
-4. `add-prompt-time-directive-delivery` and `add-change-approval-gate` as post-MVP work.
+1. **Point the move-to-proposal directive at the comment sidecar.** Hours, not days, and nothing else on
+   this list matters while an agent formalizing an exploration is unaware the comments exist.
+2. **`add-prompt-time-directive-delivery`** — so the comments arrive before the proposal is written rather
+   than after.
+3. **Run the criterion end to end on a live session**: comment in the browser, say "move to proposal" in
+   the terminal, and check the proposal actually accounts for the comments. That check is the MVP call.
+   Nothing below the live run can make it — the same reason the injection risk needed a real session.
+4. Then declare the MVP done, or don't.
+5. `add-comment-thread-actions`, `add-dashboard-lifecycle`, `add-change-approval-gate` afterwards.
+
+Both blocking items are small. The MVP is closer than the 89 open tasks suggest, because most of those
+tasks are not on the criterion's path.

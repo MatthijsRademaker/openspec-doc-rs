@@ -64,23 +64,50 @@ both can call, which is why `core` holds every rule and the agent-specific parts
 
 One criterion, and it is not a test suite:
 
-> A reviewer can watch an agent explore, comment on what it wrote, submit a verdict, and see the agent
-> act on that verdict — without touching a terminal for the review itself, and without the reviewer
-> having to know how any of the plumbing works.
+> The reviewer reads the exploration in the browser and leaves anchored comments where the thinking needs
+> to change. When satisfied, they go to the terminal and tell the agent to move to proposal — and the
+> agent produces a proposal **that accounts for those comments**.
 
-The mechanical half of that is **proven**. Both verdict kinds were driven end to end on real Claude Code
-sessions, one on pi.dev, and claim-based promotion under two concurrent sessions. The risk everything
-was designed around — that an agent would refuse an injected directive as prompt injection, which had
-been observed once — did not recur.
+The terminal is deliberately inside that loop. An earlier draft of this page aimed at "without touching a
+terminal for the review itself", which is both very hard and the wrong target: the reviewer already lives
+in a terminal, and asking them to drive the agent from a browser adds a control surface nobody needs. The
+browser's job is *reading and annotating*, which is the part a terminal is bad at. Driving stays where it
+already works.
 
-What is **not** yet true is the second clause. Two things still require a terminal or insider knowledge:
+What that criterion demands is narrower and sharper than the old one: **the comments have to reach the
+agent before it writes the proposal, not after.**
 
-- Closing out a comment means leaving the browser for the CLI (`add-comment-thread-actions`).
+### What is proven
+
+The transport, and it was the hard part. Both verdict kinds were driven end to end on real Claude Code
+sessions, one on pi.dev, and claim-based promotion under two concurrent sessions. The risk everything was
+designed around — that an agent would refuse an injected directive as prompt injection, which had been
+observed once — did not recur.
+
+### What is not
+
+Two gaps sit directly on the criterion above, and both were found by reading the code against it rather
+than by any test:
+
+**The move-to-proposal directive never points at the comments.** It names the exploration note and the
+verdict sidecar, and mentions comments only as something the claim will relocate afterwards. The
+keep-exploring template names the comment sidecar; this one does not. So an agent formalizing an
+exploration is not told the reviewer's anchored comments exist.
+
+**A directive arrives when a turn ends, not when it starts.** So telling the agent "let's move to
+proposal" in the terminal produces a turn that writes the proposal, and only then receives the directive
+about the comments. The proposal is written blind and has to be revised. Fixing this is
+`add-prompt-time-directive-delivery`, which this criterion moves from a nice-to-have onto the critical
+path.
+
+Two further things need a terminal or insider knowledge, and under this framing they are **no longer
+MVP-blocking** — they are quality of life:
+
+- Closing out a comment means leaving the browser for the CLI (`add-comment-thread-actions`), though the
+  `addressed` status it adds is how an agent records that it responded to a comment while proposing.
 - If `serve` is not already running, the whole loop silently does nothing (`add-dashboard-lifecycle`).
 
-*Inference, not evidence:* those two are what stand between "the loop works" and "the loop is usable by
-someone who did not build it". Whether they are inside the MVP boundary is the open scope question, and
-it is yours to answer — see [Roadmap](/roadmap.md).
+See [Roadmap](/roadmap.md) for how the open changes triage against this.
 
 ## Principles that constrain the design
 
