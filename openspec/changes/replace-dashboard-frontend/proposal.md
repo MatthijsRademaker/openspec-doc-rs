@@ -22,6 +22,8 @@ Beyond those: the composer reveals itself hundreds of lines below where the sele
 - **A header shows the standing verdict and whether it has been delivered,** read from `directives/_session/<id>.json`, which records it and which nothing has ever surfaced.
 - **Live artifact updates**, with the refresh offered while a composer has unsent text and applied silently once it does not.
 - **Dark mode**, via shadcn's theming rather than hand-written media queries.
+- **Thread actions arrive from `add-comment-thread-actions`**: reply, resolve and reopen per comment, plus the scope's open/addressed/resolved counts. Its interface half targeted `page/review.rs`, which this change deletes, so those requirements move here rather than being built into a file scheduled for removal. No control marks a comment `addressed` — that asserts work an agent did.
+- **The index is rebuilt, not dropped.** `crates/server/src/page/index.rs` is inside the directory this change deletes, and the index's content is a live requirement of `dashboard-html-views` that shipped in `add-session-titles` — titles, identifiers, last-modified times, open-comment counts and standing verdicts per row. It is the only navigation into every page this change rewrites. It was absent from this proposal entirely, which is how working behaviour gets deleted by a change that never mentions it.
 - **Built assets are committed and embedded in the binary** with `rust-embed`, so `cargo install` needs no Node toolchain.
 
 ## Capabilities
@@ -50,7 +52,7 @@ None. This replaces how two existing capabilities are delivered.
 
 - **`extend-comment-model` must land first.** The `+` composer writes an unanchored comment, which the model cannot currently represent.
 - **The `addressed` status must exist.** After the agent writes a proposal, comments are still `open` — the agent does not resolve them, deliberately and by three separate rules. Without `addressed` there is no state meaning "the agent claims it handled this", and the promoted change page has nothing to highlight. That status comes from `add-comment-thread-actions`, which must be re-scoped or merged before this starts.
-- **`add-comment-thread-actions` is partly invalidated by this change.** Its per-comment reply/resolve/reopen controls target `crates/server/src/page/review.rs`, a file being deleted. Its core and CLI half is a prerequisite; its UI half is absorbed here.
+- **`add-comment-thread-actions` has been re-scoped to its core and CLI half**, which is a prerequisite of this change rather than a competitor to it. Its interface half — thread controls and status counts — is now specified here, in this change's `dashboard-html-views` delta, and removed from there. Until this lands, closing a comment stays a terminal operation.
 - **`add-change-approval-gate` carries a `dashboard-html-views` delta** with the same problem, and its approve control becomes the primary slot of the floating bar on change pages.
 - The `dashboard-html-views` spec does not yet exist in `openspec/specs/` — it lives as a delta in the unarchived `add-dashboard-html-views`. Both dependent changes inherit an ordering constraint on that; since this change rewrites the spec wholesale, that constraint is worth re-examining rather than inheriting.
 - **Scheduled after MVP agreement.** None of this is on the MVP's completion criterion, which is that comments reach the agent before it writes the proposal.

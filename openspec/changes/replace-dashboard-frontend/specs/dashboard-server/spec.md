@@ -24,6 +24,19 @@ A client that cannot tell the two apart must either refetch everything on every 
 - **WHEN** a comment is recorded against a scope
 - **THEN** the emitted event SHALL indicate that the review state changed
 
+### Requirement: The index route serves the interface
+The system SHALL serve the dashboard interface at `/`, and SHALL serve the data backing its index — every discovered session and change with the fields the index shows — from a JSON endpoint.
+
+The route table otherwise moves wholesale from HTML pages to a JSON API plus static assets, and the index is the one page not enumerated in that move. Naming it here is what stops it being dropped along with the server-rendered pages it currently shares a module with.
+
+#### Scenario: The root serves the interface
+- **WHEN** a request is made to `/`
+- **THEN** the system SHALL serve the interface
+
+#### Scenario: Index data is available as JSON
+- **WHEN** the index data endpoint is requested
+- **THEN** the system SHALL respond with every discovered session and change, each with its title where one exists, its identifier, its last-modified time, its open-comment count, and its standing verdict
+
 ## MODIFIED Requirements
 
 ### Requirement: Session and change scoped routes

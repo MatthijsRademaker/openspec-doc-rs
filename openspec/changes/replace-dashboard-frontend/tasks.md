@@ -2,8 +2,9 @@
 
 - [ ] 0.1 Confirm `extend-comment-model` has landed — the `+` composer writes an unanchored comment and the model must be able to hold one
 - [ ] 0.2 Confirm the `addressed` status exists, from a re-scoped or merged `add-comment-thread-actions`. Without it a promoted change page has no state meaning "the agent claims it handled this", and the highlight this change adds has nothing to show.
-- [ ] 0.3 Re-scope `add-comment-thread-actions` and `add-change-approval-gate`, both of which carry `dashboard-html-views` deltas targeting `crates/server/src/page/review.rs` — a file this change deletes
-- [ ] 0.4 Confirm the MVP directive fix has landed separately. This change edits the same templates; it must not be the thing that carries a blocking MVP repair.
+- [x] 0.3 Re-scope `add-comment-thread-actions`, whose `dashboard-html-views` delta targeted `crates/server/src/page/review.rs` — a file this change deletes. **Done:** it is now core and CLI only, and its interface requirements live in this change's delta.
+- [ ] 0.4 `add-change-approval-gate` carries the same collision — two `dashboard-html-views` requirements against the same deleted file. It is last in priority and may never be built, so it is left alone rather than re-scoped speculatively. If it is ever started, do this first.
+- [x] 0.5 Confirm the MVP directive fix has landed separately. **Done:** `add-prompt-time-directive-delivery` archived 2026-08-06, so this change is not carrying a blocking MVP repair.
 
 ## 1. Blocks from markdown
 
@@ -84,6 +85,16 @@
 - [ ] 10.2 Commit `dist/`
 - [ ] 10.3 Add a CI check that rebuilds the frontend and fails if the committed assets differ. Without it, a stale `dist/` ships a frontend that does not match the source, which is the failure mode this distribution choice creates.
 - [ ] 10.4 Confirm `cargo install --path .` produces a working dashboard on a machine with no Node
+
+## 10a. Thread actions and the index
+
+Both arrive from elsewhere: the first re-scoped out of `add-comment-thread-actions`, the second a live requirement whose implementation this change deletes.
+
+- [ ] 10a.1 Offer reply, resolve and reopen per comment, selected by current status, and no control that marks one `addressed`
+- [ ] 10a.2 Show the scope's open/addressed/resolved counts, and update them over the existing event channel rather than on reload
+- [ ] 10a.3 Rebuild the index: every discovered session and change, each row carrying title where one exists, identifier, last-modified time, open-comment count, and standing verdict. `crates/server/src/page/index.rs` and its title derivation in `crates/core/src/scratch/title.rs` shipped in `add-session-titles`; the core half is reusable as-is and only the rendering is replaced.
+- [ ] 10a.4 Serve the index at `/` with a JSON endpoint behind it. Confirm no scope becomes unreachable — the index is the only navigation into every page this change rewrites.
+- [ ] 10a.5 Tests: the index lists every discovered scope with its fields; a titled session shows its title and a promoted one the change it became; a thread action is reflected in a second tab; no interface path can set `addressed`.
 
 ## 11. Specs and docs
 

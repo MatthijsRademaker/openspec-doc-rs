@@ -12,23 +12,15 @@
 - [ ] 2.2 Include current status in `comment list` output for all three statuses
 - [ ] 2.3 Add tests for both new subcommands, including the unknown-comment-id failure
 
-## 3. Thread controls on the page
+## 3. Close the agent's half of the loop
 
-- [ ] 3.1 Render reply, resolve, and reopen controls per comment in `crates/server/src/page/review.rs`, selected by the comment's current status
-- [ ] 3.2 Add the POST routes behind them in `crates/server/src/routes.rs`, for both session and change scopes
-- [ ] 3.3 Assert in a test that no rendered control moves a comment to `addressed`
-- [ ] 3.4 Render the scope's open/addressed/resolved counts on both page kinds
-- [ ] 3.5 Confirm the existing SSE subscription picks up status and reply changes with no new client JS — the sidecar write is already inside the watched tree
-- [ ] 3.6 Add tests: a resolved comment renders reopen and not resolve; a status change is pushed to the scope's event stream; the review fragment reflects a status change made after the page was served
+- [ ] 3.1 Update the verdict-to-directive reason templates from `add-directive-verdict-loop` to instruct reply-and-mark-addressed, never resolve
+- [ ] 3.2 Add a test asserting no template instructs the agent to resolve a comment
 
-## 4. Close the agent's half of the loop
+## 4. Verification
 
-- [ ] 4.1 Update the verdict-to-directive reason templates from `add-directive-verdict-loop` to instruct reply-and-mark-addressed, never resolve
-- [ ] 4.2 Add a test asserting no template instructs the agent to resolve a comment
-- [ ] 4.3 If `add-directive-verdict-loop` groups 1–2 have not landed, drop 4.1 and 4.2 and confirm the decision is recorded in that change's task 2.1 instead
+All from the terminal. This change no longer touches the browser: the interface half moved to `replace-dashboard-frontend`, which is deleting the files it would have edited.
 
-## 5. Manual verification
-
-- [ ] 5.1 Open a change page in two tabs; resolve a comment in one and confirm the other reflects the new status and updated counts without a reload
-- [ ] 5.2 Reply to a comment from the page and confirm the reply renders in the thread
-- [ ] 5.3 Reopen a resolved comment and confirm the control set flips back and the counts follow
+- [ ] 4.1 Walk a comment open → addressed → resolved → reopened with `comment list` between each, confirming the reported status and the retained history
+- [ ] 4.2 Confirm the status counts are correct for a scope holding comments in all three states, and zero for a scope with no sidecar
+- [ ] 4.3 Confirm no directive template instructs the agent to resolve a comment, by reading the text `hook prompt` emits for each verdict kind rather than by reading the source

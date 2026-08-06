@@ -100,6 +100,55 @@ Resolving is the reviewer accepting the work. An interface that showed the agent
 - **WHEN** a comment has been marked addressed by the agent
 - **THEN** the system SHALL show the agent's reply and SHALL offer both accepting it as resolved and reopening it
 
+### Requirement: A comment thread can be acted on from the interface
+The system SHALL offer, for each comment, controls to reply to it, to resolve it, and to reopen it, selected by the comment's current status. It SHALL NOT offer a control that marks a comment `addressed`.
+
+Creating a comment is the only thread operation the interface has ever supported, so closing one means leaving the browser, running `comment list` to recover a UUID, and pasting it into `comment resolve` — in a tool whose premise is browser-based review. These requirements arrive from `add-comment-thread-actions`, whose interface half targeted files this change deletes.
+
+`addressed` is excluded deliberately and is not an oversight: it asserts work an agent did, not a judgement the reviewer makes. An interface control for it would let the reviewer make the agent's claim on its behalf.
+
+#### Scenario: An open comment offers reply and resolve
+- **WHEN** a comment's current status is `open`
+- **THEN** the interface SHALL offer a reply control and a resolve control for it
+
+#### Scenario: A resolved comment offers reopen
+- **WHEN** a comment's current status is `resolved`
+- **THEN** the interface SHALL offer a reopen control for it and SHALL NOT offer a resolve control
+
+#### Scenario: No control marks a comment addressed
+- **WHEN** the interface renders any comment in any status
+- **THEN** it SHALL NOT offer a control that moves that comment to `addressed`
+
+#### Scenario: A thread action in one tab appears in another
+- **WHEN** a reply or status change is submitted while a second browser tab has the same scope open
+- **THEN** the second tab SHALL reflect it without the user reloading the page
+
+### Requirement: The scope's comment counts are visible
+The system SHALL show, for the scope being reviewed, how many of its comments are `open`, `addressed`, and `resolved`.
+
+This is what tells a reviewer whether there is anything left to act on without reading every thread, and it is the precondition `add-change-approval-gate` consumes.
+
+#### Scenario: Counts are shown for a scope with comments in several states
+- **WHEN** a scope holds comments that are open, addressed, and resolved
+- **THEN** the interface SHALL show each count
+
+#### Scenario: Counts follow a status change without a reload
+- **WHEN** a comment's status changes while the scope is open in a browser
+- **THEN** the shown counts SHALL update without the user reloading the page
+
+### Requirement: The index survives the replacement
+The system SHALL continue to present an index of sessions and changes carrying, per row, the scope's title where one exists, its identifier, when its artifacts were last modified, how many of its comments are open, and its standing verdict.
+
+The index is the only navigation into every other page, and its content is a requirement this capability already carries — shipped, not proposed. Replacing the server-rendered pages without re-providing it would delete working behaviour and the sole route to the pages this change is rewriting. It is called out because the rest of this change is scoped in terms of session and change pages, and an index that is merely not mentioned is an index that does not get built.
+
+#### Scenario: Every discovered scope is reachable from the index
+- **WHEN** the interface is opened at its root
+- **THEN** it SHALL list every discovered session and change, each linking to its own page
+
+#### Scenario: Index rows keep the fields the previous interface showed
+- **WHEN** the index renders a scope
+- **THEN** it SHALL show that scope's title where one exists, its identifier, its last-modified time, its open-comment count, and its standing verdict
+
 ## REMOVED Requirements
 
 ### Requirement: Select-to-comment interaction
