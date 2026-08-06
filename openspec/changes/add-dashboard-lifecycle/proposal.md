@@ -7,12 +7,15 @@ The predecessor tool already tried to fix this the wrong way, and `.pi/prompts/o
 ## What Changes
 
 - The dashboard is started by the hooks, not by hand: `hook explore` starts it when an exploration begins, and `hook stop` keeps it alive at every subsequent turn boundary of a session that has something to review.
+- `hook explore` opens the browser at **that session's own page**, and registers the session so the page exists. A session is discoverable only if it has a directive record, and only `hook stop` writes one today — so without this the tab opens on a 404, and the index does not list the session either. Registration moves to where an exploration actually starts, and stops being unconditional at the turn boundary, so a directive record comes to mean *this session explored* rather than *a turn ended in this project*.
 - A running dashboard is found by asking the network, not by reading a file. `serve` gains an identity route reporting the canonical project root it serves and its pid; discovery probes a small port range and reuses the server whose root matches.
 - `serve` binds `4321` by default, falling forward through `4321`–`4330`, replacing the current ephemeral `--port 0` default. An ephemeral port cannot be discovered by a later process, which is the whole problem.
 - A hook-started dashboard exits once nothing needs it: no page subscribed *and* no hook heartbeat for 30 minutes. A dashboard started by hand does not, because it was asked for.
 - A dashboard that fails to start says so: the spawned server's output goes to `.openspec-doc/serve.log`, and a start that does not come up is reported through the hook rather than swallowed.
 
-Deliberately **not** in scope: no state file recording the port or pid, no `serve stop`, no session-exit hook, no reference counting, and no new pi extension code. The reasoning for each is in `design.md`.
+Deliberately **not** in scope: no state file recording the port or pid, no session-exit hook, no reference counting, and no new pi extension code. The reasoning for each is in `design.md`.
+
+Listing and stopping running dashboards is **`add-serve-process-control`**, sequenced immediately after this change. It was originally excluded here alongside the state file, which conflated two things: the state file is rejected on its merits, but a list-and-kill command built on the identity probe needs no state at all. It is separated rather than folded in because this change is already large and carries the riskiest live verification in the project, and because the dependency runs one way — that change consumes the discovery module this one introduces.
 
 ## Capabilities
 

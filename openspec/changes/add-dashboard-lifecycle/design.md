@@ -44,6 +44,20 @@ Nothing to lose to `git clean`, `rm -rf`, a reboot, or a `SIGKILL`. `Project::at
 
 The cost is that `--port` can no longer default to `0`. An OS-chosen ephemeral port is undiscoverable by a later process by construction, which is precisely the property that broke the state-file design. `4321` is the base because `.pi/prompts/opsx-review.md` already uses it. The range is bounded at ten; exhausting it is a loud, diagnosable error, which is the correct outcome — unlike a silent eleventh duplicate.
 
+### Listing and killing dashboards needs no state either, and that is why it was wrongly excluded
+
+The original scope line excluded "no state file recording the port or pid, no `serve stop`" as one item. That conflated two things. The state file is rejected on the argument above and stays rejected. A list-and-kill command is a different proposition, because everything it needs is already being built here:
+
+- `/identity` reports the canonical root and the pid. The root is the working directory an operator wants to see; the pid is what makes stopping one possible.
+- The port range is bounded and **global to the machine** — `4321`–`4330` on localhost is not per-project — so probing all ten enumerates every dashboard running anywhere, which is exactly what "list them all" means.
+- The probe is the same fixed localhost `GET` this change has to write regardless.
+
+So `serve list` is ten probes and a table, and `serve kill` is that plus a signal. Nothing on disk, nothing to lose to `git clean`, correct after a reboot or a `SIGKILL`. It is the complement of stateless discovery rather than an exception to it.
+
+Two limits it inherits and must state rather than hide: a dashboard started by hand outside the range — `--port 9999` — is invisible to it; and a pid learned over a socket races a dying process, so the command must re-probe and report what is actually gone rather than inferring success from having sent a signal.
+
+It lands in `add-serve-process-control`, immediately after this change, because this one is already large and carries the riskiest live verification in the project. The dependency runs one way, so nothing is built twice.
+
 ### The concurrent-start race resolves itself
 
 Two sessions ending simultaneously both find 4321 free and both spawn. One loses the bind and exits with a bind error into its own log; the other serves. Both hooks then poll `/identity` on that port, and both see a dashboard for their root. The loser of the race is not an error path that needs handling — the post-spawn poll checks *that a dashboard is there*, not *that our child is the one that put it there*.

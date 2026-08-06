@@ -18,10 +18,13 @@
 
 ## 3. Wiring the hooks
 
-- [ ] 3.1 `hook explore`: ensure a dashboard, and open a browser only when one was actually started. Keep the note instruction on stdout as the command's primary output; the dashboard URL is a diagnostic and belongs on stderr with the rest.
-- [ ] 3.2 `hook stop`: ensure a dashboard only when the session has review material — its scratch note exists, or `scratch::promoted_to` names a change. Never open a browser.
-- [ ] 3.3 Report a failure to ensure a dashboard and carry on to the verdict check, the way `report_promotion` already does. A dashboard that would not start must not cost the session its review feedback.
-- [ ] 3.4 Tests: a session with a note ensures a dashboard, a session with neither note nor promoted change does not, `hook explore` opens a browser on a start and not on a reuse, and `hook stop` never does. Inject the ensure step rather than starting real servers from the hook tests.
+- [ ] 3.1 `hook explore`: register the session before anything else, by writing the same pending-nothing directive record `hook stop` writes. Without it the page opened in 3.3 is a 404 — a session is discoverable only if it has a directive record, and `hook explore` writes none today. Verified: with the note present, `GET /sessions/<id>` is 404 before the record exists and 200 after, and nothing else changes.
+- [ ] 3.2 Make registration at `hook stop` conditional on the same review-material predicate used in 3.5, so a directive record comes to mean *this session began an exploration* rather than *a turn ended in this project*. Today every session is registered: this repo has four records and three notes. Note in the change that existing records for never-explored sessions are not migrated — `.openspec-doc/` is local and disposable, so deleting them is the answer, but it must be said rather than left as a silent inconsistency.
+- [ ] 3.3 `hook explore`: ensure a dashboard, and open a browser only when one was actually started — at that session's own page, `/sessions/<id>`, not the index. The index would not list it either, so opening there hides the same problem rather than avoiding it. Keep the note instruction on stdout as the command's primary output; the dashboard URL is a diagnostic and belongs on stderr with the rest.
+- [ ] 3.4 Check that registering earlier does not disturb the two paths that already assume they own the directive file — `promote::check` and `hook stop`'s own registration. The invariant is already tested (`registering_a_session_does_not_overwrite_a_directive_it_already_has`); confirm it covers this ordering rather than assuming it does.
+- [ ] 3.5 `hook stop`: ensure a dashboard only when the session has review material — its scratch note exists, or `scratch::promoted_to` names a change. Never open a browser.
+- [ ] 3.6 Report a failure to ensure a dashboard and carry on to the verdict check, the way `report_promotion` already does. A dashboard that would not start must not cost the session its review feedback.
+- [ ] 3.7 Tests: registration happens at explore time and the session page resolves immediately after; a never-explored session is not registered; a session with a note ensures a dashboard, a session with neither note nor promoted change does not, `hook explore` opens a browser at that session's page on a start and not on a reuse, and `hook stop` never does. Inject the ensure step rather than starting real servers from the hook tests.
 
 ## 4. Live verification
 
