@@ -157,6 +157,16 @@ pub enum HookCommand {
         agent: Agent,
     },
 
+    /// Deliver any standing review directive for the session named on stdin as
+    /// context for the turn the submitted prompt starts; prints nothing when
+    /// there is none, and never fails in a way that could refuse the prompt
+    Prompt {
+        /// Coding agent whose hook wire format to speak [possible values:
+        /// claude, pi]
+        #[arg(long, value_name = "AGENT")]
+        agent: Agent,
+    },
+
     /// Start an exploration for the session named on stdin: create its scratch
     /// note and print, for the agent to act on, where to keep the exploration
     Explore {

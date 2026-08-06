@@ -115,9 +115,13 @@ pub fn reason(key: &ScopeKey, verdict: Verdict) -> Result<String, Error> {
             let note = scratch::session_relative(session_id)?;
             Ok(format!(
                 "{ATTRIBUTION}: the reviewer judged this exploration ready to formalize. The \
-                 exploration is at `{note}` and the verdict, with any parting notes, is the \
-                 last record in `{verdicts}`. Turn what is in that note into an OpenSpec \
-                 change under `openspec/changes/`. Once that directory exists, run \
+                 exploration is at `{note}`, the verdict with any parting notes is the last \
+                 record in `{verdicts}`, and the comments they anchored to the exploration are \
+                 in `{comments}` — `openspec-doc comment list --session {session_id}` prints \
+                 them readably. Turn what is in that note into an OpenSpec change under \
+                 `openspec/changes/`, and account for every open comment in what you write: a \
+                 passage the reviewer marked is one they want changed before it is formalized. \
+                 Once that directory exists, run \
                  `openspec-doc scratch claim --session {session_id} --change <the change you \
                  created>` — that claim is what moves this exploration and its review \
                  comments onto the change; without it the note stays at its session path."
@@ -251,6 +255,28 @@ mod tests {
             "{reason}"
         );
         assert!(reason.contains("openspec/changes/"), "{reason}");
+    }
+
+    /// The note and the verdict say what the reviewer concluded; the comment
+    /// sidecar says which passages they wanted changed. Naming the first two and
+    /// not the third sends the agent to formalize an exploration without telling
+    /// it that anchored feedback on that exploration exists.
+    #[test]
+    fn a_move_to_proposal_verdict_points_at_the_reviewers_comments() {
+        let reason = reason(&session_key(), Verdict::MoveToProposal).expect("reason");
+
+        assert!(
+            reason.contains(".openspec-doc/comments/_session/session-a.jsonl"),
+            "{reason}"
+        );
+        assert!(
+            reason.contains(&format!("openspec-doc comment list --session {SESSION}")),
+            "{reason}"
+        );
+        assert!(
+            reason.contains("open comment"),
+            "the comments are named but not asked for: {reason}"
+        );
     }
 
     /// Nothing else promotes the note, so the directive that asks for the change

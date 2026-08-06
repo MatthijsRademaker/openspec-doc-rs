@@ -571,6 +571,210 @@ fn hook_stop_turns_a_dashboard_verdict_into_the_directive_it_injects() {
     assert_eq!(stdout(&allowed).trim(), r#"{"continue":true}"#);
 }
 
+/// A prompt-submission payload: the common fields plus the prompt itself, none
+/// of the Stop-specific ones.
+const PROMPT_PAYLOAD: &str = r#"{"session_id":"SESSION","prompt_id":"p1","transcript_path":"/t.jsonl","cwd":"/x","permission_mode":"default","hook_event_name":"UserPromptSubmit","prompt":"carry on"}"#;
+
+/// `hook prompt` for `SESSION_ID`, speaking Claude Code's wire format.
+fn claude_prompt(root: &str) -> Output {
+    run_with_stdin(
+        &["hook", "prompt", "--agent", "claude", "--root", root],
+        &PROMPT_PAYLOAD.replace("SESSION", SESSION_ID),
+    )
+}
+
+/// The reviewer submits a verdict while the agent is idle, then pokes the
+/// session. That poke is the turn the feedback belongs to, so it has to arrive
+/// with the prompt rather than at the end of the turn the prompt starts.
+#[test]
+fn hook_prompt_delivers_a_standing_verdict_as_context_for_the_prompt() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+    write_session_note(fixture.path(), "# Exploration\n");
+    write_verdict(
+        fixture.path(),
+        &format!("_session/{SESSION_ID}.jsonl"),
+        "keep-exploring",
+        "The promotion trigger is still hand-waved.",
+    );
+
+    let output = claude_prompt(&root);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    let stdout = stdout(&output);
+    assert!(
+        stdout.contains("openspec-doc dashboard"),
+        "the context says where it came from: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(".openspec-doc/scratch/_session/{SESSION_ID}.md")),
+        "the context names the note to read: {stdout}"
+    );
+    assert!(
+        !stdout.contains(r#""decision""#),
+        "prompt context is plain text, not a stop decision: {stdout}"
+    );
+}
+
+#[test]
+fn hook_prompt_delivers_a_directive_already_waiting() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+    write_pending_directive(fixture.path(), SESSION_ID, REASON);
+
+    let output = claude_prompt(&root);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(stdout(&output).trim(), REASON);
+}
+
+#[test]
+fn hook_prompt_emits_nothing_when_the_session_has_no_feedback_outstanding() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+
+    let output = claude_prompt(&root);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        output.stdout.is_empty(),
+        "an ordinary prompt must add no context: {}",
+        stdout(&output)
+    );
+}
+
+/// Promotion looks for change directories that appear as a result of agent work,
+/// so the turn boundary is where it belongs. Running it here would put an
+/// `openspec validate` subprocess in front of every prompt.
+#[test]
+fn hook_prompt_does_not_promote_the_scratch_note() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+    write_session_note(fixture.path(), "# Exploration\n");
+    write_valid_change(fixture.path(), "add-thing");
+    assert!(claim(&root, "add-thing").status.success());
+
+    let output = claude_prompt(&root);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        !stderr(&output).contains("promoted") && !stderr(&output).contains("openspec validate"),
+        "the prompt hook ran the promotion check: {}",
+        stderr(&output)
+    );
+    assert!(
+        session_note_path(fixture.path()).is_file(),
+        "the note was promoted at prompt time"
+    );
+}
+
+/// The two delivery points share one directive. Prompt time wins the race, and
+/// the turn boundary that follows must find nothing left to inject — a second
+/// delivery would block a turn over feedback the agent already has.
+#[test]
+fn a_directive_delivered_with_a_prompt_does_not_block_the_turn_end() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+    write_pending_directive(fixture.path(), SESSION_ID, REASON);
+
+    let delivered = claude_prompt(&root);
+    assert_eq!(stdout(&delivered).trim(), REASON);
+
+    let allowed = claude_stop(&root);
+
+    assert!(allowed.status.success(), "{}", stderr(&allowed));
+    assert_eq!(stdout(&allowed).trim(), r#"{"continue":true}"#);
+}
+
+#[test]
+fn a_directive_delivered_at_a_turn_boundary_leaves_the_next_prompt_nothing() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+    write_pending_directive(fixture.path(), SESSION_ID, REASON);
+
+    let blocked = claude_stop(&root);
+    assert!(stdout(&blocked).contains(REASON), "{}", stdout(&blocked));
+
+    let output = claude_prompt(&root);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        output.stdout.is_empty(),
+        "the same directive was delivered twice: {}",
+        stdout(&output)
+    );
+}
+
+/// A failure delivered the prompt anyway, said so on stderr, and added no
+/// context. `hook prompt` sits in front of the human's own input, so a failure
+/// here must cost the feedback and never the ability to type — the deliberate
+/// opposite of `hook stop`, which propagates and exits non-zero.
+fn assert_fails_soft(output: &Output, case: &str) {
+    assert!(
+        output.status.success(),
+        "{case} refused the reviewer's prompt: {}",
+        stderr(output)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "{case} emitted context anyway: {}",
+        stdout(output)
+    );
+    assert!(
+        stderr(output).contains("could not deliver review feedback"),
+        "{case} failed silently: {}",
+        stderr(output)
+    );
+}
+
+#[test]
+fn hook_prompt_survives_a_corrupt_directive_record() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+    let path = directive_path(fixture.path(), SESSION_ID);
+    fs::create_dir_all(path.parent().unwrap()).expect("create directives dir");
+    fs::write(&path, "{ not json").expect("write directive");
+
+    assert_fails_soft(&claude_prompt(&root), "a corrupt directive record");
+}
+
+#[test]
+fn hook_prompt_survives_a_corrupt_verdict_sidecar() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+    write_verdict(
+        fixture.path(),
+        &format!("_session/{SESSION_ID}.jsonl"),
+        "keep-exploring",
+        "Fine.",
+    );
+    fs::write(
+        fixture
+            .path()
+            .join(".openspec-doc/verdicts/_session")
+            .join(format!("{SESSION_ID}.jsonl")),
+        "{ not json\n",
+    )
+    .expect("corrupt the verdict");
+
+    assert_fails_soft(&claude_prompt(&root), "a corrupt verdict sidecar");
+}
+
+/// `hook stop` fails loudly on this. Here the same mistake must not be what
+/// stops the reviewer from typing.
+#[test]
+fn hook_prompt_survives_a_payload_from_the_wrong_agent() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+
+    let output = run_with_stdin(
+        &["hook", "prompt", "--agent", "pi", "--root", &root],
+        &PROMPT_PAYLOAD.replace("SESSION", SESSION_ID),
+    );
+
+    assert_fails_soft(&output, "a payload from the wrong agent");
+}
+
 /// A command-expansion payload: the common fields, none of the Stop-specific
 /// ones.
 const EXPANSION_PAYLOAD: &str = r#"{"session_id":"SESSION","prompt_id":"p1","transcript_path":"/t.jsonl","cwd":"/x","permission_mode":"default","hook_event_name":"UserPromptExpansion"}"#;

@@ -40,6 +40,7 @@ fn run() -> Result<(), Error> {
         } => serve::run(project, host, port, no_open),
         Command::Hook { command } => match command {
             HookCommand::Stop { agent } => hook::stop(project, agent),
+            HookCommand::Prompt { agent } => hook::prompt(project, agent),
             HookCommand::Explore { agent } => hook::explore(project, agent),
         },
         Command::Comment { command } => match command {
