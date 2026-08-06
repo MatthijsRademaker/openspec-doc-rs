@@ -1,7 +1,5 @@
-## Purpose
+## MODIFIED Requirements
 
-The `openspec-doc` binary's command surface: its subcommands and help text, the global `--root` option that resolves a project root for every subcommand, and the `summary` subcommand that reports a project's discovered structure.
-## Requirements
 ### Requirement: Command surface and help text
 The system SHALL provide an `openspec-doc` binary with a documented top-level `--help` output listing all subcommands (`summary`, `serve`, `hook`, `comment`, `scratch`), and each subcommand SHALL provide its own `--help` output.
 
@@ -36,10 +34,9 @@ Root resolution happens before subcommand dispatch, so without this exception it
 
 The usual status for a usage error is 2, and Claude Code treats a `UserPromptSubmit` hook exiting 2 as a block. A typo in a hook command string would otherwise refuse every prompt in the session and return usage text in place of an answer.
 
-### Requirement: Summary subcommand
-The system SHALL provide a `summary` subcommand that prints the resolved project root, active change names, archived change names, and current spec names using the `project-scanner` capability.
+## REMOVED Requirements
 
-#### Scenario: Summary reports discovered project structure
-- **WHEN** a user runs `openspec-doc summary --root <path>` against a valid OpenSpec project
-- **THEN** the system SHALL print the resolved root path, the list of active change names, the list of archived change names, and the list of current spec names
+### Requirement: Placeholder subcommands fail loudly
+**Reason**: Scaffolding for a phase that ended. `serve`, `hook`, and `comment` are all implemented, so the requirement describes behaviour the system no longer has and must not have — a "not yet implemented" message from any of them would now be a defect. It survived because nothing prompts a spec to drop a requirement once the thing it guarded is built.
 
+**Migration**: None. Each subcommand's behaviour is specified by its own capability: `dashboard-server`, `agent-hook-bridge`, `anchored-comments`, `scratch-note-workflow`.
