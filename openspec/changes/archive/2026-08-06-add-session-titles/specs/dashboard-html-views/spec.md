@@ -9,13 +9,21 @@ An index of bare session ids gives a reviewer nothing to choose between. Every f
 - **WHEN** the index renders a session whose scratch note has a level-one heading
 - **THEN** the system SHALL show that heading as the row's primary text and the session id as secondary text on the same row
 
+#### Scenario: A promoted session is named by the change it became
+- **WHEN** the index renders a session whose note has been promoted away, leaving a redirect with no heading to title it from
+- **THEN** the system SHALL show the change that exploration became as the row's primary text, and SHALL still link to the session's own page
+
 #### Scenario: An untitled session falls back to its id
-- **WHEN** the index renders a session with no title
+- **WHEN** the index renders a session with neither a title nor a promotion
 - **THEN** the system SHALL show the session id as the row's primary text and SHALL still link to that session's page
 
 #### Scenario: Review state is visible without opening the page
 - **WHEN** the index renders a scope with open comments or a recorded verdict
 - **THEN** the system SHALL show the open-comment count and the standing verdict on that scope's row
+
+#### Scenario: The session that spoke to the reviewer last is marked
+- **WHEN** the index renders sessions and one of them has the most recent directive or verdict sidecar activity
+- **THEN** the system SHALL mark that session as the most recently active one, and SHALL NOT describe it as live
 
 #### Scenario: Links are keyed on the identifier
 - **WHEN** the index renders any scope

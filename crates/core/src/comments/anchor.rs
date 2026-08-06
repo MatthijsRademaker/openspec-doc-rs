@@ -200,7 +200,7 @@ fn find_heading_offset(heading_path: &[String], markdown: &str) -> Option<usize>
 
 /// The level and title of an ATX heading line, or `None` when the line is not
 /// one. The title is trimmed; a heading of seven or more `#` is not a heading.
-fn parse_heading(line: &str) -> Option<(usize, &str)> {
+pub(crate) fn parse_heading(line: &str) -> Option<(usize, &str)> {
     let level = line.bytes().take_while(|byte| *byte == b'#').count();
     if !(1..=6).contains(&level) {
         return None;

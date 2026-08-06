@@ -48,8 +48,17 @@ pub fn change_path(root: &Path, name: &str) -> PathBuf {
 
 /// The session's scratch note contents, or `None` when it has no note yet.
 pub fn read_session(root: &Path, session_id: &str) -> Result<Option<String>, Error> {
-    let path = session_path(root, session_id)?;
+    read(session_path(root, session_id)?)
+}
 
+/// The promoted note of change `name`, or `None` when the change has none —
+/// a change formalized without an exploration behind it never had a note.
+pub fn read_change(root: &Path, name: &str) -> Result<Option<String>, Error> {
+    read(change_path(root, name))
+}
+
+/// What is written at `path`, or `None` when nothing is.
+fn read(path: PathBuf) -> Result<Option<String>, Error> {
     match fs::read_to_string(&path) {
         Ok(contents) => Ok(Some(contents)),
         Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(None),

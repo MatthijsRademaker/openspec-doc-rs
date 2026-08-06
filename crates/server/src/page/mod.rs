@@ -8,23 +8,14 @@
 //! step, per this change's MVP scope.
 
 mod artifact;
+mod index;
 mod review;
 mod scoped;
 mod script;
 
+pub use index::index;
 pub use review::{Anchored, Review, fragment as review_fragment};
 pub use scoped::{change, session};
-
-/// The landing page: every discovered session and active change, linked.
-pub fn index(sessions: &[String], changes: &[String]) -> String {
-    let body = format!(
-        "<h1>openspec-doc</h1>\n{}\n{}",
-        list("Sessions", "sessions", sessions),
-        list("Changes", "changes", changes)
-    );
-
-    document("openspec-doc", &body, None)
-}
 
 pub fn not_found() -> String {
     document(
@@ -54,24 +45,6 @@ pub fn internal_error() -> String {
         "<h1>Error</h1>\n<p>The request failed; see the <code>openspec-doc serve</code> output.</p>",
         None,
     )
-}
-
-fn list(heading: &str, prefix: &str, keys: &[String]) -> String {
-    if keys.is_empty() {
-        return format!("<h2>{heading}</h2>\n<p>None discovered.</p>");
-    }
-
-    let items: String = keys
-        .iter()
-        .map(|key| {
-            format!(
-                "<li><a href=\"/{prefix}/{key}\">{key}</a></li>\n",
-                key = escape(key)
-            )
-        })
-        .collect();
-
-    format!("<h2>{heading}</h2>\n<ul>\n{items}</ul>")
 }
 
 /// Where a scoped page's live updates come from, and where it refetches its

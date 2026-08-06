@@ -11,6 +11,9 @@ mod artifact;
 mod record;
 mod sidecar;
 
+/// Shared so a scratch note's title is the same thing a comment anchor calls a
+/// heading, rather than a second opinion about what markdown means.
+pub(crate) use anchor::parse_heading;
 pub use anchor::{Anchor, AnchorState, Resolution};
 pub use artifact::{read as read_artifact, resolve as resolve_anchor};
 pub use record::{Comment, Event, Relocation, Reply, Status, StatusUpdate, Thread};

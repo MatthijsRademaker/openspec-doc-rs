@@ -9,6 +9,13 @@ pub enum Error {
     #[error(transparent)]
     Core(#[from] openspec_doc_core::Error),
 
+    #[error("failed to read the modification time of {}", path.display())]
+    Metadata {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
     #[error("failed to list {}", path.display())]
     ReadDir {
         path: PathBuf,

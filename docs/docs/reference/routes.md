@@ -20,6 +20,17 @@ which is what makes a session discoverable — see [On-disk state](/reference/on
 
 ## What a page renders
 
+The index lists each session and change with its **title** — the first heading of its scratch note, which is
+what the exploring agent wrote there — followed by its identifier, when its artifacts were last modified, how
+many of its comments are open, and its standing verdict. A session whose note has been promoted away is listed
+as *Promoted to `<change>`* — the redirect left at its note path is where that comes from. A scope with neither
+is listed by its identifier alone; nothing invents a name for it. The session with the most recent directive or verdict
+activity is marked *most recently active*, which is a statement about timestamps on disk and not a heartbeat:
+nothing here knows whether that session is still running.
+
+Titles are display text. Every link, sidecar filename and hook payload is keyed on the identifier, so
+rewriting a note's heading changes what the index says and nothing else.
+
 A session page renders exactly one artifact: its scratch note. **If no exploration has been written, the
 page has nothing to select** — the composer stays hidden and no comment can be made. That is not a bug;
 it means nothing has been explored yet.

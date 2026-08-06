@@ -8,12 +8,14 @@
 
 mod note;
 mod promote;
+mod title;
 
 pub use note::{
-    change_path, change_relative, claim, claimed_change, prepare_session, promoted_to,
+    change_path, change_relative, claim, claimed_change, prepare_session, promoted_to, read_change,
     read_session, session_path, session_relative,
 };
 pub use promote::{Promotion, Validation, check};
+pub use title::{change_title, session_title};
 
 /// The sidecar directory holding every scratch note.
 const SCRATCH_DIR: &str = ".openspec-doc/scratch";

@@ -9,34 +9,50 @@ use super::{Endpoints, artifact, escape, review};
 
 /// A session's page: its scratch note, and the phase verdict that decides
 /// whether the exploration keeps going or gets formalized.
-pub fn session(session_id: &str, artifacts: &[Artifact], state: &Review) -> String {
+pub fn session(
+    session_id: &str,
+    title: Option<&str>,
+    artifacts: &[Artifact],
+    state: &Review,
+) -> String {
     let endpoints = endpoints("sessions", session_id);
     let body = format!(
-        "<h1>Session: {id}</h1>\n{artifacts}{composer}{review}{verdicts}",
-        id = escape(session_id),
+        "{heading}{artifacts}{composer}{review}{verdicts}",
+        heading = heading("Session", session_id, title),
         artifacts = artifact::list(artifacts),
         composer = composer(&endpoints.comments),
         review = review::fragment(state),
         verdicts = session_verdicts(&endpoints.verdict)
     );
 
-    super::document(&format!("Session: {session_id}"), &body, Some(&endpoints))
+    super::document(title.unwrap_or(session_id), &body, Some(&endpoints))
 }
 
 /// A change's page: its proposal, design, tasks and spec deltas, and the verdict
 /// that sends its open comments back to the agent.
-pub fn change(name: &str, artifacts: &[Artifact], state: &Review) -> String {
+pub fn change(name: &str, title: Option<&str>, artifacts: &[Artifact], state: &Review) -> String {
     let endpoints = endpoints("changes", name);
     let body = format!(
-        "<h1>Change: {name}</h1>\n{artifacts}{composer}{review}{verdicts}",
-        name = escape(name),
+        "{heading}{artifacts}{composer}{review}{verdicts}",
+        heading = heading("Change", name, title),
         artifacts = artifact::list(artifacts),
         composer = composer(&endpoints.comments),
         review = review::fragment(state),
         verdicts = change_verdicts(&endpoints.verdict)
     );
 
-    super::document(&format!("Change: {name}"), &body, Some(&endpoints))
+    super::document(title.unwrap_or(name), &body, Some(&endpoints))
+}
+
+/// The page's heading: the scope's title where it has one, with the identifier
+/// underneath it either way — the id is what gets pasted into
+/// `openspec-doc comment list`, so it stays on the page once the title leads.
+fn heading(kind: &str, key: &str, title: Option<&str>) -> String {
+    format!(
+        "<h1>{name}</h1>\n<p class=\"meta\">{kind} <code>{key}</code></p>\n",
+        name = escape(title.unwrap_or(key)),
+        key = escape(key)
+    )
 }
 
 fn endpoints(prefix: &str, key: &str) -> Endpoints {
@@ -117,7 +133,7 @@ mod tests {
 
     #[test]
     fn a_session_page_renders_its_note_and_both_phase_verdicts() {
-        let html = session("session-a", &note(), &empty());
+        let html = session("session-a", None, &note(), &empty());
 
         assert!(html.contains("An idea worth keeping."), "{html}");
         assert!(html.contains("value=\"keep-exploring\""), "{html}");
@@ -130,24 +146,46 @@ mod tests {
 
     #[test]
     fn a_change_page_offers_only_the_comment_resolution_verdict() {
-        let html = change("add-a", &[], &empty());
+        let html = change("add-a", None, &[], &empty());
 
         assert!(html.contains("value=\"comment-resolution\""), "{html}");
         assert!(!html.contains("value=\"keep-exploring\""), "{html}");
     }
 
     #[test]
+    fn a_titled_page_leads_with_its_title_and_keeps_its_id_on_the_page() {
+        let html = session("session-a", Some("Exploring: titles"), &note(), &empty());
+
+        assert!(html.contains("<h1>Exploring: titles</h1>"), "{html}");
+        assert!(html.contains("<title>Exploring: titles</title>"), "{html}");
+        assert!(
+            html.contains("Session <code>session-a</code>"),
+            "the id is what gets pasted into the CLI and has to stay:\n{html}"
+        );
+    }
+
+    #[test]
+    fn an_untitled_page_leads_with_its_id() {
+        let html = session("session-a", None, &note(), &empty());
+
+        assert!(html.contains("<h1>session-a</h1>"), "{html}");
+        assert!(html.contains("Session <code>session-a</code>"), "{html}");
+    }
+
+    #[test]
     fn both_pages_post_their_comments_to_their_own_scope() {
         assert!(
-            session("session-a", &note(), &empty())
+            session("session-a", None, &note(), &empty())
                 .contains("action=\"/sessions/session-a/comments\""),
         );
-        assert!(change("add-a", &[], &empty()).contains("action=\"/changes/add-a/comments\""));
+        assert!(
+            change("add-a", None, &[], &empty()).contains("action=\"/changes/add-a/comments\"")
+        );
     }
 
     #[test]
     fn both_pages_subscribe_to_their_own_event_and_review_endpoints() {
-        let html = change("add-a", &[], &empty());
+        let html = change("add-a", None, &[], &empty());
 
         assert!(
             html.contains("data-events=\"/changes/add-a/events\""),

@@ -3,7 +3,6 @@
 ## Purpose
 
 What the dashboard's pages contain: the session-scoped page rendering an exploration's scratch note, the change-scoped page rendering a change's proposal, design, tasks and spec deltas, the anchored comments shown against each, the select-to-comment interaction that creates them, and the phase-verdict controls a reviewer submits from either page. Artifacts are rendered as their own markdown source, so a browser selection is already a substring of the file the server anchors against and no offset mapping exists to get wrong. Pages are server-rendered HTML with the minimum vanilla JavaScript that selection and live updates require — no framework, no build step. The server, its route table, and the event stream these pages subscribe to belong to `dashboard-server`; the comment records themselves belong to `anchored-comments`.
-
 ## Requirements
 ### Requirement: Session page renders scratch note and comments
 The system SHALL render, at `/sessions/<session_id>`, the session's scratch note markdown and its anchored comments.
@@ -50,4 +49,42 @@ The system SHALL update a rendered page's comment list and verdict state when th
 #### Scenario: Comment added in one tab appears in another
 - **WHEN** a comment is added against an artifact while a second browser tab has the same page open
 - **THEN** the second tab SHALL reflect the new comment without the user reloading the page
+
+### Requirement: The index identifies each scope by more than its key
+The system SHALL render, for each session and change on the index, its title where one exists, its identifier, when its artifacts were last modified, how many of its comments are open, and its standing verdict.
+
+An index of bare session ids gives a reviewer nothing to choose between. Every field named here is already on disk in the scratch, comment and verdict sidecars; the index simply does not read it.
+
+#### Scenario: A titled session shows its title and its id
+- **WHEN** the index renders a session whose scratch note has a level-one heading
+- **THEN** the system SHALL show that heading as the row's primary text and the session id as secondary text on the same row
+
+#### Scenario: A promoted session is named by the change it became
+- **WHEN** the index renders a session whose note has been promoted away, leaving a redirect with no heading to title it from
+- **THEN** the system SHALL show the change that exploration became as the row's primary text, and SHALL still link to the session's own page
+
+#### Scenario: An untitled session falls back to its id
+- **WHEN** the index renders a session with neither a title nor a promotion
+- **THEN** the system SHALL show the session id as the row's primary text and SHALL still link to that session's page
+
+#### Scenario: Review state is visible without opening the page
+- **WHEN** the index renders a scope with open comments or a recorded verdict
+- **THEN** the system SHALL show the open-comment count and the standing verdict on that scope's row
+
+#### Scenario: The session that spoke to the reviewer last is marked
+- **WHEN** the index renders sessions and one of them has the most recent directive or verdict sidecar activity
+- **THEN** the system SHALL mark that session as the most recently active one, and SHALL NOT describe it as live
+
+#### Scenario: Links are keyed on the identifier
+- **WHEN** the index renders any scope
+- **THEN** the link SHALL address that scope by its identifier and SHALL NOT incorporate its title
+
+### Requirement: A scoped page is headed by its title
+The system SHALL use a scope's title as the heading and document title of its page where one exists, and SHALL show the scope's identifier on the page regardless.
+
+The identifier is what an operator pastes into `openspec-doc comment list`, so it stays visible even once a title is available to lead with.
+
+#### Scenario: A titled session page leads with its title
+- **WHEN** a browser requests the page of a session that has a title
+- **THEN** the system SHALL render that title as the page's heading and SHALL also render the session id
 

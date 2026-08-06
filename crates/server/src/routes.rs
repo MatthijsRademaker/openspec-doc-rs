@@ -86,6 +86,7 @@ async fn session_page(
 
     Ok(Html(page::session(
         &session_id,
+        resolved.title.as_deref(),
         &resolved.artifacts,
         &review,
     )))
@@ -98,7 +99,12 @@ async fn change_page(
     let resolved = scope::change(&state.project, &name)?.ok_or(RouteError::NotFound)?;
     let review = review_state(&state, &resolved)?;
 
-    Ok(Html(page::change(&name, &resolved.artifacts, &review)))
+    Ok(Html(page::change(
+        &name,
+        resolved.title.as_deref(),
+        &resolved.artifacts,
+        &review,
+    )))
 }
 
 async fn session_events(

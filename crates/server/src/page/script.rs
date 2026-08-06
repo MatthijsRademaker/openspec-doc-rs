@@ -57,7 +57,8 @@ body { font: 15px/1.5 system-ui, sans-serif; margin: 0 auto; max-width: 60rem; p
 .artifact { border: 1px solid #d0d0d0; border-radius: 4px; margin: 1rem 0; padding: 0 1rem 1rem; }
 .artifact h2 { font: 600 13px ui-monospace, monospace; color: #555; }
 pre.source { white-space: pre-wrap; word-break: break-word; margin: 0; }
-.comments, .verdicts { list-style: none; padding: 0; }
+.comments, .verdicts, .scopes { list-style: none; padding: 0; }
+.scopes li { margin: 0.75rem 0; }
 .comment, .verdicts li { border-left: 3px solid #d0d0d0; margin: 0.75rem 0; padding: 0 0 0 0.75rem; }
 .comment[data-anchor-state="fuzzy"] { border-left-color: #c88a00; }
 .comment[data-anchor-state="orphaned"], .comment[data-anchor-state="missing"] { border-left-color: #b00; }
