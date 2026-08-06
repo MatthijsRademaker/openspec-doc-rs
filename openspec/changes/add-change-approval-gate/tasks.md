@@ -43,3 +43,8 @@
 - [ ] 6.3 Tick a task in `tasks.md`; confirm the state stays approved
 - [ ] 6.4 Run the precheck subcommand in each state and confirm the exit codes
 - [ ] 6.5 Run a real session implementing an unapproved change and confirm the directive arrives at turn end on both Claude Code and pi.dev
+
+## 7. Text this change falsifies
+
+- [ ] 7.1 Update `AGENTS.md`, which tells agents the reviewer submits "a phase verdict: keep exploring, move to proposal, or send the open comments back for work". This change makes that list of three wrong by adding a fourth, and it is the list an agent reads to know what feedback can arrive. Add `approved`, and say what an agent should do on receiving it — which for this change is the one verdict that gates work rather than requesting it.
+- [ ] 7.2 Five docs enumerate the verdict kinds independently of the spec and each needs the fourth: `docs/docs/concepts/review-loop.md`, `docs/docs/concepts/pointer-not-embed.md`, `docs/docs/reference/routes.md`, `docs/docs/quickstart.md`, and `docs/docs/development/manual-verification.md`. `routes.md` and `manual-verification.md` carry the accepted form-values and worked `curl` examples, so they go wrong in a way a reader can execute rather than merely read.

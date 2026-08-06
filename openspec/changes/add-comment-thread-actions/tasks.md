@@ -16,6 +16,7 @@
 
 - [ ] 3.1 Update the verdict-to-directive reason templates from `add-directive-verdict-loop` to instruct reply-and-mark-addressed, never resolve
 - [ ] 3.2 Add a test asserting no template instructs the agent to resolve a comment
+- [ ] 3.3 Update the comment rule in `AGENTS.md`, which currently reads *"Report back on a comment with `openspec-doc comment reply …`. Do not resolve comments you were asked to address."* Only half of it goes stale: the prohibition on resolving stays exactly as written, because it is the reason `addressed` exists. What changes is that replying is no longer the whole of what an agent can do — it should reply **and** mark the comment addressed, which is the state the rule has been standing in for. A rule telling an agent what not to do, when there is now something it should do instead, reads as an omission rather than a boundary.
 
 ## 4. Verification
 

@@ -31,6 +31,7 @@ None. This extends two capabilities that already exist.
 - `crates/core/src/comments/sidecar.rs` — status events and the state reconstruction that folds them.
 - `crates/cli/src/cli.rs` and `crates/cli/src/comment.rs` — the new subcommands.
 - The reason-text templates introduced by `add-directive-verdict-loop` task 2.1.
+- `AGENTS.md` — its comment rule tells agents to reply and not to resolve, which is the missing state described as a prohibition. The prohibition survives verbatim; what it gains is the thing to do instead.
 
 Nothing in `crates/server/`. That is the point of the re-scope.
 

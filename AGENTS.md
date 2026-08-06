@@ -39,6 +39,12 @@ The change is done only when it is correct, simple, localized, verified, consist
 
 The go ecosystem lends itself well for error propagation, i want a full stack trace with relevant errors. Not swallow them and have a different error somehwere down the line.
 
+## 12. A change's artifacts are one unit
+
+`proposal.md`, `design.md`, `tasks.md` and `specs/` describe one change. When its scope moves, all four move together, in the same commit. Re-scoping three and leaving the fourth produces a design that argues for a change that no longer exists — which is worse than no design, because it reads as current.
+
+The same applies to what a change makes obsolete elsewhere. If landing it would falsify a rule in this file, a README claim, or another change's stated dependency, the task that changes that text belongs in the change, not in a later cleanup.
+
 ## General guidance
 
 - Prefer smaller descriptive feature based files over 1000+ lines of code in one. This will help navigation throughout the codebase
