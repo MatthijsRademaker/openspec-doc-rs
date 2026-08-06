@@ -18,17 +18,66 @@ use crate::cli::{Cli, Command, CommentCommand, HookCommand, ScratchCommand};
 use crate::error::Error;
 
 fn main() -> ExitCode {
-    match run() {
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => return usage_exit(&error),
+    };
+
+    // `hook prompt` sits in front of the human's own input, where a non-zero exit
+    // may refuse the prompt outright. `hook::prompt` already swallows its own
+    // failures, but root resolution happens out here, before dispatch — so
+    // without this the guarantee has a hole the command itself cannot close.
+    let fail_soft = matches!(
+        cli.command,
+        Command::Hook {
+            command: HookCommand::Prompt { .. }
+        }
+    );
+
+    match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprint_chain(&error);
-            ExitCode::FAILURE
+            if fail_soft {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
         }
     }
 }
 
-fn run() -> Result<(), Error> {
-    let cli = Cli::parse();
+/// What to exit with when the arguments themselves did not parse.
+///
+/// Clap's own `Error::exit` uses 2 for a usage error, and Claude Code treats a
+/// `UserPromptSubmit` hook exiting 2 as a block: the reviewer's prompt is refused
+/// and the session becomes unusable until the config is fixed. A typo in a hook
+/// command string is therefore the one usage error that must not be reported the
+/// usual way.
+///
+/// The intent is read back off the raw arguments because parsing is what failed,
+/// so there is no parsed command to match on. A typo in `prompt` itself is not
+/// recoverable here and still exits 2.
+fn usage_exit(error: &clap::Error) -> ExitCode {
+    let _ = error.print();
+
+    match error.kind() {
+        clap::error::ErrorKind::DisplayHelp
+        | clap::error::ErrorKind::DisplayVersion
+        | clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => ExitCode::SUCCESS,
+        _ if prompt_hook_intended() => ExitCode::SUCCESS,
+        _ => ExitCode::from(2),
+    }
+}
+
+/// Whether this invocation was reaching for `hook prompt`, however badly.
+fn prompt_hook_intended() -> bool {
+    let args: Vec<String> = std::env::args().collect();
+    args.windows(2)
+        .any(|pair| pair[0] == "hook" && pair[1] == "prompt")
+}
+
+fn run(cli: Cli) -> Result<(), Error> {
     let project = root::resolve(cli.root.as_deref())?;
 
     match cli.command {

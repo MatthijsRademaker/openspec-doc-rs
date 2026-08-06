@@ -51,6 +51,30 @@ fn run_with_stdin(args: &[&str], stdin: &str) -> Output {
     child.wait_with_output().expect("run openspec-doc")
 }
 
+/// Like `run_with_stdin`, but tolerant of the child exiting before it reads.
+///
+/// Argument parsing and root resolution both happen before stdin is touched, so
+/// for an invocation that fails there the write races the child's exit: it
+/// succeeds if the bytes fit the pipe buffer first and returns a broken pipe if
+/// not. Either is correct, and `run_with_stdin` stays strict because for every
+/// other test a failed write means the binary died when it should have been
+/// reading.
+fn run_expecting_early_exit(args: &[&str], stdin: &str) -> Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_openspec-doc"))
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn openspec-doc");
+    let _ = child
+        .stdin
+        .take()
+        .expect("piped stdin")
+        .write_all(stdin.as_bytes());
+    child.wait_with_output().expect("run openspec-doc")
+}
+
 fn stdout(output: &Output) -> String {
     String::from_utf8(output.stdout.clone()).expect("utf-8 stdout")
 }
@@ -773,6 +797,83 @@ fn hook_prompt_survives_a_payload_from_the_wrong_agent() {
     );
 
     assert_fails_soft(&output, "a payload from the wrong agent");
+}
+
+/// Exit zero and emit nothing, whatever went wrong and whoever reported it.
+///
+/// Weaker than `assert_fails_soft` on purpose: a failure that never reached the
+/// command has no message of ours on stderr, only clap's.
+fn assert_never_refuses(output: &Output, case: &str) {
+    assert!(
+        output.status.success(),
+        "{case} refused the reviewer's prompt (exit {:?}): {}",
+        output.status.code(),
+        stderr(output)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "{case} emitted context anyway: {}",
+        stdout(output)
+    );
+}
+
+/// The failures that never reach `hook::prompt` at all, because argument parsing
+/// and root resolution both happen before dispatch.
+///
+/// These matter more than the ones that do reach it. Clap exits 2 on a usage
+/// error, and Claude Code treats a `UserPromptSubmit` hook exiting 2 as a block —
+/// so before this was handled, one typo in a hook command string refused every
+/// prompt in the session and returned clap's usage text instead of an answer.
+#[test]
+fn hook_prompt_never_refuses_a_prompt_over_its_own_arguments() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+    let payload = PROMPT_PAYLOAD.replace("SESSION", SESSION_ID);
+
+    let cases: [(&str, Vec<&str>); 4] = [
+        (
+            "a typo'd flag",
+            vec!["hook", "prompt", "--agnet", "claude", "--root", &root],
+        ),
+        ("a missing --agent", vec!["hook", "prompt", "--root", &root]),
+        (
+            "an unknown agent",
+            vec!["hook", "prompt", "--agent", "bogus", "--root", &root],
+        ),
+        (
+            "a root that does not resolve",
+            vec![
+                "hook",
+                "prompt",
+                "--agent",
+                "claude",
+                "--root",
+                "/no/such/project",
+            ],
+        ),
+    ];
+
+    for (case, args) in cases {
+        assert_never_refuses(&run_expecting_early_exit(&args, &payload), case);
+    }
+}
+
+/// The fail-soft is scoped to the one command that needs it. Everything else
+/// must still fail loudly, including the sibling hook.
+#[test]
+fn other_commands_still_exit_non_zero_on_a_usage_error() {
+    for args in [
+        vec!["hook", "stop"],
+        vec!["hook", "explore"],
+        vec!["comment", "list"],
+        vec!["no-such-command"],
+    ] {
+        let output = run_expecting_early_exit(&args, "");
+        assert!(
+            !output.status.success(),
+            "{args:?} exited zero on a usage error"
+        );
+    }
 }
 
 /// A command-expansion payload: the common fields, none of the Stop-specific
