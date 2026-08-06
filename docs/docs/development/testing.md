@@ -10,14 +10,21 @@ cargo fmt --all --check
 
 | Crate | Tests | Status |
 |---|---|---|
-| `openspec-doc-core` | 123 | pass |
-| `openspec-doc-cli` | 22 | pass |
-| `openspec-doc-server` | 33 | 30 pass, **3 fail** |
+| `openspec-doc-core` | 124 | pass |
+| `openspec-doc-cli` | 33 | pass |
+| `openspec-doc-server` | 33 | pass |
 
-The three failures are all in `watch.rs` — the filesystem-watcher tests. They fail on a stashed tree too,
-so they are pre-existing and not caused by recent work. They look like timing or platform sensitivity in
-the tests rather than evidence about the watcher, but nobody has proven that. Do not let them mask a real
-regression: check `-p openspec-doc-core -p openspec-doc-cli` for a clean signal.
+All 190 pass.
+
+:::note The three `watch.rs` failures are gone, and nobody knows why
+This table previously recorded three failing filesystem-watcher tests, described as pre-existing and
+probably timing or platform sensitivity. They pass now — checked repeatedly on a clean tree.
+
+Nothing was done to fix them, so treat this as unexplained rather than resolved. The most likely reading is
+that they were always environmental, which would mean the "pre-existing, not caused by recent work" note
+was doing real harm: it stood for weeks as a known defect and discouraged anyone from looking. If they
+return, that is a timing bug worth chasing, not a familiar nuisance.
+:::
 
 ## Hermetic by default
 

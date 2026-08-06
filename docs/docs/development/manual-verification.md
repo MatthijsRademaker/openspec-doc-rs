@@ -13,11 +13,12 @@ Looking to *use* the tool rather than test it? That is the [Quickstart](/quickst
 cargo test -p openspec-doc-core -p openspec-doc-cli
 ```
 
-145 tests, all hermetic. They cover the whole server side of the review loop — including that a new
-comment pushes an SSE event and that the review fragment reflects it.
+157 tests. They cover the whole server side of the review loop — including that a new comment pushes an SSE
+event and that the review fragment reflects it. `openspec` must be on `PATH`; `scratch::promote`'s
+validation tests shell out to it.
 
-Three `watch.rs` tests in `openspec-doc-server` fail on a stashed tree too; see
-[Testing](/development/testing.md).
+`cargo test --workspace` adds the 33 server tests for 190 in total. All pass — the three `watch.rs` failures
+this document used to warn about are gone, unexplained; see [Testing](/development/testing.md).
 
 What automated tests **cannot** cover is the reason this document exists, and it is more than the browser:
 
@@ -341,7 +342,62 @@ directive is consumed exactly once. Check `consumedAt` in the directive file for
 Confirm the reason text is a pointer: it should name the sidecar paths and **not** contain the verdict
 notes you typed. See [Pointer, not embed](/concepts/pointer-not-embed.md).
 
-### 6.2 The explore hook
+### 6.2 The same directive delivered at prompt time
+
+`hook prompt` is the other delivery point. §6.1 consumed the directive, so submit a fresh verdict first:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "http://127.0.0.1:8791/sessions/$SID/verdict" \
+  --data-urlencode 'verdict=keep-exploring' \
+  --data-urlencode 'notes=Still unsettled.'
+
+echo '{"session_id":"'"$SID"'"}' | "$BIN" --root "$PROJ" hook prompt --agent claude
+```
+
+Prints the same reason text §6.1 produced, on **stdout** — that is what the prompt-submission contract adds
+to model context. The `openspec-doc: injected …` line goes to stderr; check with `2>/dev/null` that stdout
+carries the directive and nothing else, because anything else on stdout is injected too.
+
+Consume-once spans both points:
+
+```bash
+echo "$PAYLOAD" | "$BIN" --root "$PROJ" hook stop --agent claude    # {"continue":true}, not a second block
+echo '{"session_id":"'"$SID"'"}' | "$BIN" --root "$PROJ" hook prompt --agent claude   # nothing
+```
+
+**Then check it cannot refuse a prompt.** This hook sits in front of the human's own input, and on Claude
+Code a `UserPromptSubmit` hook exiting 2 blocks the prompt outright, so every failure path must still exit
+zero:
+
+```bash
+printf 'not json\n' > "$PROJ/.openspec-doc/verdicts/_session/broken.jsonl"
+echo '{"session_id":"broken"}' | "$BIN" --root "$PROJ" hook prompt --agent claude; echo "exit=$?"
+echo 'garbage'                 | "$BIN" --root "$PROJ" hook prompt --agent claude; echo "exit=$?"
+echo '{"sessionId":"x"}'       | "$BIN" --root "$PROJ" hook prompt --agent claude; echo "exit=$?"
+```
+
+All three: `exit=0`, empty stdout, a reported error chain on stderr. A non-zero exit here is a defect even
+though the same failure in `hook stop` is correct behaviour.
+
+:::danger Two failure classes escape the fail-soft, and one of them refuses the prompt
+The guarantee holds only for failures *inside* the delivery path. `main.rs` parses arguments and resolves
+the project root **before** dispatching, so anything failing there never reaches the fail-soft wrapper:
+
+```bash
+cd /tmp && echo '{"session_id":"x"}' | openspec-doc hook prompt --agent claude; echo $?   # 1
+echo '{"session_id":"x"}' | openspec-doc hook prompt --agnet claude;            echo $?   # 2
+echo '{"session_id":"x"}' | openspec-doc hook prompt;                           echo $?   # 2
+```
+
+Exit 1 is survivable — the prompt goes through with a warning. **Exit 2 is not**: Claude Code refuses the
+prompt, so a single typo in the hook config makes the session unusable, returning clap's usage text instead
+of an answer. Verified on 2.1.223.
+
+Every clap usage error takes this path. Until it is fixed, treat the hook command string as load-bearing
+and paste it rather than typing it.
+:::
+
+### 6.3 The explore hook
 
 ```bash
 rm -f "$PROJ/.openspec-doc/scratch/_session/$SID.md"
@@ -352,7 +408,7 @@ echo '{"session_id":"'"$SID"'","prompt_id":"p1","transcript_path":"/tmp/t.jsonl"
 Prints the instruction naming the note's resolved path. Note it readies the **directory only** — the
 `.md` must not exist afterwards, because an empty placeholder makes an agent's first write fail.
 
-### 6.3 Promotion needs a claim
+### 6.4 Promotion needs a claim
 
 ```bash
 # A change appearing is not enough on its own.
@@ -370,15 +426,26 @@ cat "$PROJ/.openspec-doc/scratch/_session/$SID.md"       # redirect left behind
 Then run `hook stop` twice more: the redirect must **not** be re-promoted, and the promoted note must not
 be overwritten.
 
-### 6.4 The parts that need a real agent
+### 6.5 The parts that need a real agent
 
-Neither of these can be faked from a terminal, and both have caught defects nothing else did:
+None of these can be faked from a terminal, and each has caught defects nothing else did:
 
 - **Does the matcher fire?** Wire the hooks per [Agent hooks](/reference/hooks.md), type the explore
   command in a real session, and check the note directory exists. A wrong matcher is silent.
 - **Does the agent comply?** Submit a `keep-exploring` verdict from the dashboard, poke the session, and
-  watch what it does at the turn boundary. Reading the named files and carrying on is a pass. Questioning
-  the directive, or asking you whether to trust it, is a **failure** — revise the templates and re-run.
+  watch what it does. Reading the named files and carrying on is a pass. Questioning the directive, or
+  asking you whether to trust it, is a **failure** — revise the templates and re-run.
+- **Does the feedback arrive at the start of the turn?** Same setup, but check *when*. The agent should act
+  on the verdict in the same turn as your prompt, not in a turn that follows it. Compare `consumedAt` in the
+  directive file against the mtime of whatever the agent wrote.
+
+  Beware one trap: a probe prompt like `Reply with only: OK` is obeyed literally even when the directive is
+  in context, which looks exactly like a delivery failure and is not one. Use a neutral prompt such as
+  `Say hello.` and check the directive file to see whether delivery actually happened.
+- **Does the criterion hold?** The whole point, and the only check that exercises it: leave anchored
+  comments on an exploration, submit `move to proposal`, poke the session, and read the proposal the agent
+  writes. It passes only if the comments shaped the proposal. A proposal that addresses them in a later
+  revision is a failure of prompt-time delivery, not a pass.
 
 ## 7. Clean up
 

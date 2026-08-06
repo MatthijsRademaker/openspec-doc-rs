@@ -29,6 +29,9 @@ In the OpenSpec project you want to review, add to `.claude/settings.local.json`
     "Stop": [
       { "hooks": [{ "type": "command", "command": "openspec-doc hook stop --agent claude", "timeout": 30 }] }
     ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "openspec-doc hook prompt --agent claude", "timeout": 30 }] }
+    ],
     "UserPromptExpansion": [
       {
         "matcher": "opsx:explore|openspec-explore",
@@ -38,6 +41,10 @@ In the OpenSpec project you want to review, add to `.claude/settings.local.json`
   }
 }
 ```
+
+All three, not two. `UserPromptSubmit` is what puts a standing verdict in context at the *start* of the turn
+your prompt begins; `Stop` is the backstop that catches feedback when no prompt is coming. Wire only `Stop`
+and the loop still works, but every verdict arrives one turn late.
 
 Then **open `/hooks` once, or restart**. The config watcher only watches directories that already had a
 settings file when the session started, so a newly created one is not picked up mid-session.
@@ -88,19 +95,28 @@ Comments alone reach nobody. **The verdict is the trigger.**
 
 ## 6. Send it back
 
-Send the agent session any message. At the end of that turn the Stop hook translates your verdict into a
-directive, blocks the turn, and feeds it back. The agent reads the files the directive names — your notes,
-the note, any comments — and carries on.
+Send the agent session any message. The prompt hook translates your verdict into a directive and puts it in
+context *before* the model reads what you typed, so the agent acts on your feedback in that same turn. It
+reads the files the directive names — your notes, the note, any comments — and carries on.
 
-:::info That turn runs blind
-The feedback lands when the turn *ends*, so the message you use to poke the agent is processed before it
-sees your verdict. Submitting the verdict while the agent is still working avoids this.
+The words don't matter. The hook fires on any prompt, so whatever you type is just a way to poke the
+session; "ok" works as well as a paragraph.
+
+:::info If the agent is idle and you send nothing
+The Stop hook is the other delivery point. It catches a verdict at the next turn boundary, blocks the turn,
+and feeds the directive back — which is what stops an agent going idle while your feedback sits unread. A
+directive is delivered exactly once across the two, so it never arrives twice.
 :::
 
 ## 7. Formalize
 
-When the exploration is ready, submit a `move to proposal` verdict. The next directive tells the agent to
-create the change and then run:
+When the exploration is ready, submit a `move to proposal` verdict, then poke the session. The directive
+tells the agent to create the change **and to account for every comment you left open** — a passage you
+marked is one you want changed before it is formalized. Because that arrives with your prompt rather than
+after the turn, the proposal is written with your comments in hand instead of being revised once it already
+exists.
+
+The directive also tells it to run:
 
 ```bash
 openspec-doc scratch claim --session <id> --change <name>
