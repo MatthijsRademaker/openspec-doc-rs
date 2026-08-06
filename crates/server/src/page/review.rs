@@ -5,7 +5,7 @@
 //! and it is rendered by the same function whether it is being embedded in a
 //! full page or served on its own to a page that is already open.
 
-use openspec_doc_core::comments::{AnchorState, Resolution, Status, Thread};
+use openspec_doc_core::comments::{AnchorState, Resolution, Thread};
 use openspec_doc_core::verdict::Record;
 
 use super::escape;
@@ -58,10 +58,7 @@ fn comments(anchored: &[Anchored]) -> String {
 /// rather than presented as if it were still firmly placed.
 fn comment(thread: &Thread, resolution: &Resolution) -> String {
     let anchor = &thread.comment.anchor;
-    let status = match thread.status {
-        Status::Open => "open",
-        Status::Resolved => "resolved",
-    };
+    let status = thread.status;
     let replies: String = thread
         .replies
         .iter()
@@ -120,7 +117,7 @@ fn recorded_verdicts(verdicts: &[Record]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openspec_doc_core::comments::Anchor;
+    use openspec_doc_core::comments::{Anchor, Status};
     use openspec_doc_core::verdict::Verdict;
 
     fn thread(body: &str, selected: &str, status: Status) -> Thread {

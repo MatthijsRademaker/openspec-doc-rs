@@ -103,14 +103,23 @@ pub fn reply(root: &Path, key: &ScopeKey, comment_id: &str, body: &str) -> Resul
     Ok(reply)
 }
 
-/// Record the comment `comment_id` in `key`'s sidecar as resolved.
-pub fn resolve(root: &Path, key: &ScopeKey, comment_id: &str) -> Result<StatusUpdate, Error> {
+/// Move the comment `comment_id` in `key`'s sidecar to `to`.
+///
+/// Every transition is one appended event, including a move back to `Open`:
+/// reopening is not a status of its own, it is the history recording that the
+/// comment was elsewhere and came back.
+pub fn set_status(
+    root: &Path,
+    key: &ScopeKey,
+    comment_id: &str,
+    to: Status,
+) -> Result<StatusUpdate, Error> {
     require_comment(root, key, comment_id)?;
 
     let status = StatusUpdate {
         id: new_id(),
         comment_id: comment_id.to_owned(),
-        status: Status::Resolved,
+        status: to,
         created_at: Utc::now().to_rfc3339(),
     };
 
@@ -164,6 +173,34 @@ pub fn read(root: &Path, key: &ScopeKey) -> Result<Vec<Thread>, Error> {
     }
 
     Ok(threads)
+}
+
+/// How many of a scope's comments stand in each status.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StatusCounts {
+    pub open: usize,
+    pub addressed: usize,
+    pub resolved: usize,
+}
+
+/// How `key`'s comments are distributed across the three statuses.
+///
+/// Counted from each comment's reconstructed status rather than from the status
+/// events, so a comment that moved twice is counted once, where it ended up. A
+/// scope with no sidecar has no comments and so counts zero everywhere.
+pub fn counts(root: &Path, key: &ScopeKey) -> Result<StatusCounts, Error> {
+    let mut counts = StatusCounts::default();
+
+    for thread in read(root, key)? {
+        let counter = match thread.status {
+            Status::Open => &mut counts.open,
+            Status::Addressed => &mut counts.addressed,
+            Status::Resolved => &mut counts.resolved,
+        };
+        *counter += 1;
+    }
+
+    Ok(counts)
 }
 
 /// Move `from`'s sidecar to `to`, recording that its artifact moved from
@@ -393,7 +430,7 @@ mod tests {
         let after_comment = lines(&path);
 
         reply(temp.path(), &change(), &comment.id, "Because of X.").expect("reply");
-        resolve(temp.path(), &change(), &comment.id).expect("resolve");
+        set_status(temp.path(), &change(), &comment.id, Status::Resolved).expect("resolve");
 
         let after_all = lines(&path);
         assert_eq!(after_all.len(), 3, "three events, three lines");
@@ -411,7 +448,7 @@ mod tests {
             add(temp.path(), &change(), ARTIFACT, SELECTED, "Why this?").expect("add comment");
         reply(temp.path(), &change(), &comment.id, "Because of X.").expect("reply");
         reply(temp.path(), &change(), &comment.id, "Understood.").expect("second reply");
-        resolve(temp.path(), &change(), &comment.id).expect("resolve");
+        set_status(temp.path(), &change(), &comment.id, Status::Resolved).expect("resolve");
 
         let threads = read(temp.path(), &change()).expect("read");
 
@@ -473,12 +510,122 @@ mod tests {
     }
 
     #[test]
-    fn resolving_a_comment_this_scope_does_not_hold_is_an_error() {
+    fn a_status_change_to_a_comment_this_scope_does_not_hold_is_an_error() {
         let temp = root_with_artifact();
+        add(temp.path(), &change(), ARTIFACT, SELECTED, "Why this?").expect("add comment");
 
-        let error = resolve(temp.path(), &change(), "not-a-comment-id").expect_err("unknown id");
+        for to in [Status::Addressed, Status::Resolved, Status::Open] {
+            let error =
+                set_status(temp.path(), &change(), "not-a-comment-id", to).expect_err("unknown id");
 
-        assert!(matches!(error, Error::UnknownComment { .. }), "{error}");
+            assert!(matches!(error, Error::UnknownComment { .. }), "{error}");
+        }
+        assert_eq!(
+            lines(&change().path(temp.path()).expect("path")).len(),
+            1,
+            "no orphan status event is appended"
+        );
+    }
+
+    /// The status an agent claims and the status the reviewer grants are
+    /// separate steps, and the sidecar has to reconstruct both.
+    #[test]
+    fn a_comment_moves_from_open_through_addressed_to_resolved() {
+        let temp = root_with_artifact();
+        let comment =
+            add(temp.path(), &change(), ARTIFACT, SELECTED, "Why this?").expect("add comment");
+        let current = |temp: &TempDir| read(temp.path(), &change()).expect("read")[0].status;
+
+        assert_eq!(current(&temp), Status::Open, "a new comment starts open");
+
+        set_status(temp.path(), &change(), &comment.id, Status::Addressed).expect("address");
+        assert_eq!(current(&temp), Status::Addressed);
+
+        set_status(temp.path(), &change(), &comment.id, Status::Resolved).expect("resolve");
+        assert_eq!(current(&temp), Status::Resolved);
+    }
+
+    /// A reviewer who rejects the response reopens the thread rather than
+    /// filing a duplicate, from whichever status it had reached.
+    #[test]
+    fn a_comment_can_be_reopened_from_either_later_status() {
+        for reached in [Status::Addressed, Status::Resolved] {
+            let temp = root_with_artifact();
+            let comment =
+                add(temp.path(), &change(), ARTIFACT, SELECTED, "Why this?").expect("add comment");
+            set_status(temp.path(), &change(), &comment.id, reached).expect("advance");
+
+            set_status(temp.path(), &change(), &comment.id, Status::Open).expect("reopen");
+
+            assert_eq!(
+                read(temp.path(), &change()).expect("read")[0].status,
+                Status::Open,
+                "reopening from {reached}"
+            );
+        }
+    }
+
+    #[test]
+    fn reopening_keeps_the_superseded_statuses_in_the_history() {
+        let temp = root_with_artifact();
+        let comment =
+            add(temp.path(), &change(), ARTIFACT, SELECTED, "Why this?").expect("add comment");
+        reply(temp.path(), &change(), &comment.id, "Done in X.").expect("reply");
+        for to in [Status::Addressed, Status::Resolved, Status::Open] {
+            set_status(temp.path(), &change(), &comment.id, to).expect("status");
+        }
+
+        let threads = read(temp.path(), &change()).expect("read");
+
+        let [thread] = threads.as_slice() else {
+            panic!("expected one thread, got {}", threads.len());
+        };
+        assert_eq!(
+            thread
+                .status_history
+                .iter()
+                .map(|update| update.status)
+                .collect::<Vec<_>>(),
+            [Status::Addressed, Status::Resolved, Status::Open],
+            "the whole route the comment took is kept"
+        );
+        assert_eq!(thread.replies.len(), 1, "the thread survives a reopen");
+    }
+
+    #[test]
+    fn counts_report_each_comment_once_under_where_it_ended_up() {
+        let temp = root_with_artifact();
+        // Two comments left open, one addressed, one resolved via addressed.
+        for body in ["First.", "Second."] {
+            add(temp.path(), &change(), ARTIFACT, SELECTED, body).expect("open comment");
+        }
+        let addressed =
+            add(temp.path(), &change(), ARTIFACT, SELECTED, "Third.").expect("add comment");
+        set_status(temp.path(), &change(), &addressed.id, Status::Addressed).expect("address");
+        let resolved =
+            add(temp.path(), &change(), ARTIFACT, SELECTED, "Fourth.").expect("add comment");
+        set_status(temp.path(), &change(), &resolved.id, Status::Addressed).expect("address");
+        set_status(temp.path(), &change(), &resolved.id, Status::Resolved).expect("resolve");
+
+        assert_eq!(
+            counts(temp.path(), &change()).expect("counts"),
+            StatusCounts {
+                open: 2,
+                addressed: 1,
+                resolved: 1,
+            },
+            "the superseded addressed event must not be counted twice"
+        );
+    }
+
+    #[test]
+    fn a_scope_with_no_sidecar_counts_zero_in_every_status() {
+        let temp = TempDir::new().expect("temp dir");
+
+        assert_eq!(
+            counts(temp.path(), &change()).expect("counts"),
+            StatusCounts::default()
+        );
     }
 
     #[test]

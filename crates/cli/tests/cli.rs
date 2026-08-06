@@ -231,6 +231,54 @@ fn comment_reply_and_resolve_show_up_in_the_next_list() {
     assert!(stdout.contains("reply: Because of X."), "{stdout}");
 }
 
+/// The agent claims `addressed`, the reviewer grants `resolved`, and rejecting
+/// the response puts the same thread back to `open` rather than making a new one.
+#[test]
+fn comment_address_and_reopen_move_the_thread_the_list_reports() {
+    let fixture = project_with_artifact();
+    let root = fixture.path().to_str().unwrap().to_owned();
+    let id = added_id(&run(&comment_args("add", &root, &ADD_ARGS)));
+    let listed_status = || {
+        let stdout = stdout(&run(&comment_args("list", &root, &[])));
+        assert!(stdout.contains("comments (1):"), "{stdout}");
+        stdout
+    };
+
+    for (action, expected) in [
+        ("address", "[addressed]"),
+        ("resolve", "[resolved]"),
+        ("reopen", "[open]"),
+    ] {
+        let output = run(&comment_args(action, &root, &["--comment", &id]));
+
+        assert!(output.status.success(), "{}", stderr(&output));
+        let stdout = listed_status();
+        assert!(stdout.contains(expected), "after {action}: {stdout}");
+    }
+}
+
+#[test]
+fn a_status_change_naming_an_unknown_comment_fails_loudly() {
+    let fixture = project_with_artifact();
+    let root = fixture.path().to_str().unwrap().to_owned();
+    run(&comment_args("add", &root, &ADD_ARGS));
+
+    for action in ["address", "resolve", "reopen"] {
+        let output = run(&comment_args(
+            action,
+            &root,
+            &["--comment", "not-a-comment-id"],
+        ));
+
+        assert!(!output.status.success(), "{action} accepted a ghost id");
+        assert!(
+            stderr(&output).contains("not-a-comment-id"),
+            "{}",
+            stderr(&output)
+        );
+    }
+}
+
 #[test]
 fn comment_list_reports_a_moved_anchor_as_fuzzy_rather_than_exact() {
     let fixture = project_with_artifact();

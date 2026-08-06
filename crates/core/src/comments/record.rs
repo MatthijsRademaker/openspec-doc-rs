@@ -1,17 +1,32 @@
 //! What a comment sidecar is made of: the events appended to it, and the thread
 //! state reconstructed from replaying them.
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::anchor::Anchor;
 
-/// Whether a comment still wants attention.
+/// Where a comment stands. `Addressed` is a claim that work responding to it has
+/// been done, which an agent can honestly make; `Resolved` is the reviewer's
+/// judgement that the work is right, which only they make.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
     Open,
+    Addressed,
     Resolved,
+}
+
+impl fmt::Display for Status {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Open => "open",
+            Self::Addressed => "addressed",
+            Self::Resolved => "resolved",
+        })
+    }
 }
 
 /// A comment anchored to a span of an artifact.

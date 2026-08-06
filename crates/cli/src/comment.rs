@@ -47,11 +47,16 @@ pub fn reply(project: Project, scope: ScopeKey, comment_id: &str, body: &str) ->
     Ok(())
 }
 
-/// Record `comment_id` under `scope` as resolved.
-pub fn resolve(project: Project, scope: ScopeKey, comment_id: &str) -> Result<(), Error> {
-    let update = comments::resolve(&project.root, &scope, comment_id)?;
+/// Move `comment_id` under `scope` to `to`.
+pub fn set_status(
+    project: Project,
+    scope: ScopeKey,
+    comment_id: &str,
+    to: Status,
+) -> Result<(), Error> {
+    let update = comments::set_status(&project.root, &scope, comment_id, to)?;
 
-    println!("resolved comment {}", update.comment_id);
+    println!("comment {} is now {}", update.comment_id, update.status);
 
     Ok(())
 }
@@ -59,13 +64,9 @@ pub fn resolve(project: Project, scope: ScopeKey, comment_id: &str) -> Result<()
 fn print_thread(project: &Project, thread: &Thread) -> Result<(), Error> {
     let anchor = &thread.comment.anchor;
     let resolution = comments::resolve_anchor(&project.root, anchor)?;
-    let status = match thread.status {
-        Status::Open => "open",
-        Status::Resolved => "resolved",
-    };
 
     println!();
-    println!("  {} [{status}]", thread.comment.id);
+    println!("  {} [{}]", thread.comment.id, thread.status);
     println!("    artifact: {}", anchor.artifact_path);
     println!(
         "    anchor: {} {}",

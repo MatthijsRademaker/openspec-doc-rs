@@ -92,9 +92,11 @@ fn standing(project: &Project, keys: Vec<ScopeKey>) -> Result<Option<(ScopeKey, 
 /// Each template is an attributed pointer: it says the feedback came from this
 /// project's dashboard and names the in-project files holding it. What none of
 /// them does is demand particular literal output, and the comment-resolution
-/// template deliberately stops at asking the agent to reply on each thread —
-/// closing a thread is the reviewer's acceptance of the work, and an agent that
-/// closes its own threads has ended the review loop rather than completed it.
+/// template stops at asking the agent to reply and mark each thread
+/// `addressed` — that is a claim about work done, which the agent can honestly
+/// make, where resolving is the reviewer's acceptance of that work, and an agent
+/// that resolves its own threads has ended the review loop rather than completed
+/// a pass of it.
 pub fn reason(key: &ScopeKey, verdict: Verdict) -> Result<String, Error> {
     let verdicts = verdict::relative(key)?;
     let comments = key.relative()?;
@@ -133,8 +135,10 @@ pub fn reason(key: &ScopeKey, verdict: Verdict) -> Result<String, Error> {
              prints them with the artifacts they anchor to, all under \
              `openspec/changes/{name}/` — and the verdict is the last record in `{verdicts}`. \
              Work through each open comment, then say what you did on its thread with \
-             `openspec-doc comment reply --change {name} --comment <id> --body <what changed>`. \
-             Leave the thread status alone: the reviewer decides when a comment is settled."
+             `openspec-doc comment reply --change {name} --comment <id> --body <what changed>` \
+             and mark it with `openspec-doc comment address --change {name} --comment <id>`. \
+             That says the work is done, which is yours to claim; whether it is right is the \
+             reviewer's to judge, and closing the thread is theirs alone."
         )),
         // `verdict::add` refuses a verdict that does not belong to the kind of
         // scope it was filed under, so a sidecar holding one is corrupt.
@@ -491,6 +495,19 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The status the agent is sent to set is the one it can honestly claim.
+    /// Asking for a reply and nothing else leaves the thread indistinguishable
+    /// from one nobody has touched, which is what the next verdict re-points at.
+    #[test]
+    fn the_comment_resolution_template_sends_the_agent_to_mark_threads_addressed() {
+        let reason = reason(&change_key(), Verdict::CommentResolution).expect("reason");
+
+        assert!(
+            reason.contains(&format!("openspec-doc comment address --change {CHANGE}")),
+            "{reason}"
+        );
     }
 
     /// Closing a thread is the reviewer accepting the work, not the agent

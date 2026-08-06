@@ -110,12 +110,32 @@ pub enum CommentCommand {
         body: String,
     },
 
-    /// Mark an existing comment resolved
+    /// Mark an existing comment addressed: work responding to it has been done
+    Address {
+        #[command(flatten)]
+        scope: ScopeArgs,
+
+        /// Comment the work responded to
+        #[arg(long, value_name = "ID")]
+        comment: String,
+    },
+
+    /// Mark an existing comment resolved: the reviewer accepts the response
     Resolve {
         #[command(flatten)]
         scope: ScopeArgs,
 
         /// Comment to resolve
+        #[arg(long, value_name = "ID")]
+        comment: String,
+    },
+
+    /// Move an addressed or resolved comment back to open
+    Reopen {
+        #[command(flatten)]
+        scope: ScopeArgs,
+
+        /// Comment to reopen
         #[arg(long, value_name = "ID")]
         comment: String,
     },

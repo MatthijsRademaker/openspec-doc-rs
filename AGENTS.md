@@ -72,7 +72,7 @@ Where the state lives, all under `.openspec-doc/` at the project root:
 | `verdicts/<change>.jsonl`, `verdicts/_session/<session-id>.jsonl` | The verdict stream, latest record last; the reviewer's notes are in it |
 | `scratch/<change>.md`, `scratch/_session/<session-id>.md` | The exploration note, before and after it is promoted to a change |
 
-Report back on a comment with `openspec-doc comment reply --change <name> --comment <id> --body <text>`. Do not resolve comments you were asked to address: resolving is the reviewer accepting the work, not you claiming to have done it.
+Report back on a comment with `openspec-doc comment reply --change <name> --comment <id> --body <text>`, then mark it with `openspec-doc comment address --change <name> --comment <id>`. `addressed` is a claim that the work is done, which is yours to make. Do not resolve comments you were asked to address: resolving is the reviewer accepting the work, and reopening is them rejecting it — both are theirs.
 
 ### Writing the exploration note
 

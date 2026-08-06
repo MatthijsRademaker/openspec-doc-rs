@@ -13,6 +13,7 @@ mod summary;
 use std::process::ExitCode;
 
 use clap::Parser;
+use openspec_doc_core::comments::Status;
 
 use crate::cli::{Cli, Command, CommentCommand, HookCommand, ScratchCommand};
 use crate::error::Error;
@@ -105,8 +106,14 @@ fn run(cli: Cli) -> Result<(), Error> {
                 comment,
                 body,
             } => comment::reply(project, scope.key(), &comment, &body),
+            CommentCommand::Address { scope, comment } => {
+                comment::set_status(project, scope.key(), &comment, Status::Addressed)
+            }
             CommentCommand::Resolve { scope, comment } => {
-                comment::resolve(project, scope.key(), &comment)
+                comment::set_status(project, scope.key(), &comment, Status::Resolved)
+            }
+            CommentCommand::Reopen { scope, comment } => {
+                comment::set_status(project, scope.key(), &comment, Status::Open)
             }
         },
         Command::Scratch { command } => match command {
