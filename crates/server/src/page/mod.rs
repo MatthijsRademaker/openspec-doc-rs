@@ -1,19 +1,18 @@
-//! The dashboard's server-rendered pages: the shared document shell, the
-//! artifact and comment rendering both scoped pages are built from, and the
+//! The dashboard's remaining server-rendered pages: the shared document shell,
+//! the artifact and comment rendering both scoped pages are built from, and the
 //! pages themselves.
 //!
-//! Rendering is plain Rust string building against the same `escape` helper
-//! throughout, and the review-state fragment the pages share is one function
-//! rather than a template partial — there is no template engine and no build
-//! step, per this change's MVP scope.
+//! The index is no longer among them — it is served by the built frontend in
+//! `web/`, and `migrate-dashboard-review-to-vue` moves the scope pages there
+//! too. Until it does, rendering here stays plain Rust string building against
+//! the same `escape` helper throughout, and the review-state fragment the pages
+//! share stays one function rather than a template partial.
 
 mod artifact;
-mod index;
 mod review;
 mod scoped;
 mod script;
 
-pub use index::index;
 pub use review::{Anchored, Review, fragment as review_fragment};
 pub use scoped::{change, session};
 

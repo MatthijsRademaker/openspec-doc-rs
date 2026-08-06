@@ -72,18 +72,19 @@ pub enum ScratchCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum CommentCommand {
-    /// Anchor a new comment to selected text in an artifact
+    /// Add a comment, anchored to selected text in an artifact or, with neither
+    /// named, to the scope as a whole
     Add {
         #[command(flatten)]
         scope: ScopeArgs,
 
         /// Artifact to comment on, relative to the project root
-        #[arg(long, value_name = "PATH")]
-        artifact: String,
+        #[arg(long, value_name = "PATH", requires = "selected_text")]
+        artifact: Option<String>,
 
         /// Text to anchor the comment to, exactly as it appears in the artifact
-        #[arg(long, value_name = "TEXT")]
-        selected_text: String,
+        #[arg(long, value_name = "TEXT", requires = "artifact")]
+        selected_text: Option<String>,
 
         /// The comment itself
         #[arg(long, value_name = "TEXT")]
@@ -106,6 +107,20 @@ pub enum CommentCommand {
         comment: String,
 
         /// The reply itself
+        #[arg(long, value_name = "TEXT")]
+        body: String,
+    },
+
+    /// Replace an existing comment's body, keeping the original on the record
+    Edit {
+        #[command(flatten)]
+        scope: ScopeArgs,
+
+        /// Comment to edit
+        #[arg(long, value_name = "ID")]
+        comment: String,
+
+        /// The body that replaces the current one
         #[arg(long, value_name = "TEXT")]
         body: String,
     },

@@ -29,12 +29,19 @@ impl fmt::Display for Status {
     }
 }
 
-/// A comment anchored to a span of an artifact.
+/// A comment, either anchored to a span of an artifact or scoped to the session
+/// or change as a whole.
+///
+/// The anchor is absent rather than empty for an unanchored comment: not all
+/// feedback is about a passage, and a blank selection would be a comment
+/// claiming to point at nothing. A record written with an anchor reads back
+/// unchanged, since a present field deserializes into the option as it stands.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Comment {
     pub id: String,
-    pub anchor: Anchor,
+    #[serde(default)]
+    pub anchor: Option<Anchor>,
     pub body: String,
     pub created_at: String,
 }
@@ -43,6 +50,19 @@ pub struct Comment {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Reply {
+    pub id: String,
+    pub comment_id: String,
+    pub body: String,
+    pub created_at: String,
+}
+
+/// A replacement for an existing comment's body.
+///
+/// Only a comment can be edited, never a reply: a reply is the agent's report of
+/// what it did, and rewriting it would remove the record the reviewer is judging.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Edit {
     pub id: String,
     pub comment_id: String,
     pub body: String,
@@ -77,12 +97,14 @@ pub struct Relocation {
 pub enum Event {
     Comment { comment: Comment },
     Reply { reply: Reply },
+    Edit { edit: Edit },
     Status { status: StatusUpdate },
     Relocate { relocate: Relocation },
 }
 
 /// A comment and everything that happened to it since, as replayed from a
-/// sidecar. The comment's anchor reflects any relocation recorded after it.
+/// sidecar. The comment's anchor reflects any relocation recorded after it, and
+/// its body the last edit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Thread {
     pub comment: Comment,

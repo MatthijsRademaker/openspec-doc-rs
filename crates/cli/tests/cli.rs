@@ -279,6 +279,109 @@ fn a_status_change_naming_an_unknown_comment_fails_loudly() {
     }
 }
 
+/// The reviewer's feedback about the scope as a whole. It goes in the same
+/// sidecar as every anchored comment, so a directive points the agent at one file.
+#[test]
+fn comment_add_without_a_selection_records_an_unanchored_comment() {
+    let fixture = project_with_artifact();
+    let root = fixture.path().to_str().unwrap().to_owned();
+
+    let added = run(&comment_args(
+        "add",
+        &root,
+        &["--body", "The whole framing is off."],
+    ));
+
+    assert!(added.status.success(), "{}", stderr(&added));
+    let id = added_id(&added);
+    let listed = stdout(&run(&comment_args("list", &root, &[])));
+    assert!(listed.contains(&id), "{listed}");
+    assert!(listed.contains("anchor: unanchored"), "{listed}");
+    assert!(
+        !listed.contains("selected:"),
+        "an unanchored comment quotes nothing: {listed}"
+    );
+    assert!(listed.contains("The whole framing is off."), "{listed}");
+}
+
+/// Half a selection is a mistake, not a scope-level comment: `--artifact`
+/// without the text to find in it would silently become unanchored feedback.
+#[test]
+fn comment_add_refuses_an_artifact_without_the_text_it_selects() {
+    let fixture = project_with_artifact();
+    let root = fixture.path().to_str().unwrap().to_owned();
+
+    for half in [
+        vec!["--artifact", ARTIFACT, "--body", "Body."],
+        vec!["--selected-text", SELECTED, "--body", "Body."],
+    ] {
+        let output = run(&comment_args("add", &root, &half));
+
+        assert!(!output.status.success(), "accepted {half:?}");
+        assert!(
+            stderr(&output).contains("--artifact") && stderr(&output).contains("--selected-text"),
+            "{}",
+            stderr(&output)
+        );
+    }
+}
+
+/// A reviewer who mistypes should not have to leave the agent two instructions
+/// and no way to tell which one stands.
+#[test]
+fn comment_edit_replaces_the_body_the_next_list_reports() {
+    let fixture = project_with_artifact();
+    let root = fixture.path().to_str().unwrap().to_owned();
+    let id = added_id(&run(&comment_args("add", &root, &ADD_ARGS)));
+
+    let edited = run(&comment_args(
+        "edit",
+        &root,
+        &["--comment", &id, "--body", "Needs a rationale, not a link."],
+    ));
+
+    assert!(edited.status.success(), "{}", stderr(&edited));
+    let listed = stdout(&run(&comment_args("list", &root, &[])));
+    assert!(listed.contains("comments (1):"), "{listed}");
+    assert!(
+        listed.contains("Needs a rationale, not a link."),
+        "{listed}"
+    );
+    assert!(
+        !listed.contains("Needs a rationale.\n"),
+        "the superseded body is still reported: {listed}"
+    );
+    // The sidecar is append-only: the body first written stays on the record.
+    let sidecar = fs::read_to_string(
+        fixture
+            .path()
+            .join(".openspec-doc/comments/add-thing.jsonl"),
+    )
+    .expect("read sidecar");
+    assert_eq!(sidecar.lines().count(), 2, "{sidecar}");
+    assert!(sidecar.contains("Needs a rationale.\""), "{sidecar}");
+}
+
+#[test]
+fn comment_edit_naming_an_unknown_comment_fails_loudly() {
+    let fixture = project_with_artifact();
+    let root = fixture.path().to_str().unwrap().to_owned();
+    run(&comment_args("add", &root, &ADD_ARGS));
+
+    let output = run(&comment_args(
+        "edit",
+        &root,
+        &["--comment", "not-a-comment-id", "--body", "New body."],
+    ));
+
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("not-a-comment-id"),
+        "{}",
+        stderr(&output)
+    );
+}
+
 #[test]
 fn comment_list_reports_a_moved_anchor_as_fuzzy_rather_than_exact() {
     let fixture = project_with_artifact();

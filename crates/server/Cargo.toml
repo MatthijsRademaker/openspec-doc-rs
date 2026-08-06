@@ -5,12 +5,15 @@ edition.workspace = true
 
 [dependencies]
 axum.workspace = true
+chrono.workspace = true
 notify.workspace = true
 openspec-doc-core.workspace = true
+rust-embed.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 tempfile.workspace = true

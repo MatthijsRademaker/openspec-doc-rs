@@ -3,23 +3,35 @@ use openspec_doc_core::comments::{self, ScopeKey, Status, Thread};
 
 use crate::error::Error;
 
-/// Anchor a comment to `selected_text` in `artifact` and record it under
-/// `scope`, printing the new comment's id and where it landed.
+/// Record a comment under `scope`, anchored to `selected_text` in `artifact`
+/// when both are given and to the scope itself when neither is, printing the new
+/// comment's id and where it landed.
 pub fn add(
     project: Project,
     scope: ScopeKey,
-    artifact: &str,
-    selected_text: &str,
+    artifact: Option<&str>,
+    selected_text: Option<&str>,
     body: &str,
 ) -> Result<(), Error> {
-    let comment = comments::add(&project.root, &scope, artifact, selected_text, body)?;
-    let anchor = &comment.anchor;
+    let comment = match (artifact, selected_text) {
+        (Some(artifact), Some(selected_text)) => {
+            comments::add(&project.root, &scope, artifact, selected_text, body)?
+        }
+        (None, None) => comments::add_unanchored(&project.root, &scope, body)?,
+        // The two arguments require each other.
+        other => unreachable!("clap admitted {other:?}"),
+    };
 
     println!("added comment {}", comment.id);
-    println!("  artifact: {}", anchor.artifact_path);
-    println!("  offsets: {}..{}", anchor.start_offset, anchor.end_offset);
-    if !anchor.heading_path.is_empty() {
-        println!("  under: {}", anchor.heading_path.join(" > "));
+    match &comment.anchor {
+        Some(anchor) => {
+            println!("  artifact: {}", anchor.artifact_path);
+            println!("  offsets: {}..{}", anchor.start_offset, anchor.end_offset);
+            if !anchor.heading_path.is_empty() {
+                println!("  under: {}", anchor.heading_path.join(" > "));
+            }
+        }
+        None => println!("  unanchored: scoped to this session or change"),
     }
 
     Ok(())
@@ -47,6 +59,15 @@ pub fn reply(project: Project, scope: ScopeKey, comment_id: &str, body: &str) ->
     Ok(())
 }
 
+/// Replace the body of `comment_id` under `scope` with `body`.
+pub fn edit(project: Project, scope: ScopeKey, comment_id: &str, body: &str) -> Result<(), Error> {
+    let edit = comments::edit(&project.root, &scope, comment_id, body)?;
+
+    println!("edited comment {}", edit.comment_id);
+
+    Ok(())
+}
+
 /// Move `comment_id` under `scope` to `to`.
 pub fn set_status(
     project: Project,
@@ -62,21 +83,28 @@ pub fn set_status(
 }
 
 fn print_thread(project: &Project, thread: &Thread) -> Result<(), Error> {
-    let anchor = &thread.comment.anchor;
+    let anchor = thread.comment.anchor.as_ref();
     let resolution = comments::resolve_anchor(&project.root, anchor)?;
 
     println!();
     println!("  {} [{}]", thread.comment.id, thread.status);
-    println!("    artifact: {}", anchor.artifact_path);
-    println!(
-        "    anchor: {} {}",
-        resolution.state,
-        match resolution.offset {
-            Some(offset) => format!("at offset {offset}"),
-            None => "nowhere in the artifact".to_owned(),
+    // An unanchored comment names no artifact and quotes nothing, so those lines
+    // would both be empty — the anchor state is the whole of what there is to say.
+    match anchor {
+        Some(anchor) => {
+            println!("    artifact: {}", anchor.artifact_path);
+            println!(
+                "    anchor: {} {}",
+                resolution.state,
+                match resolution.offset {
+                    Some(offset) => format!("at offset {offset}"),
+                    None => "nowhere in the artifact".to_owned(),
+                }
+            );
+            println!("    selected: {:?}", anchor.selected_text);
         }
-    );
-    println!("    selected: {:?}", anchor.selected_text);
+        None => println!("    anchor: {}", resolution.state),
+    }
     println!("    {}", thread.comment.body);
     for reply in &thread.replies {
         println!("    reply: {}", reply.body);

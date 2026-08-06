@@ -99,13 +99,24 @@ fn run(cli: Cli) -> Result<(), Error> {
                 artifact,
                 selected_text,
                 body,
-            } => comment::add(project, scope.key(), &artifact, &selected_text, &body),
+            } => comment::add(
+                project,
+                scope.key(),
+                artifact.as_deref(),
+                selected_text.as_deref(),
+                &body,
+            ),
             CommentCommand::List { scope } => comment::list(project, scope.key()),
             CommentCommand::Reply {
                 scope,
                 comment,
                 body,
             } => comment::reply(project, scope.key(), &comment, &body),
+            CommentCommand::Edit {
+                scope,
+                comment,
+                body,
+            } => comment::edit(project, scope.key(), &comment, &body),
             CommentCommand::Address { scope, comment } => {
                 comment::set_status(project, scope.key(), &comment, Status::Addressed)
             }

@@ -5,7 +5,8 @@ see [what is excluded](/vision.md#what-is-deliberately-excluded).
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/` | GET | every discovered session and active change |
+| `/` | GET | the built frontend, which renders the index |
+| `/api/index` | GET | the index's data: every discovered session and active change, as JSON |
 | `/sessions/<id>` | GET | the session review page |
 | `/changes/<name>` | GET | the change review page |
 | `…/events` | GET | server-sent events; emits `data: changed` when the scope's files change |
@@ -13,12 +14,20 @@ see [what is excluded](/vision.md#what-is-deliberately-excluded).
 | `…/comments` | POST | `artifact_path`, `selected_text`, `body` |
 | `…/verdict` | POST | `verdict`, `notes` |
 
-An unknown session id or change name is a `404`, not an empty page.
+An unknown session id or change name is a `404`, not an empty page. So is any other unrecognised URL: the
+frontend's own assets are served from the binary at their own paths, and nothing falls back to serving the
+application shell.
+
+The index is the only screen the frontend renders so far. The scope pages are still server-rendered HTML —
+`migrate-dashboard-review-to-vue` moves them across.
 
 A session appears here only if it has a directive record. `hook stop` writes an empty slot on first sight,
 which is what makes a session discoverable — see [On-disk state](/reference/on-disk-state.md#the-directive-slot).
 
 ## What a page renders
+
+The index is rendered in the browser from `/api/index`; the fields below are exactly what that endpoint
+serves. Deriving them — the title in particular — is still the server's job, in `crates/core/src/scratch/`.
 
 The index lists each session and change with its **title** — the first heading of its scratch note, which is
 what the exploring agent wrote there — followed by its identifier, when its artifacts were last modified, how

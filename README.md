@@ -62,16 +62,21 @@ substantially agents.
 crates/core     project discovery, comments, scratch notes, verdicts, hook bridge   (no I/O framework)
 crates/server   the axum dashboard: routes, pages, filesystem watcher, SSE
 crates/cli      the openspec-doc binary
+web             the dashboard's frontend: Vite, Vue, Tailwind, shadcn-vue
 ```
 
 `core` holds every rule and every file format; `server` and `cli` are two front ends over it with no
 persistence logic of their own.
 
+`web/dist/` is committed and compiled into the binary, so `cargo install` needs no Node toolchain. CI
+rebuilds it from a clean checkout and fails if it differs — see
+[conventions](docs/docs/development/conventions.md#the-frontend).
+
 ## Build and test
 
 ```bash
-cargo test --workspace                                 # 190 tests
-cargo test -p openspec-doc-core -p openspec-doc-cli    # 157 of them, hermetic
+cargo test --workspace                                 # 228 tests
+cargo test -p openspec-doc-core -p openspec-doc-cli    # 182 of them, hermetic
 cargo clippy --workspace --all-targets
 cargo fmt --all --check
 ```

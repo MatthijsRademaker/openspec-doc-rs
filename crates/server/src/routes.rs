@@ -1,13 +1,15 @@
-//! The route table: a page and an update stream per scoping regime —
+//! The route table: the built frontend at `/` with the index's data behind it,
+//! then a page and an update stream per scoping regime —
 //! `/sessions/<session_id>` for pre-proposal sessions, `/changes/<name>` for
 //! active changes.
 
 use std::convert::Infallible;
 use std::sync::Arc;
 
+use axum::Json;
 use axum::Router;
 use axum::extract::{Form, Path, State};
-use axum::http::StatusCode;
+use axum::http::{StatusCode, Uri};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
@@ -21,7 +23,7 @@ use crate::error::{self, Error};
 use crate::page::{Anchored, Review};
 use crate::scope::Resolved;
 use crate::watch::{Hub, Target};
-use crate::{page, scope};
+use crate::{api, assets, page, scope};
 
 #[derive(Clone)]
 struct AppState {
@@ -36,7 +38,8 @@ pub fn router(project: Project) -> Router {
     };
 
     Router::new()
-        .route("/", get(index))
+        .route("/", get(app))
+        .route("/api/index", get(index_data))
         .route("/sessions/{session_id}", get(session_page))
         .route("/sessions/{session_id}/events", get(session_events))
         .route("/sessions/{session_id}/review", get(session_review))
@@ -71,10 +74,16 @@ struct NewVerdict {
     notes: String,
 }
 
-async fn index(State(state): State<AppState>) -> Result<Html<String>, RouteError> {
+/// The application shell. Everything it shows is data it fetches, so the server
+/// hands it the shell and nothing else.
+async fn app() -> Response {
+    assets::shell()
+}
+
+async fn index_data(State(state): State<AppState>) -> Result<Json<api::Index>, RouteError> {
     let (sessions, changes) = scope::discovered(&state.project)?;
 
-    Ok(Html(page::index(&sessions, &changes)))
+    Ok(Json(api::Index::new(&sessions, &changes)))
 }
 
 async fn session_page(
@@ -193,8 +202,14 @@ async fn change_verdict(
     Ok(Redirect::to(&format!("/changes/{name}")))
 }
 
-async fn unknown() -> RouteError {
-    RouteError::NotFound
+/// Anything the route table did not answer: an embedded asset where the frontend
+/// owns the path, and a 404 otherwise. The shell is deliberately not a fallback
+/// — an unknown session id or change name is a 404, not a page.
+async fn unknown(uri: Uri) -> Response {
+    match assets::asset(uri.path().trim_start_matches('/')) {
+        Some(response) => response,
+        None => RouteError::NotFound.into_response(),
+    }
 }
 
 /// The scope's comment threads, each with where its anchor lands in the artifact
@@ -204,7 +219,7 @@ fn review_state(state: &AppState, resolved: &Resolved) -> Result<Review, RouteEr
     let mut comments = Vec::new();
 
     for thread in comments::read(root, &resolved.key)? {
-        let resolution = comments::resolve_anchor(root, &thread.comment.anchor)?;
+        let resolution = comments::resolve_anchor(root, thread.comment.anchor.as_ref())?;
         comments.push(Anchored { thread, resolution });
     }
 
@@ -434,6 +449,20 @@ mod tests {
         .await
     }
 
+    /// A JSON response's body, parsed. The status line is asserted on first, so a
+    /// failure reports the response rather than a parse error against an error
+    /// page.
+    async fn fetch_json(address: SocketAddr, path: &str) -> serde_json::Value {
+        let response = fetch(address, path).await;
+        assert!(
+            response.starts_with("HTTP/1.1 200 OK"),
+            "{path} did not serve JSON:\n{response}"
+        );
+        let body = response.split_once("\r\n\r\n").expect("headers and body").1;
+
+        serde_json::from_str(body).unwrap_or_else(|source| panic!("{source} in:\n{body}"))
+    }
+
     /// Post `body` as a form, the way the pages' own forms submit.
     async fn post(address: SocketAddr, path: &str, body: &str) -> String {
         exchange(
@@ -501,6 +530,172 @@ mod tests {
                 "{path} was served instead of 404:\n{response}"
             );
         }
+    }
+
+    /// `/` is the built frontend's shell and nothing else. If this ever serves a
+    /// rendered list again, the index has two implementations.
+    #[tokio::test]
+    async fn the_root_serves_the_built_frontends_shell() {
+        let fixture = project_fixture();
+        let address = serve(fixture.path()).await;
+
+        let response = fetch(address, "/").await;
+
+        assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
+        assert!(
+            response.contains("<div id=\"app\">"),
+            "the shell was not served:\n{response}"
+        );
+        assert!(
+            !response.contains(SESSION_ID),
+            "the shell carries no scope data; the frontend fetches it:\n{response}"
+        );
+    }
+
+    /// The distribution decision, exercised: the module bundle the shell loads is
+    /// in the binary, not on disk beside it.
+    #[tokio::test]
+    async fn the_shells_assets_are_served_from_the_binary() {
+        let fixture = project_fixture();
+        let address = serve(fixture.path()).await;
+        let shell = fetch(address, "/").await;
+
+        let asset = shell
+            .split_once("src=\"/assets/")
+            .expect("the shell loads a bundle from /assets/")
+            .1
+            .split_once('"')
+            .expect("a quoted src")
+            .0;
+        let response = fetch(address, &format!("/assets/{asset}")).await;
+
+        assert!(
+            response.starts_with("HTTP/1.1 200 OK"),
+            "/assets/{asset} was not served:\n{response}"
+        );
+        assert!(
+            response.contains("javascript"),
+            "the bundle was served without a script content type:\n{response}"
+        );
+    }
+
+    /// Every field the index shows, on the wire. The derivation behind each one
+    /// is `scope`'s and `core`'s; what is asserted here is that the endpoint
+    /// carries all of it.
+    #[tokio::test]
+    async fn the_index_endpoint_lists_every_discovered_scope_with_its_fields() {
+        let fixture = project_fixture();
+        let address = serve(fixture.path()).await;
+        post(
+            address,
+            &format!("/sessions/{SESSION_ID}/comments"),
+            &form(&[
+                (
+                    "artifact_path",
+                    &format!(".openspec-doc/scratch/_session/{SESSION_ID}.md"),
+                ),
+                ("selected_text", SELECTED),
+                ("body", "Which part?"),
+            ]),
+        )
+        .await;
+        post(
+            address,
+            &format!("/sessions/{SESSION_ID}/verdict"),
+            &form(&[("verdict", "keep-exploring"), ("notes", "Still open.")]),
+        )
+        .await;
+
+        let index = fetch_json(address, "/api/index").await;
+
+        let session = &index["sessions"][0];
+        assert_eq!(session["key"], SESSION_ID);
+        assert_eq!(session["title"], "Exploration");
+        assert!(
+            session["modifiedAt"].is_string(),
+            "the note is on disk and has an mtime: {session}"
+        );
+        assert_eq!(session["openComments"], 1);
+        assert_eq!(session["verdict"], "keep-exploring");
+        assert_eq!(
+            session["mostRecentlyActive"], true,
+            "the only session is the one that spoke last: {session}"
+        );
+
+        let change = &index["changes"][0];
+        assert_eq!(change["key"], CHANGE);
+        assert_eq!(change["openComments"], 0);
+        assert_eq!(change["verdict"], serde_json::Value::Null);
+    }
+
+    /// A promoted session has no note of its own left to be titled from, and its
+    /// id alone is the row the index existed to fix. It is still addressed by
+    /// that id, because the redirect is not a page.
+    #[tokio::test]
+    async fn a_promoted_session_is_named_by_the_change_it_became() {
+        let fixture = project_fixture();
+        fs::write(
+            fixture
+                .path()
+                .join(".openspec-doc/scratch/_session")
+                .join(format!("{SESSION_ID}.md")),
+            "<!-- openspec-doc:moved-to .openspec-doc/scratch/add-a.md -->\n\n\
+             This scratch note moved to `.openspec-doc/scratch/add-a.md`.\n",
+        )
+        .expect("write redirect");
+        let address = serve(fixture.path()).await;
+
+        let index = fetch_json(address, "/api/index").await;
+
+        assert_eq!(index["sessions"][0]["title"], "Promoted to add-a");
+        assert_eq!(index["sessions"][0]["key"], SESSION_ID);
+    }
+
+    /// No title means no title. Nothing invents a name for the scope; the
+    /// frontend leads with the identifier it is addressed by.
+    #[tokio::test]
+    async fn an_untitled_session_has_no_title_and_keeps_its_identifier() {
+        let fixture = project_fixture();
+        fs::remove_file(
+            fixture
+                .path()
+                .join(".openspec-doc/scratch/_session")
+                .join(format!("{SESSION_ID}.md")),
+        )
+        .expect("remove note");
+        let address = serve(fixture.path()).await;
+
+        let index = fetch_json(address, "/api/index").await;
+
+        assert_eq!(index["sessions"][0]["title"], serde_json::Value::Null);
+        assert_eq!(index["sessions"][0]["key"], SESSION_ID);
+        assert_eq!(
+            index["sessions"][0]["modifiedAt"],
+            serde_json::Value::Null,
+            "no exploration has been written yet"
+        );
+    }
+
+    /// A project nobody has explored yet is an empty index, not a failure.
+    #[tokio::test]
+    async fn a_project_with_no_scopes_returns_an_empty_index() {
+        let temp = TempDir::new().expect("temp dir");
+        fs::create_dir_all(temp.path().join("openspec/changes")).expect("create changes dir");
+        fs::write(temp.path().join("openspec/config.yaml"), "").expect("write config");
+        let address = serve(temp.path()).await;
+
+        let index = fetch_json(address, "/api/index").await;
+
+        assert_eq!(
+            index["sessions"].as_array().map(Vec::len),
+            Some(0),
+            "{index}"
+        );
+        assert_eq!(
+            index["changes"].as_array().map(Vec::len),
+            Some(0),
+            "{index}"
+        );
     }
 
     /// The point of the SSE endpoint: the client issues one request and the
@@ -605,12 +800,13 @@ mod tests {
             panic!("expected one comment, got {}", threads.len());
         };
         assert_eq!(thread.comment.body, "Which part is worth keeping?");
+        let anchor = thread.comment.anchor.as_ref().expect("an anchored comment");
         assert_eq!(
-            thread.comment.anchor.selected_text, SELECTED,
+            anchor.selected_text, SELECTED,
             "the anchor is created from the selection"
         );
         assert_eq!(
-            thread.comment.anchor.heading_path,
+            anchor.heading_path,
             ["Exploration"],
             "the anchor is derived from the raw markdown, not from the rendered page"
         );
@@ -641,7 +837,15 @@ mod tests {
             panic!("expected one comment, got {}", threads.len());
         };
         assert_eq!(thread.comment.body, "Why is it worth keeping?");
-        assert_eq!(thread.comment.anchor.heading_path, ["Why"]);
+        assert_eq!(
+            thread
+                .comment
+                .anchor
+                .as_ref()
+                .expect("an anchored comment")
+                .heading_path,
+            ["Why"]
+        );
     }
 
     /// The anchor is created against the file, not against what the browser

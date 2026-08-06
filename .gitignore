@@ -1,6 +1,10 @@
 target/
 node_modules/
 dist/
+# The dashboard's frontend build is committed, so `cargo install` needs no Node
+# toolchain. CI rebuilds it from a clean checkout and fails if it differs — see
+# .github/workflows/frontend-assets.yml.
+!web/dist/
 coverage/
 doc_build/
 .rspress/

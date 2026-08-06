@@ -11,9 +11,11 @@ use chrono::Utc;
 use crate::error::Error;
 use crate::session::check_session_id;
 
-use super::anchor;
+use super::anchor::{self, Anchor};
 use super::artifact;
-use super::record::{Comment, Event, Relocation, Reply, Status, StatusUpdate, Thread, new_id};
+use super::record::{
+    Comment, Edit, Event, Relocation, Reply, Status, StatusUpdate, Thread, new_id,
+};
 use super::{COMMENTS_DIR, SESSION_DIR};
 
 /// The scope a comment sidecar is filed under: a session id while the artifact
@@ -63,9 +65,55 @@ pub fn add(
         artifact_path: artifact_path.to_owned(),
     })?;
 
+    record_comment(
+        root,
+        key,
+        Some(anchor::create(artifact_path, &markdown, selected_text)?),
+        body,
+    )
+}
+
+/// Record `body` against `key` itself, anchored to nothing.
+///
+/// Deliberately not routed through [`anchor::create`]: that function's contract
+/// is that the selected text was found in the artifact, so calling it with an
+/// empty selection would turn its error case into a formality. There is also no
+/// artifact to read — the scope may hold none yet, which is exactly the state a
+/// session is in before the agent has written its note.
+pub fn add_unanchored(root: &Path, key: &ScopeKey, body: &str) -> Result<Comment, Error> {
+    record_comment(root, key, None, body)
+}
+
+/// Replace the body of the comment `comment_id` in `key`'s sidecar.
+///
+/// The event is appended and the record that created the comment is left as
+/// written, so the sidecar keeps the body the reviewer first wrote. Only a
+/// comment can be edited: `comment_id` naming a reply is an unknown comment.
+pub fn edit(root: &Path, key: &ScopeKey, comment_id: &str, body: &str) -> Result<Edit, Error> {
+    require_comment(root, key, comment_id)?;
+
+    let edit = Edit {
+        id: new_id(),
+        comment_id: comment_id.to_owned(),
+        body: body.to_owned(),
+        created_at: Utc::now().to_rfc3339(),
+    };
+
+    append(root, key, &Event::Edit { edit: edit.clone() })?;
+
+    Ok(edit)
+}
+
+/// Append a comment event carrying `anchor`, whether or not there is one.
+fn record_comment(
+    root: &Path,
+    key: &ScopeKey,
+    anchor: Option<Anchor>,
+    body: &str,
+) -> Result<Comment, Error> {
     let comment = Comment {
         id: new_id(),
-        anchor: anchor::create(artifact_path, &markdown, selected_text)?,
+        anchor,
         body: body.to_owned(),
         created_at: Utc::now().to_rfc3339(),
     };
@@ -156,14 +204,22 @@ pub fn read(root: &Path, key: &ScopeKey) -> Result<Vec<Thread>, Error> {
                 let thread = &mut threads[lookup(&index, &path, &reply.comment_id)?];
                 thread.replies.push(reply);
             }
+            Event::Edit { edit } => {
+                let thread = &mut threads[lookup(&index, &path, &edit.comment_id)?];
+                thread.comment.body = edit.body;
+            }
             Event::Status { status } => {
                 let thread = &mut threads[lookup(&index, &path, &status.comment_id)?];
                 thread.status = status.status;
                 thread.status_history.push(status);
             }
             Event::Relocate { relocate } => {
-                for thread in &mut threads {
-                    let anchor = &mut thread.comment.anchor;
+                // An unanchored comment names no artifact, so a relocation has
+                // nothing to rewrite in it.
+                for anchor in threads
+                    .iter_mut()
+                    .filter_map(|thread| thread.comment.anchor.as_mut())
+                {
                     if anchor.artifact_path == relocate.from_artifact_path {
                         anchor.artifact_path = relocate.to_artifact_path.clone();
                     }
@@ -397,13 +453,157 @@ mod tests {
         )
         .expect("add comment");
 
-        assert_eq!(comment.anchor.heading_path, ["Proposal", "Why"]);
-        assert_eq!(comment.anchor.artifact_path, ARTIFACT);
+        let anchor = comment.anchor.as_ref().expect("an anchored comment");
+        assert_eq!(anchor.heading_path, ["Proposal", "Why"]);
+        assert_eq!(anchor.artifact_path, ARTIFACT);
         assert_eq!(comment.body, "Needs a rationale.");
         assert_eq!(
             lines(&change().path(temp.path()).expect("path")).len(),
             1,
             "one comment is one line"
+        );
+    }
+
+    /// The sidecars in this repository were written before the anchor became
+    /// optional. Every one of their lines carries an `anchor` object, and they
+    /// are real review history rather than a fixture.
+    #[test]
+    fn a_comment_line_written_with_an_anchor_still_reads_into_a_thread() {
+        let temp = TempDir::new().expect("temp dir");
+        let path = change().path(temp.path()).expect("path");
+        fs::create_dir_all(path.parent().expect("parent")).expect("create dirs");
+        fs::write(
+            &path,
+            r#"{"type":"comment","comment":{"id":"c1","anchor":{"artifactPath":"openspec/changes/add-thing/proposal.md","selectedText":"Selected sentence.","headingPath":["Proposal","Why"],"beforeText":"Alpha before. ","afterText":" Omega after.","startOffset":26,"endOffset":44},"body":"Needs a rationale.","createdAt":"2026-07-31T08:00:00Z"}}
+"#,
+        )
+        .expect("write pre-existing sidecar");
+
+        let threads = read(temp.path(), &change()).expect("read");
+
+        let [thread] = threads.as_slice() else {
+            panic!("expected one thread, got {}", threads.len());
+        };
+        let anchor = thread.comment.anchor.as_ref().expect("the anchor survived");
+        assert_eq!(anchor.selected_text, SELECTED);
+        assert_eq!(anchor.heading_path, ["Proposal", "Why"]);
+        assert_eq!(thread.comment.body, "Needs a rationale.");
+    }
+
+    /// A session has no artifacts until the agent writes its note, and the
+    /// reviewer's scope-level feedback must not have to wait for one.
+    #[test]
+    fn an_unanchored_comment_needs_no_artifact_on_disk() {
+        let temp = TempDir::new().expect("temp dir");
+
+        let comment =
+            add_unanchored(temp.path(), &session(), "Where is the note?").expect("add unanchored");
+
+        assert_eq!(comment.anchor, None);
+        let threads = read(temp.path(), &session()).expect("read");
+        let [thread] = threads.as_slice() else {
+            panic!("expected one thread, got {}", threads.len());
+        };
+        assert_eq!(thread.comment, comment);
+        assert_eq!(thread.status, Status::Open);
+    }
+
+    /// Relocation rewrites the artifact path in every anchor it finds. An
+    /// unanchored comment has none, and must ride along rather than trip it.
+    #[test]
+    fn an_unanchored_comment_survives_its_sidecars_relocation() {
+        let (temp, _) = root_with_session_comment();
+        let unanchored = add_unanchored(temp.path(), &session(), "About the whole thing.")
+            .expect("add unanchored");
+
+        relocate(
+            temp.path(),
+            &session(),
+            &change(),
+            SESSION_NOTE,
+            CHANGE_NOTE,
+        )
+        .expect("relocate");
+
+        let threads = read(temp.path(), &change()).expect("read");
+        assert_eq!(threads.len(), 2);
+        assert_eq!(threads[1].comment, unanchored);
+        assert_eq!(
+            threads[0]
+                .comment
+                .anchor
+                .as_ref()
+                .expect("still anchored")
+                .artifact_path,
+            CHANGE_NOTE
+        );
+    }
+
+    #[test]
+    fn an_edited_comment_reads_back_with_its_latest_body() {
+        let temp = root_with_artifact();
+        let comment =
+            add(temp.path(), &change(), ARTIFACT, SELECTED, "Wrong body.").expect("add comment");
+
+        edit(temp.path(), &change(), &comment.id, "Corrected body.").expect("edit");
+        edit(temp.path(), &change(), &comment.id, "Corrected again.").expect("second edit");
+
+        let threads = read(temp.path(), &change()).expect("read");
+        let [thread] = threads.as_slice() else {
+            panic!("expected one thread, got {}", threads.len());
+        };
+        assert_eq!(thread.comment.body, "Corrected again.");
+        assert_eq!(
+            thread.comment.anchor, comment.anchor,
+            "an edit changes the body and nothing else"
+        );
+    }
+
+    #[test]
+    fn an_edit_leaves_the_body_the_comment_was_created_with_in_the_file() {
+        let temp = root_with_artifact();
+        let path = change().path(temp.path()).expect("path");
+        let comment =
+            add(temp.path(), &change(), ARTIFACT, SELECTED, "Wrong body.").expect("add comment");
+        let after_comment = lines(&path);
+
+        edit(temp.path(), &change(), &comment.id, "Corrected body.").expect("edit");
+
+        let after_edit = lines(&path);
+        assert_eq!(after_edit.len(), 2, "an edit is one appended line");
+        assert_eq!(
+            after_edit[..1],
+            after_comment[..],
+            "the original comment line is left exactly as written"
+        );
+        assert!(
+            after_edit[0].contains("Wrong body."),
+            "the body first written is still on the record: {}",
+            after_edit[0]
+        );
+    }
+
+    #[test]
+    fn editing_a_comment_this_scope_does_not_hold_is_an_error() {
+        let temp = root_with_artifact();
+        let comment =
+            add(temp.path(), &change(), ARTIFACT, SELECTED, "Body.").expect("add comment");
+        // A reply is not editable: its id is not a comment id.
+        let reply = reply(temp.path(), &change(), &comment.id, "Done.").expect("reply");
+
+        for unknown in ["not-a-comment-id", reply.id.as_str()] {
+            let error =
+                edit(temp.path(), &change(), unknown, "New body.").expect_err("unknown comment");
+
+            assert!(
+                matches!(&error, Error::UnknownComment { comment_id, .. } if comment_id == unknown),
+                "{error}"
+            );
+        }
+        assert_eq!(
+            lines(&change().path(temp.path()).expect("path")).len(),
+            2,
+            "the rejected edits are not appended"
         );
     }
 
@@ -730,10 +930,10 @@ mod tests {
         .expect("relocate");
 
         let threads = read(temp.path(), &change()).expect("read");
-        let anchor = &threads[0].comment.anchor;
+        let anchor = threads[0].comment.anchor.as_ref().expect("still anchored");
         assert_eq!(anchor.artifact_path, CHANGE_NOTE);
         assert_eq!(
-            artifact::resolve(temp.path(), anchor)
+            artifact::resolve(temp.path(), Some(anchor))
                 .expect("resolve")
                 .state,
             anchor::AnchorState::Exact,

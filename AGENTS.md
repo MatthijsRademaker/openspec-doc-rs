@@ -57,7 +57,7 @@ This project's own tool, `openspec-doc`, is wired into two of the agent's hooks:
 How it works:
 
 - The owner runs `openspec-doc serve` and reviews the exploration notes and change artifacts in a browser on `127.0.0.1`.
-- From that dashboard they leave anchored comments and submit a phase verdict: keep exploring, move to proposal, or send the open comments back for work.
+- From that dashboard they leave comments — anchored to a passage, or scoped to the whole session or change when the feedback is not about one — and submit a phase verdict: keep exploring, move to proposal, or send the open comments back for work.
 - Whichever hook fires first turns the standing verdict into a directive and delivers it: `hook prompt` adds the directive's text to the context of the turn the owner's prompt starts, and `hook stop` blocks the turn end and feeds the text back into the session.
 - A directive is delivered exactly once across the two. Prompt-time delivery is the usual path, because the reviewer's own prompt is normally what follows a verdict — the Stop path is what stops you going idle while feedback is outstanding, and the only path that works when no prompt is coming.
 
@@ -68,7 +68,7 @@ Where the state lives, all under `.openspec-doc/` at the project root:
 | Path | What is in it |
 | --- | --- |
 | `directives/_session/<session-id>.json` | The directive queued for a session, and whether it has been injected yet |
-| `comments/<change>.jsonl`, `comments/_session/<session-id>.jsonl` | Anchored review comments; `openspec-doc comment list --change <name>` prints them |
+| `comments/<change>.jsonl`, `comments/_session/<session-id>.jsonl` | Review comments, anchored to a passage or to the scope itself; `openspec-doc comment list --change <name>` prints them |
 | `verdicts/<change>.jsonl`, `verdicts/_session/<session-id>.jsonl` | The verdict stream, latest record last; the reviewer's notes are in it |
 | `scratch/<change>.md`, `scratch/_session/<session-id>.md` | The exploration note, before and after it is promoted to a change |
 

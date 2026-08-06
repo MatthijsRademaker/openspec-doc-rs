@@ -326,13 +326,14 @@ mod tests {
         };
         assert_eq!(thread.comment.id, comment.id);
         assert_eq!(thread.comment.body, "Which part is worth keeping?");
+        let anchor = thread.comment.anchor.as_ref().expect("an anchored comment");
         assert_eq!(
-            thread.comment.anchor.artifact_path,
+            anchor.artifact_path,
             note::change_relative("add-thing"),
             "the anchor follows the note to its new path"
         );
         assert_eq!(
-            comments::resolve_anchor(&project.root, &thread.comment.anchor)
+            comments::resolve_anchor(&project.root, Some(anchor))
                 .expect("resolve")
                 .state,
             comments::AnchorState::Exact,

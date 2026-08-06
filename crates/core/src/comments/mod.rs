@@ -16,8 +16,10 @@ mod sidecar;
 pub(crate) use anchor::parse_heading;
 pub use anchor::{Anchor, AnchorState, Resolution};
 pub use artifact::{read as read_artifact, resolve as resolve_anchor};
-pub use record::{Comment, Event, Relocation, Reply, Status, StatusUpdate, Thread};
-pub use sidecar::{ScopeKey, StatusCounts, add, counts, read, relocate, reply, set_status};
+pub use record::{Comment, Edit, Event, Relocation, Reply, Status, StatusUpdate, Thread};
+pub use sidecar::{
+    ScopeKey, StatusCounts, add, add_unanchored, counts, edit, read, relocate, reply, set_status,
+};
 
 /// The sidecar directory holding every scope's comment stream.
 const COMMENTS_DIR: &str = ".openspec-doc/comments";

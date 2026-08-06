@@ -1,7 +1,10 @@
-//! The `serve` subcommand's HTTP server: session- and change-scoped routes
-//! over a discovered OpenSpec project, each with a server-sent-events endpoint
-//! fed by a filesystem watcher so an open page updates without a reload.
+//! The `serve` subcommand's HTTP server: the built frontend and the index data
+//! it renders, plus session- and change-scoped routes over a discovered OpenSpec
+//! project, each with a server-sent-events endpoint fed by a filesystem watcher
+//! so an open page updates without a reload.
 
+mod api;
+mod assets;
 mod browser;
 mod error;
 mod page;

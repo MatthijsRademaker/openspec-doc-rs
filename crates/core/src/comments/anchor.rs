@@ -40,6 +40,10 @@ pub enum AnchorState {
     Orphaned,
     /// The artifact itself is gone.
     Missing,
+    /// There was never an anchor: the comment is scoped to the session or change
+    /// as a whole. Reported apart from `Orphaned`, which means an anchor was
+    /// lost and is a defect the reviewer should see.
+    Unanchored,
 }
 
 /// Where an anchor lands in the current markdown, and how sure that is.
@@ -57,6 +61,7 @@ impl fmt::Display for AnchorState {
             Self::Fuzzy => "fuzzy",
             Self::Orphaned => "orphaned",
             Self::Missing => "missing",
+            Self::Unanchored => "unanchored",
         };
         f.write_str(label)
     }

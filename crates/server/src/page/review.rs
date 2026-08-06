@@ -56,8 +56,11 @@ fn comments(anchored: &[Anchored]) -> String {
 /// One comment thread, reporting how confidently its anchor still resolves —
 /// a comment whose text has been rewritten out from under it is shown as such
 /// rather than presented as if it were still firmly placed.
+///
+/// A comment scoped to the session or change as a whole has no artifact to name
+/// and no passage to quote, so it renders with neither rather than with an empty
+/// path and an empty quotation.
 fn comment(thread: &Thread, resolution: &Resolution) -> String {
-    let anchor = &thread.comment.anchor;
     let status = thread.status;
     let replies: String = thread
         .replies
@@ -67,18 +70,27 @@ fn comment(thread: &Thread, resolution: &Resolution) -> String {
 
     format!(
         "<li class=\"comment\" data-anchor-state=\"{state}\">\n\
-         <p class=\"meta\">{path} · {status} · anchor {state}{at}</p>\n\
-         <blockquote>{selected}</blockquote>\n\
+         <p class=\"meta\">{where_}{status} · anchor {state}{at}</p>\n\
+         {quotation}\
          <p class=\"body\">{body}</p>\n\
          {replies}</li>\n",
         state = resolution.state,
-        path = escape(&anchor.artifact_path),
+        where_ = match &thread.comment.anchor {
+            Some(anchor) => format!("{} · ", escape(&anchor.artifact_path)),
+            None => String::new(),
+        },
         at = match resolution.offset {
             Some(offset) if resolution.state != AnchorState::Exact =>
                 format!(" at offset {offset}"),
             _ => String::new(),
         },
-        selected = escape(&anchor.selected_text),
+        quotation = match &thread.comment.anchor {
+            Some(anchor) => format!(
+                "<blockquote>{}</blockquote>\n",
+                escape(&anchor.selected_text)
+            ),
+            None => String::new(),
+        },
         body = escape(&thread.comment.body),
         replies = if replies.is_empty() {
             String::new()
@@ -124,7 +136,7 @@ mod tests {
         Thread {
             comment: openspec_doc_core::comments::Comment {
                 id: "c1".to_owned(),
-                anchor: Anchor {
+                anchor: Some(Anchor {
                     artifact_path: "note.md".to_owned(),
                     selected_text: selected.to_owned(),
                     heading_path: vec!["Why".to_owned()],
@@ -132,7 +144,7 @@ mod tests {
                     after_text: String::new(),
                     start_offset: 0,
                     end_offset: selected.len(),
-                },
+                }),
                 body: body.to_owned(),
                 created_at: "2026-07-31T08:00:00Z".to_owned(),
             },
@@ -140,6 +152,14 @@ mod tests {
             replies: Vec::new(),
             status_history: Vec::new(),
         }
+    }
+
+    /// A comment scoped to the session or change rather than to a passage of it.
+    fn unanchored_thread(body: &str) -> Thread {
+        let mut thread = thread(body, "unused", Status::Open);
+        thread.comment.id = "c2".to_owned();
+        thread.comment.anchor = None;
+        thread
     }
 
     fn exact() -> Resolution {
@@ -194,6 +214,41 @@ mod tests {
         ));
 
         assert!(html.contains("anchor fuzzy at offset 42"), "{html}");
+    }
+
+    /// This page is on its way out, but not yet, and a scope holding both kinds
+    /// of comment must render rather than take the reviewer's dashboard down.
+    #[test]
+    fn an_anchored_and_an_unanchored_comment_both_render() {
+        let html = fragment(&review(
+            vec![
+                Anchored {
+                    thread: thread("Needs a rationale.", "Because of X.", Status::Open),
+                    resolution: exact(),
+                },
+                Anchored {
+                    thread: unanchored_thread("The whole framing is off."),
+                    resolution: Resolution {
+                        state: AnchorState::Unanchored,
+                        offset: None,
+                    },
+                },
+            ],
+            vec![],
+        ));
+
+        assert!(html.contains("Comments (2)"), "{html}");
+        assert!(html.contains("note.md · open · anchor exact"), "{html}");
+        assert!(html.contains("Needs a rationale."), "{html}");
+        assert!(html.contains("The whole framing is off."), "{html}");
+        assert!(
+            html.contains("<p class=\"meta\">open · anchor unanchored</p>"),
+            "an unanchored comment claims no artifact: {html}"
+        );
+        assert!(
+            html.matches("<blockquote>").count() == 1,
+            "an unanchored comment quotes nothing: {html}"
+        );
     }
 
     #[test]

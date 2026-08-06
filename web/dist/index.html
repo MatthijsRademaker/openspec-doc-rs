@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>openspec-doc</title>
+    <script>
+      // Applied before the first paint, so a reviewer on the dark theme never
+      // sees a flash of the light one while the bundle loads. The key is the one
+      // useColorMode() persists under.
+      if (localStorage.getItem('openspec-doc-theme') === 'dark') {
+        document.documentElement.classList.add('dark')
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-9_6NzT1h.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-In0pt8h5.css">
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>

@@ -8,7 +8,7 @@ use std::path::{Component, Path};
 
 use crate::error::Error;
 
-use super::anchor::{self, Anchor, Resolution};
+use super::anchor::{self, Anchor, AnchorState, Resolution};
 
 /// The markdown of the artifact at `artifact_path`, relative to `root`, or
 /// `None` when no such file exists.
@@ -24,7 +24,18 @@ pub fn read(root: &Path, artifact_path: &str) -> Result<Option<String>, Error> {
 
 /// Where `anchor` lands in its artifact as that artifact stands on disk right
 /// now, which is the only state a reader of a stored comment cares about.
-pub fn resolve(root: &Path, anchor: &Anchor) -> Result<Resolution, Error> {
+///
+/// A comment with no anchor has nothing to be found in: it is scoped to the
+/// session or change as a whole, and resolves as `unanchored` rather than being
+/// run through a ladder whose every rung is about locating text.
+pub fn resolve(root: &Path, anchor: Option<&Anchor>) -> Result<Resolution, Error> {
+    let Some(anchor) = anchor else {
+        return Ok(Resolution {
+            state: AnchorState::Unanchored,
+            offset: None,
+        });
+    };
+
     let markdown = read(root, &anchor.artifact_path)?;
 
     Ok(anchor::resolve(anchor, markdown.as_deref()))
@@ -85,9 +96,28 @@ mod tests {
         let anchor = anchor::create("openspec/gone.md", "Selected text.", "Selected text.")
             .expect("create anchor");
 
-        let resolution = resolve(temp.path(), &anchor).expect("resolve");
+        let resolution = resolve(temp.path(), Some(&anchor)).expect("resolve");
 
         assert_eq!(resolution.state, AnchorState::Missing);
+    }
+
+    /// An unanchored comment is normal; an orphaned one is drift the reviewer
+    /// has to be shown. Collapsing the two would report every scope-level
+    /// comment as a lost anchor.
+    #[test]
+    fn a_comment_with_no_anchor_resolves_as_unanchored_not_orphaned() {
+        let temp = TempDir::new().expect("temp dir");
+        fs::write(temp.path().join("note.md"), "Nothing matching here.\n").expect("write artifact");
+        let lost =
+            anchor::create("note.md", "Rewritten away.", "Rewritten away.").expect("create anchor");
+
+        let unanchored = resolve(temp.path(), None).expect("resolve");
+        let orphaned = resolve(temp.path(), Some(&lost)).expect("resolve");
+
+        assert_eq!(unanchored.state, AnchorState::Unanchored);
+        assert_eq!(unanchored.offset, None);
+        assert_eq!(orphaned.state, AnchorState::Orphaned);
+        assert_ne!(unanchored.state, orphaned.state);
     }
 
     #[test]

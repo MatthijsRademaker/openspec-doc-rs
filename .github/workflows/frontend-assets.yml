@@ -1,0 +1,42 @@
+# `web/dist/` is committed so that `cargo install` needs no Node toolchain. That
+# trade is only safe with this check: without it a stale `dist/` ships an
+# interface that does not match its source, and does it silently.
+name: Frontend assets
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  dist-is-current:
+    name: web/dist matches a clean build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # No dependency cache and no `node_modules` restored from anywhere: the
+      # point is a build unaffected by any prior state, since a cached one would
+      # verify the cache rather than the source.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Fail if the committed assets are stale
+        run: |
+          if [ -n "$(git status --porcelain -- .)" ]; then
+            echo "::error::web/dist is stale: a clean build differs from the committed assets. Run 'npm ci && npm run build' in web/ and commit the result."
+            git status --porcelain -- .
+            # --stat, not the diff itself: a minified bundle's content diff is
+            # noise, and which files moved is the whole answer.
+            git diff --stat -- .
+            exit 1
+          fi

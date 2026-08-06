@@ -13,6 +13,9 @@ clap = { version = "4", features = ["derive"] }
 notify = "8"
 openspec-doc-core = { path = "crates/core" }
 openspec-doc-server = { path = "crates/server" }
+# `debug-embed` so a debug build and a test embed the assets the way a release
+# build does, rather than reading `web/dist` off disk at run time.
+rust-embed = { version = "8", features = ["debug-embed", "mime-guess"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
