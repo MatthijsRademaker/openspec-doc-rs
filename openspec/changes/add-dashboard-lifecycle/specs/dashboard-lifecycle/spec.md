@@ -116,21 +116,8 @@ Both conditions are required. Exiting on an unsubscribed page alone would shut t
 - **WHEN** a dashboard started without the idle-exit option has had no subscribed page and no ensure for longer than the idle window
 - **THEN** it SHALL keep serving
 
-### Requirement: An exploration registers its session before the dashboard is opened at it
-The system SHALL register a session when its exploration starts, by writing a directive record with nothing pending, and SHALL do so before opening a browser at that session's page.
-
-A session is discoverable only if it has a directive record, so the session page and the index both omit a session that has none. Only the turn-end hook writes one today, which is after the moment the browser is opened — so without this the tab opens on a page that does not exist, for an exploration whose note is already on disk.
-
-#### Scenario: The session page resolves as soon as the exploration starts
-- **WHEN** an exploration starts for a session with no directive record
-- **THEN** the system SHALL write one, and that session's page SHALL resolve rather than reporting not-found
-
-#### Scenario: An existing directive is not disturbed by registration
-- **WHEN** an exploration starts for a session that already has a directive record
-- **THEN** the system SHALL leave that record's pending state and reason unchanged
-
-### Requirement: Registration means an exploration started, not that a turn ended
-The system SHALL register a session at a turn boundary only when that session has review material — a scratch note, or a change its exploration was promoted to — using the same predicate that decides whether to ensure a dashboard.
+### Requirement: Registration means a session has something to review
+The system SHALL register a session — write its directive record — at a turn boundary, and only when that session has review material: a scratch note, or a change its exploration was promoted to. It SHALL use the same predicate that decides whether to ensure a dashboard.
 
 Every turn boundary in the project runs the turn-end hook, so registering unconditionally makes a directive record mean only that some turn ended in this project. The dashboard index is the visible cost: it lists sessions that never explored, alongside the ones the reviewer is looking for. One predicate should decide registering, ensuring, and listing.
 
@@ -142,21 +129,33 @@ Every turn boundary in the project runs the turn-end hook, so registering uncond
 - **WHEN** a turn boundary is reached in a session whose scratch note exists and which has no directive record
 - **THEN** the system SHALL write one
 
-### Requirement: A browser opens when the exploration starts, and only for a dashboard that was just started
-The system SHALL open a browser at **that session's page** when an exploration starts and a dashboard was started to serve it, SHALL NOT open one when an existing dashboard was reused, and SHALL NOT open one at a turn boundary.
+#### Scenario: Starting an exploration registers nothing on its own
+- **WHEN** an exploration starts, before any turn boundary has been reached
+- **THEN** the system SHALL NOT write a directive record and SHALL NOT start a dashboard
 
-Opening the index instead would show a page that does not list the session either, which hides the discoverability problem rather than avoiding it. The session page is also the thing the reviewer wants: the note they are about to read is its only artifact.
+### Requirement: A browser opens once per session, when its page first has something on it
+The system SHALL open a browser at that session's page at the turn boundary on which the session is first registered, and SHALL NOT open one for that session again. It SHALL NOT open one when an exploration starts.
 
-A tab stealing focus while the owner is reading the agent's output, for a page they did not ask for, is a worse defect than a dashboard they have to click into. Suppressing the browser on reuse is also what keeps repeated explore commands from piling up tabs.
+The moment an exploration starts is the wrong moment. The note does not exist yet — readying its location is all that has happened — so the session page renders no artifact at all, and the artifact is not refetched when the page live-updates. A tab opened then shows an empty page that stays empty until the reviewer reloads it by hand.
 
-#### Scenario: Starting an exploration opens the dashboard at that session
-- **WHEN** an exploration starts and no dashboard was serving the root
-- **THEN** the system SHALL start one and attempt to open a browser at that session's page
+The first turn boundary with review material is the first moment the page has the note on it, and it is one turn after the reviewer typed the explore command, so it is a page they asked for rather than one that ambushed them. Tying it to first registration rather than to whether a dashboard was started is what bounds it to once per session: a second exploration in the same session finds its record already there and opens nothing, while a second session against the same root gets its own tab for its own page, which is correct.
+
+#### Scenario: The first turn boundary of an exploration opens its page
+- **WHEN** a session with a scratch note reaches a turn boundary and has no directive record yet
+- **THEN** the system SHALL attempt to open a browser at that session's page
+
+#### Scenario: Later turn boundaries open nothing
+- **WHEN** a session that is already registered reaches a further turn boundary
+- **THEN** the system SHALL NOT attempt to open a browser
 
 #### Scenario: Re-entering explore mode opens no second tab
-- **WHEN** an exploration starts and a dashboard is already serving the root
-- **THEN** the system SHALL reuse it and SHALL NOT attempt to open a browser
+- **WHEN** an exploration starts again in a session that is already registered
+- **THEN** the system SHALL NOT attempt to open a browser
 
-#### Scenario: A turn boundary never opens a browser
-- **WHEN** a turn boundary starts a dashboard
+#### Scenario: A second session against the same root opens its own page
+- **WHEN** a second session with its own scratch note first registers while a dashboard is already serving that root
+- **THEN** the system SHALL reuse the dashboard and SHALL attempt to open a browser at the second session's page
+
+#### Scenario: A session with nothing to review opens nothing
+- **WHEN** a turn boundary is reached in a session with no scratch note and no promoted change
 - **THEN** the system SHALL NOT attempt to open a browser

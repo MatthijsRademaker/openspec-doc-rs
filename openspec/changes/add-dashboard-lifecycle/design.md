@@ -67,7 +67,8 @@ Two sessions ending simultaneously both find 4321 free and both spawn. One loses
 An idle exit keyed on "no page is subscribed" is wrong, and the review loop's own asynchrony is what breaks it:
 
 ```
-  t+0    /opsx:explore ──► dashboard up, tab opens
+  t+0    /opsx:explore ──► note location readied, nothing started
+  t+2    first turn ends ──► dashboard up, tab opens on the note
   t+3    owner skims the note, closes the tab, walks away
   t+33   idle exit fires. Dashboard gone.
   t+40   agent reaches a turn boundary. No verdict — nobody could submit one.
@@ -119,17 +120,36 @@ Fixing the hub's eviction is the alternative to an idle exit, and it is the wron
 
 Not all of them. A session where the owner asked one question about one function should not leave a daemon behind. The filter already exists and is already load-bearing: **ensure the dashboard only when this session has something to review** — its scratch note exists, or it was promoted to a change. `hook stop` already calls `scratch::check` on this path, and "a note exists if and only if an exploration actually started" is the invariant `promote::check` depends on.
 
-The effective trigger therefore remains `/opsx:explore`, since that is what creates the note. What changes is that it now *persists* across every later turn boundary instead of firing once and hoping the process survives.
+The effective trigger therefore remains `/opsx:explore`, since that is what causes the note to be written. What changes is that the dashboard now *persists* across every later turn boundary instead of firing once and hoping the process survives — and that the trigger is observed one turn later, at the boundary where the note actually exists, rather than at the command itself.
 
 ## Duties split between the two hooks
 
 | | `hook explore` | `hook stop` |
 | --- | --- | --- |
-| Ensure a dashboard | yes | yes, when the session has a note |
-| Open a browser | yes, and only when one was actually started | never |
-| Heartbeat | incidentally | that is the point |
+| Register the session | no | yes, when it has review material |
+| Ensure a dashboard | no | yes, when it has review material |
+| Open a browser | never | once, on the turn boundary that first registers the session |
+| Heartbeat | n/a | that is the point |
 
-A browser opening at a turn boundary is a jump scare — a tab stealing focus while the owner is reading the agent's output, for a page they did not ask for. At the explore command it is the moment they asked. Reuse suppresses it naturally: nothing was started, so nothing opens, so a second `/opsx:explore` does not pile up tabs.
+### Why not at the explore command, which is where this started
+
+The first version of this table put both the start and the browser on `hook explore`, reasoning that the explore command is the moment the reviewer asked, and that a tab opening at a turn boundary is a jump scare — focus stolen while they read the agent's output, for a page they did not ask for.
+
+That reasoning was about *focus*, and it missed a plainer problem about *content*. `hook explore` readies the note's location and deliberately does not create the file, because an empty placeholder makes the agent's first write fail. So at the instant the explore command returns, the session has no artifact. Checked against a running dashboard: the page renders zero artifacts and says "No artifact on disk to review yet."
+
+It does not fix itself either. The live-update path refetches only the comments-and-verdicts fragment; the artifact is never refetched, which `replace-dashboard-frontend` exists partly to fix. So a tab opened at explore time shows an empty page, stays empty while the exploration is written, and gives no sign that reloading would help. That is worse than no tab: it is a dashboard that appears to have nothing to say about the exploration you just started, which is one step from the silent no-op this whole change exists to remove.
+
+One turn later, the note is on disk. So the browser goes to the first turn boundary at which the session has review material — which is also, not coincidentally, the first boundary at which it gets registered and becomes discoverable at all.
+
+The focus objection survives in weakened form and is answered by *bounding*, not by timing. Opening is tied to **first registration**, so it happens exactly once per session:
+
+- a second `/opsx:explore` in the same session finds the record already there and opens nothing;
+- a second *session* against the same root gets its own tab for its own page, which is what you want and what the old reuse-suppression rule got wrong — it would have suppressed the tab merely because someone else's dashboard was already up;
+- a dashboard that dies and is restarted at a later turn boundary opens nothing, because the session is long since registered.
+
+That last point is why "first registration" beats the more obvious "when a dashboard was actually started": the two agree on the common case and disagree on both of the interesting ones.
+
+No new state is needed for this. "Was this session already registered" is answered by whether its directive record existed before this invocation, which the hook is reading anyway.
 
 ## pi needs no new code, and that is a consequence, not a goal
 
