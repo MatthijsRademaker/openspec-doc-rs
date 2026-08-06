@@ -77,35 +77,44 @@ already works.
 What that criterion demands is narrower and sharper than the old one: **the comments have to reach the
 agent before it writes the proposal, not after.**
 
-### What is proven
+### The criterion has been met
 
-The transport, and it was the hard part. Both verdict kinds were driven end to end on real Claude Code
-sessions, one on pi.dev, and claim-based promotion under two concurrent sessions. The risk everything was
-designed around — that an agent would refuse an injected directive as prompt injection, which had been
-observed once — did not recur.
+Run on 2026-08-06 and it passed. Two anchored comments were left on an exploration, a `move to proposal`
+verdict was submitted in the dashboard, and the session was poked from the terminal with four words. The
+agent wrote a complete change — proposal, design, tasks, two spec deltas, `openspec validate` passing — in
+which **both comments drove the design** rather than being acknowledged in passing. It replied to both, left
+both open rather than resolving its own work, and ran `scratch claim`.
 
-### What is not
+The ordering held, which is the sharp half of the criterion: the directive was consumed at 06:50:09 and
+`proposal.md` was written at 06:52:26. The comments were in context before the proposal existed, not after.
 
-Two gaps sit directly on the criterion above, and both were found by reading the code against it rather
-than by any test:
+Nothing had to be explained to the agent that the tool should have carried on its own.
 
-**The move-to-proposal directive never points at the comments.** It names the exploration note and the
-verdict sidecar, and mentions comments only as something the claim will relocate afterwards. The
-keep-exploring template names the comment sidecar; this one does not. So an agent formalizing an
-exploration is not told the reviewer's anchored comments exist.
+### What that does and does not settle
 
-**A directive arrives when a turn ends, not when it starts.** So telling the agent "let's move to
-proposal" in the terminal produces a turn that writes the proposal, and only then receives the directive
-about the comments. The proposal is written blind and has to be revised. Fixing this is
-`add-prompt-time-directive-delivery`, which this criterion moves from a nice-to-have onto the critical
-path.
+Proven, and it was the hard part: the transport. Both verdict kinds end to end on real Claude Code sessions
+and on pi.dev, at both delivery points, plus claim-based promotion under two concurrent sessions. The risk
+everything was designed around — an agent refusing an injected directive as prompt injection, observed once
+early on — has not recurred. Claim-forgetting, rated moderate and long unobserved, did not happen on the run
+that mattered.
 
-Two further things need a terminal or insider knowledge, and under this framing they are **no longer
-MVP-blocking** — they are quality of life:
+**Proven here, not packaged for elsewhere.** This is 0.1.0, installable only with `cargo install --path`
+from a clone. There is no release, and setup is lossy in a specific way: the hook configuration lives in
+gitignored local settings, so a fresh clone has no hooks and nothing says so. That is a deliberate boundary
+— the criterion asks whether the loop works, not whether a stranger can install it — but it means "the MVP
+is done" should be read as *the idea is proven*, not *the tool is distributable*.
+
+Three things still need a terminal or insider knowledge. Under this framing none are MVP-blocking; they are
+quality of life:
 
 - Closing out a comment means leaving the browser for the CLI (`add-comment-thread-actions`), though the
   `addressed` status it adds is how an agent records that it responded to a comment while proposing.
 - If `serve` is not already running, the whole loop silently does nothing (`add-dashboard-lifecycle`).
+- Setup has no verification step, so a half-wired install looks identical to a working one
+  (`add-setup-diagnostics`).
+
+The reviewer moving between browser and terminal is **not** on that list. It is the design, argued above,
+not a defect awaiting a fix.
 
 See [Roadmap](/roadmap.md) for how the open changes triage against this.
 

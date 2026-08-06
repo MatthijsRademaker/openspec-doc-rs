@@ -28,33 +28,46 @@ accounts for those comments.
 That criterion is what decides this table, and it reorders it. What matters is whether the comments reach
 the agent **before** it writes the proposal; whether the reviewer used a terminal does not.
 
-| Change | Tasks | In MVP? | Why |
-|---|---|---|---|
-| *(new)* point the move-to-proposal directive at the comments | ~3 | **Yes — blocking** | The template names the note and the verdict sidecar but never the comment sidecar, so an agent formalizing an exploration is not told the reviewer's comments exist. Directly defeats the criterion. Smallest fix on this list: one template, one test. No change written yet. |
-| `add-prompt-time-directive-delivery` | 13 | **Yes — blocking** | A directive arrives when a turn *ends*. So "let's move to proposal" produces a turn that writes the proposal and only then hears about the comments. Delivering at `UserPromptSubmit` puts them in context at the start of that turn, which is exactly the interaction the criterion describes. Previously triaged as a nice-to-have; the reframing moved it onto the critical path. |
-| `add-comment-thread-actions` | 20 | **No** — quality of life | Replying or closing a comment means leaving the browser for the CLI. Under the old "no terminal" framing that was MVP-blocking; it no longer is. The `addressed` status it adds is still how an agent records that it responded to a comment rather than marking its own work resolved, and `directive-verdict-loop` already refers to it as a dependency. |
-| `add-dashboard-lifecycle` | 28 | **No** — quality of life | `serve` must already be running or the loop silently does nothing: hooks fire, the agent writes, and there is no reviewer at the other end. A silent no-op is worse than an error, but it is a trap for the operator rather than a break in the loop. |
-| `add-change-approval-gate` | 28 | **No** — post-MVP | Nothing requires anyone to say a change is ready before implementation starts. A genuinely new concept rather than a missing piece of the review loop, and it would change what the tool *is*. |
+**The criterion was met on 2026-08-06.** Both changes that blocked it have shipped, so nothing below is
+MVP-blocking; the table is now a priority order for what comes after. See
+[What is proven](/vision.md#the-criterion-has-been-met).
+
+| Change | Tasks | Why |
+|---|---|---|
+| `add-setup-diagnostics` | 31 | Setup is lossy and fails silently: hook config is gitignored, so a fresh clone has none and nothing says so — an unwired project is pixel-identical to one where nothing has happened yet. Found the hard way, by the hooks in *this* repo being absent for an unknown length of time without anyone noticing. Adds a `doctor` that runs the hooks rather than reading the settings file, because a check that passes on a broken install is worse than no check. |
+| `replace-dashboard-frontend` | 63 | The largest, and the two headline items are defects rather than ugliness: an anchored comment is rendered ~300 lines below the span it is anchored to, and the artifact never live-updates, so the reviewer watches an exploration that does not move — which is the vision's own headline claim. Worth doing after using the current one enough to know what actually annoys you. |
+| `extend-comment-model` | 22 | Unanchored and editable comments. A prerequisite of the rewrite rather than a decoration on it: the rewrite routes verdict notes through the comment sidecar, which first has to accept a comment with no anchor. |
+| `add-session-titles` | 21 | The index is a list of UUIDs. The title is already on disk — the agent's own `#` heading in the scratch note — and the index simply does not read it. Cheapest real improvement on this list. |
+| `add-comment-thread-actions` | 20 | Replying or closing a comment means leaving the browser for the CLI. The `addressed` status it adds is how an agent records that it responded to a comment rather than marking its own work resolved, and `directive-verdict-loop` already refers to it as a dependency. |
+| `add-dashboard-lifecycle` | 28 | `serve` must already be running or the loop silently does nothing: hooks fire, the agent writes, and there is no reviewer at the other end. A trap for the operator rather than a break in the loop. Overlaps `add-setup-diagnostics`; decide which owns the "is this thing on?" question before starting either. |
+| `add-change-approval-gate` | 28 | Nothing requires anyone to say a change is ready before implementation starts. A genuinely new concept rather than a missing piece of the review loop, and it would change what the tool *is*. Leave it alone until the rest has been used in anger. |
 
 ## Known defects and debt
 
 | Item | Severity | Notes |
 |---|---|---|
-| Three `watch.rs` filesystem-watcher tests fail | Low | Pre-existing; fail on a stashed tree too, so not caused by recent work. Timing or platform sensitivity in the test, not evidence about the watcher. |
-| `cli-surface` spec omits the `scratch` subcommand | Low | Spec text still lists the MVP surface as `summary`, `serve`, `hook`, `comment`. Drifted when `scratch claim` landed. |
-| Agents may formalize an exploration without claiming it | Moderate | Degrades to a visibly un-promoted note rather than a corrupted one — the trade claim-based promotion was made for — but has not been observed either way on a live session. The next real explore-to-proposal cycle is the check. |
+| A typo in `hook prompt`'s command string is unrecoverable | Low | **Fixed 2026-08-06.** Clap exits 2 on a usage error and Claude Code treats that as a block, so one typo refused every prompt in the session. `main.rs` now exits zero for any argument or root-resolution failure reaching for `hook prompt`. Residual: a typo in the word `prompt` itself is not detectable and still exits 2. |
+| No release; setup is lossy | Moderate | 0.1.0, `cargo install --path` from a clone, no publish workflow. Hook config lives in gitignored local settings, so a fresh clone has none and nothing says so — the hooks in *this* repo were absent for an unknown period without anyone noticing. Deliberately outside the MVP boundary; `add-setup-diagnostics` covers the second half. |
+| Agents may formalize an exploration without claiming it | Low | Downgraded from moderate. Did not occur on the criterion run, which went through promotion — the agent ran `scratch claim` unprompted. One observation is not proof, but it is no longer unobserved, and it degrades to a visibly un-promoted note rather than a corrupted one. |
+| ~~Three `watch.rs` filesystem-watcher tests fail~~ | — | **Gone, unexplained.** All 33 server tests pass and have done across repeated clean runs. Nothing was done to fix them, so the honest reading is that they were always environmental — which means this row stood for weeks as a known defect and discouraged anyone from looking. Kept here as a caution: if they return, chase it rather than recognising it. |
 
 ## Suggested order
 
-1. **Point the move-to-proposal directive at the comment sidecar.** Hours, not days, and nothing else on
-   this list matters while an agent formalizing an exploration is unaware the comments exist.
-2. **`add-prompt-time-directive-delivery`** — so the comments arrive before the proposal is written rather
-   than after.
-3. **Run the criterion end to end on a live session**: comment in the browser, say "move to proposal" in
-   the terminal, and check the proposal actually accounts for the comments. That check is the MVP call.
-   Nothing below the live run can make it — the same reason the injection risk needed a real session.
-4. Then declare the MVP done, or don't.
-5. `add-comment-thread-actions`, `add-dashboard-lifecycle`, `add-change-approval-gate` afterwards.
+Steps 1–4 of the previous order are done: the move-to-proposal directive points at the comments,
+`add-prompt-time-directive-delivery` shipped, the criterion was run live and passed, and the MVP is
+declared done. What follows is post-MVP.
 
-Both blocking items are small. The MVP is closer than the 89 open tasks suggest, because most of those
-tasks are not on the criterion's path.
+1. **Use it.** The 213 open tasks below are guesses about what will annoy you. A fortnight of real use will
+   reorder this list and probably delete some of it. This is the step most likely to be skipped and the one
+   with the highest return — every change below was written before the loop had ever been used in anger.
+2. **`add-session-titles`** — 21 tasks, no new state, and it fixes the first thing you see. The cheapest
+   way to find out whether the dashboard is worth investing in.
+3. **`add-setup-diagnostics`** — the only item that blocks anyone *else* using this, and the failure it
+   catches has already happened here once. Do it before the first time you try to install this elsewhere,
+   not after.
+4. **`extend-comment-model`, then `replace-dashboard-frontend`** — in that order; the rewrite depends on
+   unanchored comments existing. 85 tasks together, so start only once step 1 has told you which of the
+   rewrite's complaints you actually feel.
+5. `add-comment-thread-actions`, `add-dashboard-lifecycle` — overlapping "is this thing on?" scope with
+   `add-setup-diagnostics`; reconcile before starting either.
+6. `add-change-approval-gate` last, if ever. It changes what the tool is.
