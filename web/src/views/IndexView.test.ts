@@ -1,6 +1,5 @@
 import { render, screen } from '@testing-library/vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-
 import type { Index } from '@/lib/scopes'
 import IndexView from '@/views/IndexView.vue'
 
@@ -20,12 +19,12 @@ const ONE_CHANGE: Index = {
   sessions: [],
   changes: [
     {
-      key: 'add-dashboard-development-harness',
+      key: 'implement-observatory-design-system-with-a-realistically-long-identifier',
       title: null,
       modifiedAt: null,
       openComments: 1,
-      verdict: null,
-      mostRecentlyActive: false,
+      verdict: 'comment-resolution',
+      mostRecentlyActive: true,
     },
   ],
 }
@@ -35,39 +34,60 @@ afterEach(() => {
 })
 
 describe('IndexView', () => {
-  it('shows a loading state while the index is in flight', () => {
+  it('shows a distinct loading instrument while the index is in flight', () => {
     vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})))
 
     render(IndexView)
 
-    expect(screen.getByText('Loading…')).toBeTruthy()
+    expect(screen.getByText('Observing available scopes…')).toBeTruthy()
+    expect(screen.getByText('Index signal / observing')).toBeTruthy()
   })
 
-  it('renders an empty index as empty, not as an error', async () => {
+  it('renders empty registers as successful emptiness, not failure', async () => {
     stubIndex({ sessions: [], changes: [] })
 
     render(IndexView)
 
-    expect(await screen.findAllByText('None discovered.')).toHaveLength(2)
-    expect(screen.getByText('Sessions')).toBeTruthy()
-    expect(screen.getByText('Changes')).toBeTruthy()
+    expect(await screen.findByText('No sessions discovered.')).toBeTruthy()
+    expect(screen.getByText('No changes discovered.')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Sessions' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Changes' })).toBeTruthy()
+    expect(screen.queryByText('Index unavailable')).toBeNull()
   })
 
-  it('renders the scopes the server returned', async () => {
+  it('renders every scope field returned by the server', async () => {
     stubIndex(ONE_CHANGE)
 
     render(IndexView)
 
-    const link = await screen.findByRole('link', { name: 'add-dashboard-development-harness' })
-    expect(link.getAttribute('href')).toBe('/changes/add-dashboard-development-harness')
+    const key = ONE_CHANGE.changes[0]?.key ?? ''
+    const link = await screen.findByRole('link', { name: key })
+    expect(link.getAttribute('href')).toBe(`/changes/${key}`)
+    expect(screen.getByText('1 open')).toBeTruthy()
+    expect(screen.getByText('comment-resolution')).toBeTruthy()
+    expect(screen.getByText('most recently active')).toBeTruthy()
   })
 
-  it('says the index failed to load, and why', async () => {
+  it('renders a failure alert with its cause, never as emptiness', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')))
 
     render(IndexView)
 
-    expect(await screen.findByText(/The index could not be loaded: fetch failed/)).toBeTruthy()
-    expect(screen.queryByText('Loading…')).toBeNull()
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'The index could not be loaded: fetch failed',
+    )
+    expect(screen.getByText('Index unavailable')).toBeTruthy()
+    expect(screen.queryByText('No sessions discovered.')).toBeNull()
+  })
+
+  it('ignores obsolete stored theme preferences and exposes no theme control', () => {
+    window.localStorage.setItem('openspec-doc-theme', 'light')
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})))
+
+    render(IndexView)
+
+    expect(document.documentElement.classList.contains('light')).toBe(false)
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    expect(screen.queryByRole('button', { name: /theme/i })).toBeNull()
   })
 })

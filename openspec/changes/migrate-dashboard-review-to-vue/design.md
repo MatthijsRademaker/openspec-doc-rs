@@ -2,7 +2,9 @@
 
 Two changes have already landed the parts of this rewrite that could be settled without an interface. `add-artifact-block-model` proved that markdown can be rendered without giving up anchoring, and that the block a reviewer comments on anchors to the occurrence they meant. `add-vue-dashboard-foundation` proved that a Vue application ships inside the binary, installs without Node, and does not go stale unnoticed.
 
-`add-dashboard-development-harness` must land before this cutover. It changes no review behavior; it replaces npm with pinned Bun and establishes Router, local API proxying, frontend and embedded-browser gates, a review-workbench design reference, and repository-specific agent guidance. This design assumes those development contracts rather than recreating them here.
+`add-dashboard-development-harness` must land before this cutover. It changes no review behavior; it replaces npm with pinned Bun and establishes Router, local API proxying, frontend and embedded-browser gates, and repository-specific agent guidance.
+
+`implement-observatory-design-system` must land after that harness and before this cutover. It replaces the generic proof interface and obsolete light/dark frames with the dark observatory tokens, display/mono/prose typography roles, semantic state language, motifs, motion, runtime-asset discipline, and shared primitives this design consumes. Scope components extend those contracts; they do not fork them.
 
 What is left is the part that is genuinely about the interface: what a reviewer sees, what they can do to a comment, and where the controls live. This is the cutover.
 
@@ -14,6 +16,7 @@ What is left is the part that is genuinely about the interface: what a reviewer 
 - A comment thread can be replied to, resolved and reopened without leaving the browser.
 - Reading a proposal in the dashboard is not worse than reading it in an editor.
 - The reviewer can tell whether the verdict they submitted actually reached the agent.
+- Scope review feels like the same observatory product as the index: instrument chrome frames a serif-led document, conversation stays spatially tied to it, and celestial atmosphere never competes with review content.
 
 **Non-Goals:**
 
@@ -21,8 +24,27 @@ What is left is the part that is genuinely about the interface: what a reviewer 
 - Not remote or multi-user. `127.0.0.1`, one reviewer.
 - Not a diff view. Comments anchor to text in a live document, not to a frozen revision.
 - Not live artifact updates. That is the immediate successor change, `add-live-artifact-updates`.
+- Not defining new visual tokens, fonts, motif primitives, or a second theme. `implement-observatory-design-system` owns those foundations.
 
 ## Decisions
+
+### Scope review is an instrument around a document, not a card dashboard
+
+The desktop composition has four semantic regions:
+
+```text
+instrument header / route and delivery state
+utility rail | document spine | anchored conversation rail
+persistent decision instrument
+```
+
+The document spine remains primary and readable. Display serif gives artifact and requirement headings gravity; IBM Plex Sans carries long prose and comments; IBM Plex Mono carries paths, timestamps, states, controls, and terse instrument labels. Hairlines and stepped near-black surfaces create depth instead of rounded card stacks and shadows.
+
+Anchored comments may occupy the conversation rail on wide screens only while their relationship to the block remains explicit. At narrow widths the utility and conversation rails dissolve into document flow: metadata precedes the artifact, and each expanded thread follows its block immediately. Persistent controls remain reachable without overlaying the final content.
+
+Celestial artwork may frame the header, unused margin, anchor wayfinding, or an empty state. It never sits beneath prose, owns interaction, or survives a width transition at the cost of content. Existing shadcn primitives remain accessibility/behavior bases and receive observatory variants through central tokens.
+
+Rejected: reproduce `dashboard-mockup.png` literally, including activity and repository chrome unsupported by current APIs. That would turn visual fidelity into fake product state. Rejected: restyle each scope component locally. That would make the first scope page a second design-system implementation.
 
 ### One cutover, no coexistence
 
@@ -40,10 +62,10 @@ Unanchored comments and orphaned comments are the same rendering problem — com
 
 The exploration asked how a comment differs from keep-exploring notes. Two ways, and only one is real:
 
-| | anchored to a span | fires a directive |
-|---|---|---|
-| Comment | yes | no |
-| Keep-exploring notes | no | yes |
+|                       | anchored to a span | fires a directive |
+| --------------------- | ------------------ | ----------------- |
+| Comment               | yes                | no                |
+| Keep-exploring notes  | no                 | yes               |
 
 The second difference belongs to verdicts and stays. The first was a gap in the comment model, not a difference in kind, and `extend-comment-model` closed it.
 
@@ -58,10 +80,10 @@ Two consequences:
 
 `add-change-approval-gate` introduces an `approved` verdict with real preconditions: every comment resolved, bound to a fingerprint of the artifacts approved, stale once they change. Two buttons in the same product both labelled Approve — one meaning "formalize this exploration", one meaning "I accept this as ready to implement" — is a trap, and the second is the consequential one.
 
-| page | left `( + )` | primary |
-|---|---|---|
-| session | comment, unanchored | Move to proposal |
-| change | comment, unanchored | Approve — absent until `add-change-approval-gate` lands |
+| page     | left `( + )`         | primary                                                   |
+| -------- | -------------------- | --------------------------------------------------------- |
+| session  | comment, unanchored  | Move to proposal                                          |
+| change   | comment, unanchored  | Approve — absent until `add-change-approval-gate` lands   |
 
 The change page gains a notes-carrying way to send comments back, which it does not have today: `comment-resolution` currently carries nothing beyond itself.
 
@@ -85,8 +107,12 @@ The header shows the standing verdict, when it was submitted, and whether its di
 - **Deleting `page/` is irreversible in the sense that matters:** if the Vue pages are wrong, there is no working page to fall back to. The mitigation is that `add-vue-dashboard-foundation` has already proven the shipping path on a real screen, so what is being risked here is component code and not distribution.
 - **`add-change-approval-gate` still carries a `dashboard-html-views` delta against files this change deletes.** It is left alone deliberately — it is last in priority and may never be built, and re-scoping a change speculatively costs more than it saves. If it is ever started, that is its first task.
 - **The change page's primary slot is empty until the approval gate lands.** A bar with one control on change pages and two on session pages is asymmetric; the alternative, a disabled control explaining itself, advertises a feature that may never exist.
+- **The mockup is richer than current data.** Copying its activity rail or repository labels would manufacture state. The mitigation is to consume its hierarchy, atmosphere, typography and geometry while rendering only data supplied by scope/index APIs.
+- **Artwork can quietly destroy document readability.** The mitigation is structural: bounded framing regions, no artwork beneath prose or controls, and narrow layouts dropping atmosphere first.
 
 ## Migration Plan
+
+`implement-observatory-design-system` lands first and proves shared tokens, typography, motifs, primitives, and responsive rules on the real index. This cutover then adds scope routes using those exact contracts; no temporary generic scope skin lands between them.
 
 The old and new scope pages do not coexist. `page/` is deleted in the same change that adds the JSON handlers.
 

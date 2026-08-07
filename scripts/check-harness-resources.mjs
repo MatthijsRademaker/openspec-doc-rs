@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 const repoRoot = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const sharedSkillPaths = [
 	"frontend-design/SKILL.md",
+	"openspec-visual-language/SKILL.md",
 	"shadcn-vue/SKILL.md",
 	"openspec-doc-dashboard/SKILL.md",
 	"browser-verification/SKILL.md",

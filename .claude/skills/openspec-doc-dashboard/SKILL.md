@@ -22,16 +22,17 @@ Use this skill for any feature or bug under `web/` or at the Rust dashboard boun
 - The Rust server is the runtime boundary. `cargo install --path crates/cli --locked` must
   serve the complete dashboard from committed `web/dist/` with no Node, Bun, checkout, or
   external asset request.
-- `web/dist/` is generated and committed. A frontend source, CSS, font, favicon, or route
-  change is incomplete until the Bun build regenerates matching assets.
+- `web/dist/` is generated and gitignored. Rust embeds it at compile time. A frontend
+  source, CSS, font, favicon, or route change requires a fresh Bun build before Cargo.
 - Pinia, generated API clients, motion libraries, and speculative global stores are not
   foundations. Add them only when the change names their state owner and behavior.
 
 ## Required reading and gates
 
-Read `designs/dashboard-review-workbench.md`, `web/components.json`, and the relevant
-OpenSpec change artifacts before visual or interaction work. Follow the frontend-design and
-shadcn-vue skills for styling and primitives.
+Read `designs/dashboard-review-workbench.md`, both source boards under
+`designs/visual-language/`, `web/components.json`, and relevant OpenSpec artifacts before
+visual or interaction work. Follow frontend-design and shadcn-vue skills. Reject generic
+SaaS/card-grid output even when stock primitives make it easy.
 
 From `web/`:
 

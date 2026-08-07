@@ -1,21 +1,13 @@
-/* shadcn-vue's scaffold pulled Geist from Google Fonts. A dashboard that binds
-   127.0.0.1 and serves every asset from the binary must not reach the internet
-   to render, so the type is bundled: IBM Plex Sans for prose and UI, IBM Plex
-   Mono for identifiers — the faces `designs/dashboard-review-workbench.md`
-   specifies, served out of `dist/` like every other asset. */
-/* latin-only subsets: every byte under `dist/` is embedded into the Rust
-   binary, and the dashboard's prose is English, so the cyrillic/greek subsets
-   would be shipping weight no client downloads. */
+/* Dashboard assets must remain local: Rust embeds dist/ and serves it offline. */
+@import "@fontsource/cormorant-garamond/latin-400.css";
+@import "@fontsource/cormorant-garamond/latin-500.css";
 @import "@fontsource/ibm-plex-mono/latin-400.css";
 @import "@fontsource/ibm-plex-mono/latin-500.css";
 @import "tailwindcss" source(none);
 @import "tw-animate-css";
 @import "shadcn-vue/tailwind.css";
-/* Latin subsets only, declared by hand because the variable package ships no
-   per-subset stylesheet: every byte under `dist/` is embedded into the Rust
-   binary, and the cyrillic/greek/vietnamese subsets would be shipping weight
-   no client downloads. Mirror of the fontsource declarations, latin and
-   latin-ext only. */
+
+/* Latin subsets only. Every generated font byte is embedded in the binary. */
 @font-face {
   font-family: "IBM Plex Sans Variable";
   font-style: normal;
@@ -26,6 +18,7 @@
   unicode-range:
     U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
+
 @font-face {
   font-family: "IBM Plex Sans Variable";
   font-style: italic;
@@ -36,6 +29,7 @@
   unicode-range:
     U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
+
 @font-face {
   font-family: "IBM Plex Sans Variable";
   font-style: normal;
@@ -46,6 +40,7 @@
   unicode-range:
     U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
+
 @font-face {
   font-family: "IBM Plex Sans Variable";
   font-style: italic;
@@ -56,37 +51,36 @@
   unicode-range:
     U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
-/* `source(none)` and an explicit source list, because Tailwind's automatic
-   detection scans everything the repository does not gitignore — and `web/dist/`
-   is deliberately not gitignored. Left automatic, it reads class names out of the
-   previous build's own output, so the CSS grows and the bytes depend on whether
-   `dist/` happened to exist when the build started. That makes the committed
-   assets unreproducible, which is the one property the CI check needs. */
+
+/* Explicit sources keep generated CSS independent from stale dist/ contents. */
 @source "../index.html";
 @source "./**/*.{vue,ts}";
 
-@custom-variant dark (&:is(.dark *));
-
 @theme inline {
+  --font-display: "Cormorant Garamond", Georgia, serif;
   --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-heading: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
+  --font-heading: var(--font-display);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
   --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
   --color-open: var(--open);
   --color-open-foreground: var(--open-foreground);
   --color-addressed: var(--addressed);
@@ -101,134 +95,573 @@
   --color-reviewer-foreground: var(--reviewer-foreground);
   --color-agent: var(--agent);
   --color-agent-foreground: var(--agent-foreground);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
-  --color-background: var(--background);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: var(--radius);
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-  /* Review states, specified in `designs/dashboard-review-workbench.md`.
-       Hue carries meaning here and stays distinguishable for the common
-       color-vision deficiencies: amber open, blue addressed, green resolved,
-       violet verdict, teal delivery, warm reviewer, cool agent. */
-  --open: oklch(0.8 0.14 85);
-  --open-foreground: oklch(0.42 0.1 75);
-  --addressed: oklch(0.72 0.12 245);
-  --addressed-foreground: oklch(0.38 0.1 245);
-  --resolved: oklch(0.76 0.13 160);
-  --resolved-foreground: oklch(0.38 0.09 160);
-  --verdict: oklch(0.56 0.16 295);
-  --verdict-foreground: oklch(0.96 0.02 295);
-  --delivery: oklch(0.74 0.1 195);
-  --delivery-foreground: oklch(0.36 0.08 200);
-  --reviewer: oklch(0.7 0.14 50);
-  --reviewer-foreground: oklch(0.4 0.1 50);
-  --agent: oklch(0.72 0.06 230);
-  --agent-foreground: oklch(0.38 0.05 235);
-}
+  color-scheme: dark;
+  --canvas: #0b0c0e;
+  --surface: #111317;
+  --raised: #181a1e;
+  --border-ink: #2a2d31;
+  --bone: #e7e2d6;
+  --muted-ink: #9a968f;
+  --accent-ink: #c7c3b7;
+  --focus-ink: #f0d8a8;
+  --danger-ink: #d49b8d;
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-  --open: oklch(0.42 0.09 80);
-  --open-foreground: oklch(0.89 0.1 90);
-  --addressed: oklch(0.4 0.09 250);
-  --addressed-foreground: oklch(0.87 0.08 245);
-  --resolved: oklch(0.4 0.08 160);
-  --resolved-foreground: oklch(0.87 0.09 160);
-  --verdict: oklch(0.46 0.12 295);
-  --verdict-foreground: oklch(0.91 0.05 295);
-  --delivery: oklch(0.4 0.07 200);
-  --delivery-foreground: oklch(0.87 0.06 195);
-  --reviewer: oklch(0.43 0.09 50);
-  --reviewer-foreground: oklch(0.89 0.09 55);
-  --agent: oklch(0.38 0.04 235);
-  --agent-foreground: oklch(0.86 0.04 230);
+  --background: var(--canvas);
+  --foreground: var(--bone);
+  --card: var(--surface);
+  --card-foreground: var(--bone);
+  --popover: var(--raised);
+  --popover-foreground: var(--bone);
+  --primary: var(--bone);
+  --primary-foreground: var(--canvas);
+  --secondary: var(--raised);
+  --secondary-foreground: var(--accent-ink);
+  --muted: var(--raised);
+  --muted-foreground: var(--muted-ink);
+  --accent: var(--accent-ink);
+  --accent-foreground: var(--canvas);
+  --destructive: var(--danger-ink);
+  --border: var(--border-ink);
+  --input: var(--border-ink);
+  --ring: var(--focus-ink);
+
+  /* Meaning remains visible through StatusMark text, glyph, and line shape. */
+  --open: #a99b72;
+  --open-foreground: var(--bone);
+  --addressed: #8293a5;
+  --addressed-foreground: var(--bone);
+  --resolved: #819383;
+  --resolved-foreground: var(--bone);
+  --verdict: #a090a8;
+  --verdict-foreground: var(--bone);
+  --delivery: #789a98;
+  --delivery-foreground: var(--bone);
+  --reviewer: #ad917b;
+  --reviewer-foreground: var(--bone);
+  --agent: #8299a3;
+  --agent-foreground: var(--bone);
+
+  --space-half: 0.25rem;
+  --space-1: 0.5rem;
+  --space-2: 1rem;
+  --space-3: 1.5rem;
+  --space-4: 2rem;
+  --space-5: 2.5rem;
+  --space-6: 3rem;
+  --space-8: 4rem;
+  --radius-sm: 0.125rem;
+  --radius-md: 0.25rem;
+  --radius: 0.25rem;
+  --hairline: 1px;
+  --motion-duration: 160ms;
+  --motion-easing: cubic-bezier(0.2, 0, 0.2, 1);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    box-sizing: border-box;
+    border-color: var(--border);
   }
+
+  html {
+    min-width: 20rem;
+    background: var(--canvas);
+  }
+
   body {
-    @apply bg-background text-foreground;
-    @apply font-sans;
+    min-width: 0;
+    min-height: 100vh;
+    margin: 0;
+    overflow-x: hidden;
+    background: var(--canvas);
+    color: var(--bone);
+    font-family: "IBM Plex Sans Variable", ui-sans-serif, system-ui, sans-serif;
+    text-rendering: optimizeLegibility;
+  }
+
+  button,
+  a {
+    transition:
+      color var(--motion-duration) var(--motion-easing),
+      background-color var(--motion-duration) var(--motion-easing),
+      border-color var(--motion-duration) var(--motion-easing),
+      opacity var(--motion-duration) var(--motion-easing),
+      transform var(--motion-duration) var(--motion-easing);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus-ink);
+    outline-offset: 3px;
+  }
+
+  ::selection {
+    background: var(--accent-ink);
+    color: var(--canvas);
+  }
+}
+
+.font-display,
+.document-heading__title,
+.scope-entry__link {
+  font-family: "Cormorant Garamond", Georgia, serif;
+}
+
+.font-prose {
+  font-family: "IBM Plex Sans Variable", ui-sans-serif, system-ui, sans-serif;
+}
+
+.font-instrument,
+.instrument-label,
+.status-mark,
+.scope-entry__metadata,
+.scope-entry__key {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.instrument-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--muted-ink);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.instrument-label__tick {
+  width: 1rem;
+  height: var(--hairline);
+  background: currentColor;
+}
+
+.status-mark {
+  --status-color: var(--accent-ink);
+  min-height: 1.5rem;
+  border-color: color-mix(in srgb, var(--status-color) 55%, transparent);
+  background: transparent;
+  color: var(--status-color);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.status-mark__glyph {
+  display: inline-grid;
+  width: 1rem;
+  place-items: center;
+  color: var(--status-color);
+}
+
+.status-mark--open {
+  --status-color: var(--open);
+  border-style: dashed;
+}
+
+.status-mark--addressed {
+  --status-color: var(--addressed);
+  border-bottom-style: double;
+}
+
+.status-mark--resolved {
+  --status-color: var(--resolved);
+  border-style: solid;
+}
+
+.status-mark--verdict {
+  --status-color: var(--verdict);
+  border-inline-width: 2px;
+}
+
+.status-mark--delivery {
+  --status-color: var(--delivery);
+  border-right-style: double;
+}
+
+.status-mark--reviewer {
+  --status-color: var(--reviewer);
+  border-left-width: 3px;
+}
+
+.status-mark--agent {
+  --status-color: var(--agent);
+  border-right-width: 3px;
+}
+
+.document-heading {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.document-heading__title {
+  margin: 0;
+  color: var(--bone);
+  font-size: clamp(2.25rem, 6vw, 4.75rem);
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  line-height: 0.94;
+  overflow-wrap: anywhere;
+}
+
+.document-heading--display .document-heading__title {
+  font-size: clamp(3.25rem, 9vw, 7rem);
+  letter-spacing: 0.02em;
+  line-height: 0.82;
+  text-transform: uppercase;
+}
+
+.document-heading--compact .document-heading__title {
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  line-height: 1;
+}
+
+.document-heading__description {
+  max-width: 64ch;
+  margin: var(--space-1) 0 0;
+  color: var(--muted-ink);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.ruled-register {
+  min-width: 0;
+  border: var(--hairline) solid var(--border-ink);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.ruled-register::before {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background: var(--accent-ink);
+  content: "";
+  opacity: 0.55;
+}
+
+.orbital-frame {
+  position: relative;
+  isolation: isolate;
+  min-height: 16rem;
+  overflow: hidden;
+  border: var(--hairline) solid var(--border-ink);
+  pointer-events: none;
+}
+
+.orbital-frame__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.68;
+  filter: contrast(1.08) saturate(0.72);
+}
+
+.orbital-frame__geometry {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  color: var(--accent-ink);
+  opacity: 0.72;
+}
+
+.observatory-shell {
+  display: grid;
+  width: min(100%, 90rem);
+  min-width: 0;
+  margin: 0 auto;
+  padding: clamp(var(--space-2), 4vw, var(--space-8));
+  gap: clamp(var(--space-4), 5vw, var(--space-8));
+}
+
+.observatory-masthead {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(18rem, 0.7fr);
+  min-width: 0;
+  border-block: var(--hairline) solid var(--border-ink);
+}
+
+.observatory-masthead__content {
+  display: grid;
+  align-content: center;
+  min-width: 0;
+  padding: clamp(var(--space-4), 6vw, var(--space-8)) clamp(var(--space-2), 4vw, var(--space-6))
+    clamp(var(--space-4), 6vw, var(--space-8)) 0;
+}
+
+.index-state {
+  display: grid;
+  gap: var(--space-2);
+  min-height: 10rem;
+  align-content: center;
+  padding: var(--space-4);
+  border: var(--hairline) solid var(--border-ink);
+  border-left: 3px solid var(--accent-ink);
+  background: var(--surface);
+}
+
+.index-state--failure {
+  border-left-color: var(--danger-ink);
+}
+
+.index-state__message {
+  max-width: 68ch;
+  margin: 0;
+  color: var(--bone);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.scope-registers {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.scope-register__header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  border-bottom: var(--hairline) solid var(--border-ink);
+}
+
+.scope-register__title {
+  margin: 0;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-weight: 400;
+  line-height: 1;
+}
+
+.scope-register__empty {
+  display: grid;
+  min-height: 8rem;
+  place-items: center start;
+  margin: 0;
+  padding: var(--space-3);
+  color: var(--muted-ink);
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.scope-register__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scope-register__item + .scope-register__item {
+  border-top: var(--hairline) solid var(--border-ink);
+}
+
+.scope-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(27rem, 0.8fr);
+  min-width: 0;
+  padding: var(--space-3);
+  gap: var(--space-3);
+  transition:
+    background-color var(--motion-duration) var(--motion-easing),
+    transform var(--motion-duration) var(--motion-easing);
+}
+
+.scope-entry:has(.scope-entry__link:hover) {
+  background: var(--raised);
+  transform: translateX(2px);
+}
+
+.scope-entry__identity {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: var(--space-1);
+}
+
+.scope-entry__title-line {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.scope-entry__link {
+  min-width: 0;
+  color: var(--bone);
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+  text-decoration-color: var(--muted-ink);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.3em;
+}
+
+.scope-entry__link:hover {
+  color: var(--focus-ink);
+  text-decoration-line: underline;
+}
+
+.scope-entry__key {
+  min-width: 0;
+  color: var(--muted-ink);
+  font-size: 0.6875rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.scope-entry__recent {
+  border-color: var(--delivery);
+  color: var(--delivery);
+  background: transparent;
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.scope-entry__metadata {
+  display: grid;
+  grid-template-columns: minmax(6rem, 0.7fr) minmax(8rem, 0.9fr) minmax(12rem, 1.4fr);
+  min-width: 0;
+  margin: 0;
+  border-left: var(--hairline) solid var(--border-ink);
+}
+
+.scope-entry__datum {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-2);
+}
+
+.scope-entry__datum + .scope-entry__datum {
+  border-left: var(--hairline) solid var(--border-ink);
+}
+
+.scope-entry__term {
+  color: var(--muted-ink);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.scope-entry__value {
+  min-width: 0;
+  margin: 0;
+  color: var(--accent-ink);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.scope-entry__value .status-mark {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 56rem) {
+  .observatory-masthead {
+    grid-template-columns: minmax(0, 1fr) minmax(12rem, 0.45fr);
+  }
+
+  .scope-entry {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .scope-entry__metadata {
+    border-top: var(--hairline) solid var(--border-ink);
+    border-left: 0;
+    padding-top: var(--space-2);
+  }
+}
+
+@media (max-width: 37.5rem) {
+  .observatory-shell {
+    padding: var(--space-2);
+    gap: var(--space-4);
+  }
+
+  .observatory-masthead {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .observatory-masthead__content {
+    padding: var(--space-5) 0;
+  }
+
+  .observatory-masthead .orbital-frame {
+    display: none;
+  }
+
+  .scope-register__header {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .scope-entry {
+    padding: var(--space-2);
+    gap: var(--space-2);
+  }
+
+  .scope-entry__metadata {
+    grid-template-columns: minmax(0, 1fr);
+    padding-top: 0;
+  }
+
+  .scope-entry__datum {
+    grid-template-columns: minmax(6.5rem, 0.45fr) minmax(0, 1fr);
+    padding: var(--space-1) 0;
+    border-top: var(--hairline) solid var(--border-ink);
+  }
+
+  .scope-entry__datum + .scope-entry__datum {
+    border-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration: 0ms;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+
+  button,
+  a,
+  [data-slot="badge"],
+  .scope-entry,
+  .scope-entry:has(.scope-entry__link:hover) {
+    animation: none;
+    transition: none;
+  }
+
+  .scope-entry,
+  .scope-entry:has(.scope-entry__link:hover) {
+    transform: none;
   }
 }

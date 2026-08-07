@@ -15,11 +15,11 @@ Use this skill for any visual change under `web/`.
 ## Required reading
 
 Read `designs/dashboard-review-workbench.md` before choosing layout, type, color, status
-language, or motion. Treat `designs/frames/` as visual direction, not a license to copy
-empty placeholder screens. Preserve long identifiers, realistic review states, and the
+language, or motion. Preserve long identifiers, realistic review states, and the
 document-first hierarchy. Load the `openspec-visual-language` skill and ingest
-`web/public/assets/images/design-system.png` and `dashboard-mockup.png` for the product's
-visual identity; this skill covers mechanics, that one covers essence.
+`designs/visual-language/design-system.png` and `dashboard-mockup.png` for the product's
+visual identity; this skill covers mechanics, that one covers essence. Reject generic SaaS
+chrome, rounded card grids, stock dashboard sidebars, and detached chat layouts.
 
 ## Non-negotiable constraints
 
@@ -27,10 +27,12 @@ visual identity; this skill covers mechanics, that one covers essence.
   review product into a detached chat feed.
 - Distinguish Reviewer and Agent with visible labels, layout, and semantic tokens; color
   alone is insufficient.
-- Use central semantic tokens from `web/src/style.css` for open, addressed, resolved,
-  verdict, delivery, reviewer, and agent states. Do not add component-local raw hex/OKLCH.
-- Use bundled IBM Plex Sans Variable and IBM Plex Mono. No Google Fonts, CDN image, remote
-  icon, or network-only asset.
+- Use sole dark observatory identity and central semantic tokens from `web/src/style.css`
+  for open, addressed, resolved, verdict, delivery, reviewer, and agent states. Do not add
+  component-local raw hex/OKLCH or theme-selection behavior.
+- Use bundled Cormorant Garamond for display, IBM Plex Sans Variable for sustained prose,
+  and IBM Plex Mono for operational text. No Google Fonts, CDN image, remote icon, or
+  network-only asset.
 - Use existing shadcn-vue primitives under `web/src/components/ui` before creating a new
   primitive. Follow the shadcn-vue skill for generated components.
 - Check desktop and 390px narrow behavior. No horizontal clipping, hover-only action, or

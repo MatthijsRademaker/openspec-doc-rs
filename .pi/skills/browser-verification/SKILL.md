@@ -29,8 +29,9 @@ opens the embedded shell, and tears down processes and fixture files. It is not 
 smoke test.
 
 The configured projects are deterministic desktop (1280×800) and narrow (390×844). The
-suite must cover fixture data, theme persistence, Router navigation, reachability without
-horizontal clipping, console/page errors, and failed asset/API requests. A missing font,
+suite must cover realistic fixture data, sole-theme first paint, Router navigation,
+reachability without horizontal clipping, console/page errors, and failed asset/API
+requests. A missing font,
 script, stylesheet, favicon, or API response is a failure, not an acceptable partial render.
 Trace, screenshot, and video retain on failure; inspect those artifacts before guessing.
 
@@ -44,12 +45,13 @@ bunx --bun playwright test --config playwright.config.ts --project=narrow --head
 ```
 
 Do not make a global Playwright install a hidden prerequisite. Do not substitute a browser
-MCP or a Vite-only screenshot for the embedded lane. Record which viewport, theme, route,
+MCP or a Vite-only screenshot for the embedded lane. Record which viewport, route,
 fixture, and console/request result you inspected.
 
 ## Visual review checklist
 
-- Light and dark themes preserve focus, contrast, and semantic state labels.
+- Sole dark observatory theme preserves focus, contrast, and semantic state labels; stale
+  theme storage cannot alter first paint.
 - Long identifiers wrap without pushing primary controls off-screen.
 - Artifact content precedes comments; Reviewer and Agent labels remain explicit.
 - No unexpected console/page/request failures occur.

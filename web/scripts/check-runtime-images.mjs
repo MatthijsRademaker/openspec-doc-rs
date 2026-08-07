@@ -1,0 +1,83 @@
+import { readdir, stat } from 'node:fs/promises'
+import { dirname, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const publicRoot = resolve(webRoot, 'public')
+const distRoot = resolve(webRoot, 'dist')
+const rasterPattern = /\.(?:avif|gif|jpe?g|png|webp)$/i
+const sourceReferences = new Set(['design-system.png', 'dashboard-mockup.png'])
+const allowlist = new Set(['assets/images/index-orbit.webp'])
+const maxRuntimeRasterBytes = 6 * 1024 * 1024
+
+async function filesBelow(root) {
+  const entries = await readdir(root, { withFileTypes: true })
+  const files = []
+  for (const entry of entries) {
+    const path = resolve(root, entry.name)
+    if (entry.isDirectory()) {
+      files.push(...(await filesBelow(path)))
+    } else if (entry.isFile()) {
+      files.push(path)
+    }
+  }
+  return files
+}
+
+function normalizedRelative(root, path) {
+  return relative(root, path).split('\\').join('/')
+}
+
+async function runtimeRasters(root) {
+  return (await filesBelow(root))
+    .filter((path) => rasterPattern.test(path))
+    .map((path) => normalizedRelative(root, path))
+    .sort()
+}
+
+const publicRasters = await runtimeRasters(publicRoot)
+const distRasters = await runtimeRasters(distRoot)
+const failures = []
+
+for (const expected of allowlist) {
+  if (!publicRasters.includes(expected)) {
+    failures.push(`allowlisted runtime image is missing from public/: ${expected}`)
+  }
+  if (!distRasters.includes(expected)) {
+    failures.push(`allowlisted runtime image is missing from dist/: ${expected}`)
+  }
+}
+for (const path of publicRasters) {
+  if (!allowlist.has(path)) {
+    failures.push(`unlisted raster in public/: ${path}`)
+  }
+}
+for (const path of distRasters) {
+  if (!allowlist.has(path)) {
+    failures.push(`unlisted raster in dist/: ${path}`)
+  }
+  if (sourceReferences.has(path.split('/').at(-1))) {
+    failures.push(`design source reached dist/: ${path}`)
+  }
+}
+
+let totalBytes = 0
+for (const path of distRasters) {
+  totalBytes += (await stat(resolve(distRoot, path))).size
+}
+if (totalBytes > maxRuntimeRasterBytes) {
+  failures.push(
+    `runtime raster payload ${totalBytes} bytes exceeds ${maxRuntimeRasterBytes}-byte budget`,
+  )
+}
+
+if (failures.length > 0) {
+  for (const failure of failures) {
+    process.stderr.write(`runtime image check failed: ${failure}\n`)
+  }
+  process.exitCode = 1
+} else {
+  process.stdout.write(
+    `runtime images allowed: ${distRasters.length} file, ${totalBytes} / ${maxRuntimeRasterBytes} bytes\n`,
+  )
+}

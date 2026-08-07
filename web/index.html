@@ -8,14 +8,6 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23171717'/%3E%3Cpath d='M8 7h11l5 5v13H8z' fill='none' stroke='%23f5f5f5' stroke-width='2'/%3E%3Cpath d='M19 7v6h5' fill='none' stroke='%23f5f5f5' stroke-width='2'/%3E%3Ccircle cx='16' cy='21' r='2' fill='%23f59e0b'/%3E%3C/svg%3E"
     />
-    <script>
-      // Applied before the first paint, so a reviewer on the dark theme never
-      // sees a flash of the light one while the bundle loads. The key is the one
-      // useColorMode() persists under.
-      if (localStorage.getItem("openspec-doc-theme") === "dark") {
-        document.documentElement.classList.add("dark");
-      }
-    </script>
   </head>
   <body>
     <div id="app"></div>

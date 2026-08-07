@@ -52,9 +52,18 @@ embedded browser lane is explicit: `bun run test:e2e` builds the frontend and th
 the embedded assets it just built.
 `vue-tsc -b` also runs as the first half of `bun run build`, which is where a type error fails.
 
-`shadcn-vue`'s scaffold imported Geist from Google Fonts. It is replaced by bundled IBM Plex Sans and
-IBM Plex Mono: a dashboard that binds `127.0.0.1` and serves every asset from the binary must not need the
-internet to render.
+`shadcn-vue`'s scaffold imported Geist from Google Fonts. Dashboard typography is bundled:
+Cormorant Garamond gives product and document headings their display role, IBM Plex Sans is reserved for
+sustained prose and comments, and IBM Plex Mono carries operational labels, identifiers, paths, timestamps,
+and compact controls. A dashboard that binds `127.0.0.1` and serves every asset from the binary must not
+need the internet to render.
+
+Dashboard has one dark observatory identity; no theme toggle, persisted appearance preference, or alternate
+light token set exists. `designs/dashboard-review-workbench.md` owns implementation guidance, and its source
+boards live under `designs/visual-language/`. Those original PNGs are design inputs, never runtime payload.
+`web/public/assets/images/` contains only named, optimized derivatives used by frontend code. Production
+build runs `bun run check:assets`, which rejects unlisted rasters, source-board copies, and payload above the
+6 MiB budget.
 
 ## Working rules
 

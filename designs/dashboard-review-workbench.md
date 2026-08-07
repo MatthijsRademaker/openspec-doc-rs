@@ -1,136 +1,125 @@
-# Dashboard review workbench
+# Observatory review workbench
 
-Status: implementation reference for `web/` dashboard work. This document owns visual
-hierarchy, voice, state meaning, responsive behavior, accessibility, and motion. It does
-not freeze exact pixels; real document length and review state must remain visible.
+Status: implementation reference for `web/` dashboard work. Source boards live in
+`designs/visual-language/`; they guide composition but never enter runtime builds.
 
-## Product posture
+## Required visual source
 
-openspec-doc is a review workbench, not a generic project dashboard. The artifact being
-reviewed is primary. Controls, metadata, and conversation explain that artifact instead
-of competing with it. Dense information is acceptable; noise is not.
+Read these before changing dashboard layout, typography, state, or motion:
 
-Use IBM Plex Sans Variable for interface and document prose, and IBM Plex Mono for
-identifiers, paths, timestamps, and code-shaped values. Both are bundled locally under
-`web/` and embedded in `web/dist/`. No remote font or icon request is allowed.
+1. `designs/visual-language/design-system.png` — palette, typography, rhythm, states,
+   geometry, and motion.
+2. `designs/visual-language/dashboard-mockup.png` — document-first composition and balance
+   between review content and celestial framing.
+3. Supporting PNGs in `designs/visual-language/` — motif vocabulary only. They are not a
+   runtime asset library.
 
-## Hierarchy
+Product posture: observatory for agent-guided spec review. Reviewer observes, agent acts as
+instrument, spec remains primary object. Reject generic SaaS chrome, rounded card grids,
+drop shadows, bright status fills, stock dashboard sidebars, and detached chat layouts.
 
-Every view has one predictable spine:
+## Identity and typography
 
-1. **Workspace header** — product mark, scope identity, theme control, and delivery state.
-2. **Artifact header** — human title, exact identifier, review state, modified time, and
-   the smallest useful action set.
-3. **Document spine** — proposal, design, tasks, or spec content in reading order. Headings
-   and block boundaries are more important than cards.
-4. **Inline conversation** — comments attach beside the block they discuss. A thread shows
-   author, role, timestamp, body, and open/addressed/resolved state at its anchor.
-5. **Decision bar** — verdict controls and delivery status remain visible without pinning
-   a large decorative footer over content.
+Dashboard has one dark identity from first paint. Canvas is near-black, content is bone,
+and depth comes from stepped surfaces plus hairlines. No theme control or persisted browser
+preference may alter it.
 
-The index uses the same vocabulary at lower density: two clearly named collections for
-sessions and changes, long identifiers retained, recent activity explicit, and empty,
-loading, and failure states distinct.
+Use three bundled roles:
 
-## Review conversation and voice
+- **Display — Cormorant Garamond:** product wordmark, route and artifact titles,
+  requirement identifiers, major document headings.
+- **Prose — IBM Plex Sans Variable:** sustained artifact prose and comment bodies.
+- **Instrument — IBM Plex Mono:** paths, identifiers, timestamps, state labels, commands,
+  compact controls, and uppercase microcopy.
 
-Comments belong to document coordinates, not a detached chat stream. On wide screens an
-anchored thread sits in a gutter beside its block; on narrow screens it follows that block
-in normal document flow. A connector or subtle anchor marker may relate thread to text,
-but the comment body must never be the only indication of its location.
+No remote font, icon, or image request. Long identifiers stay exact and wrap.
 
-Reviewer and agent messages are visually distinct through a combination of role label,
-layout, border treatment, and semantic token:
+## Instrument language
 
-- **Reviewer**: warm `reviewer` accent, label `Reviewer`, left/document-side alignment.
-- **Agent**: cool `agent` accent, label `Agent`, right/workbench-side alignment where space
-  permits; normal flow on narrow screens.
+Microcopy is terse, operational, and calm: `SCOPE REGISTER`, `OBSERVING INDEX`,
+`3 OPEN COMMENTS`, `MOVE TO PROPOSAL`. Avoid marketing language, emoji, decorative status,
+or invented repository/activity facts.
 
-Never communicate role with color alone. The label and accessible text are mandatory.
-Agent output is evidence or proposed work, not an authoritative verdict.
+Every state combines central token, visible text, and distinct glyph or line treatment:
 
-## State language
+| Meaning | Visible treatment |
+| --- | --- |
+| Open | `◇ Open` plus interrupted line |
+| Addressed | `↗ Addressed` plus directional line |
+| Resolved | `✓ Resolved` plus closed line |
+| Verdict | `◆ <verdict>` plus decision rule |
+| Delivery | `→ <delivery state>` plus transport rule |
+| Reviewer | `● Reviewer` plus document-side rule |
+| Agent | `□ Agent` plus instrument-side rule |
 
-State text and icon shape accompany every state color. Central tokens live in
-`web/src/style.css`; components do not invent raw status colors.
+Color is secondary. Components use semantic classes backed by `web/src/style.css`; no
+component-local raw state colors.
 
-| Meaning | Token | Visible language |
-| --- | --- | --- |
-| comment needs work | `open` | Open |
-| agent responded or work is proposed | `addressed` | Addressed |
-| reviewer accepted resolution | `resolved` | Resolved |
-| reviewer decision exists | `verdict` | Keep exploring, Move to proposal, or Comment resolution |
-| directive/review outcome transport | `delivery` | Pending, delivered, or failed |
-| human voice | `reviewer` | Reviewer |
-| tool/agent voice | `agent` | Agent |
+## Composition
 
-The light and dark values are paired in `:root` and `.dark`, and exposed as Tailwind
-semantic colors. Amber/blue/green/violet/teal/warm/cool provide redundant hue cues; do
-not reduce a state to hue alone.
+Every scope view follows one spine:
 
-## Responsive composition
+```text
+instrument header / route state
+utility rail | document spine | anchored conversation rail
+persistent decision instrument
+```
 
-The committed reference frames are in `designs/frames/`.
+Document content owns reading measure. Anchored comments sit beside their block only when
+space permits, then immediately follow that block in narrow flow. Unanchored/orphaned
+comments remain reachable. Persistent decisions never cover content.
 
-- **Desktop (at least 1100px)**: document column stays readable at roughly 70ch; comment
-  gutter and metadata rail may use remaining space. Long identifiers wrap in their own
-  region and never push verdict controls off-screen.
-- **Narrow (under 768px)**: one column, no horizontal page scroll. Metadata wraps below the
-  title. Anchored comments become full-width blocks immediately after their anchor. Actions
-  remain reachable in normal flow; no essential control exists only in a hover state.
-- **Intermediate widths**: collapse the comment gutter before shrinking document type below
-  readable size. Preserve block order and focus order during every layout transition.
+Index uses same language at lower density: instrument masthead, separate ruled session and
+change registers, exact identifiers, complete metadata, explicit recent activity, and
+distinct loading, empty, and failure instruments. It must not invent scope routes,
+repository names, activity events, or review controls unsupported by current data.
 
-Index tables may become stacked rows on narrow screens. Every row keeps its identifier,
-status, modified value, and primary link; hiding data to preserve a table silhouette is
-not acceptable.
+## Motif boundary
 
-## Accessibility contract
+Orbital maps, crosshairs, scan lines, nodes, and stipple may frame headings, unused margins,
+rail thumbnails, and empty instruments. They are `aria-hidden`, non-interactive, and never
+sit behind prose, controls, focus rings, or state labels. At narrow width atmosphere shrinks
+or disappears before content.
 
-Use landmarks (`header`, `main`, `nav`, `aside` where meaningful), one logical `h1`, and
-ordered heading levels for document blocks. Use actual buttons and links, not clickable
-containers. Every icon-only control has an accessible name. Status badges include visible
-text and are not the sole source of meaning.
+Only named runtime slots may use raster derivatives. Current allowlist:
 
-Keyboard focus is visible against both themes. Focus order follows reading order. Anchored
-comments expose their relationship to the referenced block with a label or description.
-Dynamic loading, mutation, and delivery failures use an appropriate live region without
-stealing focus. Dialogs trap focus only while open and return it to their trigger.
+- `web/public/assets/images/index-orbit.webp` — bounded index masthead atmosphere, derived
+  from `designs/visual-language/abstract-star-system.png`.
 
-Target WCAG AA contrast for text and controls. Test at narrow and desktop viewports, with
-keyboard navigation, reduced motion, and a screen reader-friendly accessibility tree.
+Original source boards remain in `designs/visual-language/`. Runtime raster payload is
+checked after every production build and must stay at or below 6 MiB.
 
-## Motion policy
+## Geometry, responsiveness, and motion
 
-Motion explains a state transition: a thread opening, a status changing, or a route/view
-entering. Use short opacity/position transitions (normally 120–180ms) and avoid bouncing,
-parallax, decorative gradients, and perpetual activity indicators. Loading may use one
-quiet progress treatment; it must not imply data exists.
+Use 8px rhythm, with 4px only for tight icon/text alignment. Prefer square or 2–4px corners,
+hairline rules, and stepped surfaces. Pills belong only to compact state/control shapes.
+Focus is visibly offset from borders.
 
-Respect `prefers-reduced-motion: reduce` by removing transforms and reducing transitions
-to immediate state changes. Never delay access to review content for animation.
+- **Desktop, 1280px+:** primary content gets useful width; rails and atmosphere consume
+  remaining space, not document measure.
+- **Narrow, 390px:** one logical flow, no page-level horizontal overflow. Metadata, exact
+  identifiers, state text, comments, and controls stay visible and reachable.
 
-## Implementation constraints
+Motion explains entry or state change with opacity or slight lateral movement in 100–200ms
+using `cubic-bezier(0.2, 0, 0.2, 1)`. No perpetual orbit, parallax, animated ornament, or
+spectacle loader. `prefers-reduced-motion: reduce` removes transforms and makes transitions
+immediate.
 
-- `web/components.json`, CSS, and generated component output must agree on IBM Plex Sans;
-  `web/src/style.css` is the central token source.
-- Existing shadcn-vue primitives remain the base for controls, tables, badges, cards, and
-  future review controls. Extend them with semantic tokens instead of local hex/OKLCH
-  values.
-- Vue Router owns browser navigation. Register a route only when its view and server/API
-  support exist; no placeholder session or change views.
-- API calls live in focused modules and preserve malformed/failed responses as failures.
-- `web/dist/` is committed and embedded. Any asset, font, favicon, or CSS change requires
-  the Bun build and freshness gate.
-- Browser review uses the embedded Rust binary, not only a Vite page. The repository
-  Playwright lane is the completion gate.
+## Interaction and accessibility
 
-## Current index review boundary
+Appearance may be strange; interaction stays conventional. Use landmarks, logical headings,
+real buttons and links, visible focus, accessible names, reading-order focus, and live
+regions for loading/failure state. Reviewer and Agent always have visible role labels.
+Target WCAG AA. Verify keyboard traversal, reduced motion, network-offline assets, desktop,
+and 390px against embedded Rust output.
 
-The current index is a foundation screen, not the scope-page rewrite. It already conforms
-by preserving exact identifiers, separating loading/empty/failure states, providing a
-persistent theme toggle, using Router-owned `/`, and using bundled typography and semantic
-status infrastructure. It intentionally defers document rendering, anchored threads,
-reviewer/agent conversation, verdict controls, delivery events, and scope routes to
-`migrate-dashboard-review-to-vue`. Reference frames show that intended shell without
-pretending those interactions exist today.
+## Implementation boundary
+
+Reuse shadcn-vue behavior from `web/src/components/ui`; adapt variants through central
+observatory tokens instead of cloning interaction logic. Vue Router owns implemented SPA
+routes. API modules preserve failures. `web/dist/` is generated, gitignored, and embedded by
+Rust, so build it before Cargo.
+
+Current index proves visual system only. Artifact rendering, anchored thread mutations,
+verdict controls, SSE reconciliation, and scope routes remain owned by
+`migrate-dashboard-review-to-vue`.

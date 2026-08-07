@@ -1,11 +1,12 @@
 ## 0. Before starting
 
 - [ ] 0.1 Confirm `add-artifact-block-model` has landed. Without blocks there is nothing to render and nothing to anchor against
-- [ ] 0.2 Confirm `add-vue-dashboard-foundation` has landed. It provides the toolchain, the embedding, the theme and the index that navigates into these pages
+- [ ] 0.2 Confirm `add-vue-dashboard-foundation` has landed. It provides the executable SPA, embedding boundary and index route
 - [x] 0.3 `extend-comment-model` — archived 2026-08-06. Unanchored comments exist, so the `+` composer has a record to write
 - [x] 0.4 `add-comment-thread-actions` — archived 2026-08-06. The `addressed` status exists and its interface half was deliberately left for this change
 - [ ] 0.5 `add-change-approval-gate` carries a `dashboard-html-views` delta against files this change deletes. It is last in priority and may never be built, so it is left alone rather than re-scoped speculatively. If it is ever started, do this first
-- [ ] 0.6 Confirm `add-dashboard-development-harness` has landed. It provides pinned Bun, Router, working Vite API proxying, frontend and embedded-browser gates, the review-workbench design reference, and repository-specific frontend skills and MCP
+- [ ] 0.6 Confirm `add-dashboard-development-harness` has landed. It provides pinned Bun, Router, working Vite API proxying, frontend and embedded-browser gates, and repository-specific frontend skills and MCP
+- [ ] 0.7 Confirm `implement-observatory-design-system` has landed. Scope pages must consume its dark tokens, typography roles, motifs, primitives, runtime-asset discipline, and responsive contracts rather than inventing local replacements
 
 ## 1. The JSON API
 
@@ -20,11 +21,13 @@
 
 ## 2. Rendering the artifact
 
-- [ ] 2.1 Render a scope's artifacts as their blocks' HTML
+- [ ] 2.1 Render a scope's artifacts as their blocks' HTML in the shared serif-led document spine, preserving readable measure and ordered artifact hierarchy
 - [ ] 2.2 Offer a comment action on the block under the pointer
 - [ ] 2.3 Keep free-text selection within a block as a secondary path to commenting
 - [ ] 2.4 Surface the refusal reason when a selection crossing inline markup is rejected by the server. It already refuses and already reports why; the reason must reach the reviewer
 - [ ] 2.5 Verify a comment created from a block resolves `exact`, and one created from a free-text selection still does
+- [ ] 2.6 Compose the scope from shared instrument header, utility rail, document spine, conversation rail and decision-instrument primitives; add no local raw visual or state colors
+- [ ] 2.7 Keep celestial artwork in bounded framing regions outside prose, controls and focus indicators; remove atmosphere before content when width contracts
 
 ## 3. Comments beside their block
 
@@ -33,6 +36,7 @@
 - [ ] 3.3 Render the reviewer's words and the agent's replies visually distinct. The current page renders them identically, which in a tool whose output is a conversation between two parties is not a styling gap
 - [ ] 3.4 Keep fuzzy-anchored comments inline against the block they resolved to, marked as having moved
 - [ ] 3.5 Delete the pooled comment list at the bottom of the page
+- [ ] 3.6 On wide screens place expanded threads in the anchored conversation region with an explicit block relationship; at 390px place each expanded thread immediately after its block in document flow
 
 ## 4. Comments with no block
 
@@ -57,10 +61,11 @@
 - [ ] 6.3 Sending with text records an unanchored comment and then submits the verdict
 - [ ] 6.4 Label the session page's primary control "Move to proposal". Do not label it "Approve" — `add-change-approval-gate` defines an `approved` verdict with stricter meaning, and two Approves in one product is a trap
 - [ ] 6.5 Change pages: `+` submits `comment-resolution` with an optional comment; the primary slot stays empty until the approval gate lands
+- [ ] 6.6 Render the controls as the shared persistent decision instrument without covering the final artifact block at desktop or 390px
 
 ## 7. Header and delivery state
 
-- [ ] 7.1 Show the scope's title, its standing verdict, and when it was submitted
+- [ ] 7.1 Show the scope's title, exact identifier, standing verdict, and submission time in the shared instrument header using display, mono and semantic-state roles
 - [ ] 7.2 Show whether that verdict's directive has been delivered to the agent. It is recorded and has never been shown anywhere, so submitting a verdict is currently indistinguishable from submitting into nothing
 - [ ] 7.3 Show verdict history, which has no home once the pooled bottom list is deleted
 
@@ -86,3 +91,6 @@
 - [ ] 10.4 Send a verdict with no composer text and confirm the directive reaches the agent and points at the comments
 - [ ] 10.5 Orphan a comment by rewriting the text it anchors to, and confirm it is still reachable
 - [ ] 10.6 Confirm the header reports a submitted verdict as undelivered until the agent's next turn boundary consumes it
+- [ ] 10.7 Run `bun run format`, `bun run check`, `bun run build`, and `bun run test:e2e`; browser evidence must come from the freshly built Rust-embedded app
+- [ ] 10.8 Inspect realistic session and change pages at desktop and 390px: long identifiers wrap, document stays primary, anchored threads retain their relationship, controls remain reachable, artwork yields, and no horizontal page overflow exists
+- [ ] 10.9 Verify keyboard traversal, visible focus, reviewer/agent and state meaning without hue, offline assets, `prefers-reduced-motion`, and zero unexpected browser console errors

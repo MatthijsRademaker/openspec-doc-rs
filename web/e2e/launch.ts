@@ -9,7 +9,8 @@ const repoRoot = resolve(moduleRoot, '../..')
 const webRoot = resolve(moduleRoot, '..')
 const port = 8792
 const baseURL = `http://127.0.0.1:${port}`
-const fixtureChange = 'e2e-dashboard-fixture'
+const fixtureChange = 'implement-observatory-design-system-with-a-realistically-long-identifier'
+const fixtureSession = '0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d74'
 const bun = process.execPath
 const binary = join(repoRoot, 'target', 'debug', 'openspec-doc')
 
@@ -66,14 +67,22 @@ async function createFixture(): Promise<string> {
     [`openspec/changes/${fixtureChange}/.openspec.yaml`]:
       'schema: spec-driven\ncreated: 2026-01-01\n',
     [`openspec/changes/${fixtureChange}/proposal.md`]:
-      '# E2E Dashboard Fixture\n\nBrowser lane must see this proposal.\n',
+      '# Observatory Design System Fixture\n\nBrowser lane must see this proposal.\n',
     [`openspec/changes/${fixtureChange}/design.md`]:
       '# Fixture design\n\nA deterministic embedded-app fixture.\n',
     [`openspec/changes/${fixtureChange}/tasks.md`]: '# Fixture tasks\n\n- [x] Render index data\n',
     [`openspec/changes/${fixtureChange}/specs/index/spec.md`]:
       '# Index fixture\n\nThe fixture has one active change.\n',
     [`.openspec-doc/scratch/${fixtureChange}.md`]:
-      '# E2E Dashboard Fixture\n\nThis title is intentionally long enough to exercise a real row.\n',
+      '# Observatory Design System Fixture\n\nThis title exercises a real ruled register.\n',
+    [`.openspec-doc/directives/_session/${fixtureSession}.json`]:
+      '{"pending":false,"reason":"none","createdAt":"2026-01-01T00:00:00Z","consumedAt":null}\n',
+    [`.openspec-doc/scratch/_session/${fixtureSession}.md`]:
+      '# Agent-guided observatory exploration session\n\nReview atmosphere must yield before content.\n',
+    [`.openspec-doc/comments/${fixtureChange}.jsonl`]:
+      '{"type":"comment","comment":{"id":"e2e-open-comment","anchor":null,"body":"Keep the instrument state visible.","createdAt":"2026-01-01T00:00:00Z"}}\n',
+    [`.openspec-doc/verdicts/${fixtureChange}.jsonl`]:
+      '{"id":"e2e-verdict","verdict":"comment-resolution","notes":"","createdAt":"2026-01-01T00:00:01Z"}\n',
   }
   const fixedTime = new Date('2026-01-01T00:00:00Z')
   for (const [relative, contents] of Object.entries(files)) {

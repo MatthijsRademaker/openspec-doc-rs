@@ -8,10 +8,11 @@ The scope pages are the dashboard. Everything the tool claims to be happens ther
 
 Beyond those: the composer reveals itself hundreds of lines below where the selection was made, agent replies are visually identical to the reviewer's own words, and the standing verdict is at the bottom with nothing anywhere showing whether it was actually *delivered*.
 
-`add-artifact-block-model` has produced blocks that can be rendered and anchored against. `add-vue-dashboard-foundation` has produced a toolchain, a theme and a shipping story, proven on the index. This change spends both on the pages they were built for.
+`add-artifact-block-model` has produced blocks that can be rendered and anchored against. `add-vue-dashboard-foundation` has produced the executable SPA, and `implement-observatory-design-system` has replaced its generic proof UI with the product's dark, document-first observatory language. This change spends both on the pages they were built for; it does not invent a second scope-page design system.
 
 ## What Changes
 
+- **The scope pages instantiate the observatory review workbench:** instrument header and utility rail, serif-led document spine, anchored conversation rail, restrained celestial framing, and persistent decision instrument. At narrow widths comments enter flow immediately after their blocks and atmosphere yields before content.
 - **The scope pages become Vue and the server becomes a JSON API for them.** `crates/server/src/page/` is deleted along with the form-post-and-redirect handling in `routes.rs`.
 - **Markdown is rendered, not shown as source.** Artifacts arrive as blocks, each carrying its rendered HTML and the exact source it was sliced from. A comment on a block sends that source and the block's offset, so the anchor is exact by construction.
 - **Comments render beside the block they anchor to,** collapsed behind expandable markers. The pooled list at the bottom is deleted.
@@ -37,7 +38,7 @@ None.
 
 - `crates/server/src/page/` — deleted. Roughly 670 lines including tests, minus `index.rs` which the foundation change already removed.
 - `crates/server/src/routes.rs` — 881 lines; HTML routes and form handling replaced with JSON handlers.
-- `web/` — the scope pages, the comment surface, the composer and the bar.
+- `web/` — the scope pages, observatory shell composition, document spine, anchored conversation surface, composer and decision instrument.
 - `crates/core/src/hook/translate.rs` — the directive templates, which currently promise verdict notes.
 - `openspec/specs/dashboard-html-views/spec.md` and `openspec/specs/dashboard-server/spec.md`.
 - `docs/docs/` — anything describing the pages.
@@ -45,9 +46,9 @@ None.
 ## Dependencies and ordering
 
 - **`add-artifact-block-model` must land first.** This change renders blocks and anchors against them; without it there are none.
-- **`add-vue-dashboard-foundation` must land first.** It provides the toolchain, the embedding, the theme, and the index that navigates into these pages.
-- **`add-dashboard-development-harness` must land after the foundation and before this cutover.** It provides the pinned Bun workflow, Router boundary, local API proxy, frontend and embedded-browser gates, design reference, and repository-specific frontend guidance; this change consumes those contracts rather than recreating them.
-- **`add-dashboard-development-harness` must land next.** It replaces the frontend package manager with pinned Bun, establishes Router, working local API proxying, executable frontend and browser gates, and the design and coding-harness guidance this interaction-heavy cutover depends on.
+- **`add-vue-dashboard-foundation` must land first.** It provides the executable SPA, embedding boundary, and index route.
+- **`add-dashboard-development-harness` must land after the foundation.** It provides pinned Bun, Router, local API proxying, frontend and embedded-browser gates, and repository-specific frontend guidance.
+- **`implement-observatory-design-system` must land after the harness and before this cutover.** It replaces the foundation's generic proof UI with central dark observatory tokens, typography, motifs, shared primitives, runtime-asset discipline, and the restyled index this change extends.
 - **`extend-comment-model` has landed** (archived 2026-08-06). The `+` composer writes an unanchored comment, which the model can now represent.
 - **`add-comment-thread-actions` has landed** (archived 2026-08-06). Its `addressed` status exists, which is what makes a promoted change page have something to highlight: after the agent writes a proposal the comments are still `open`, because the agent does not resolve them, deliberately and by three separate rules. Its interface half was deliberately left unbuilt and arrives here.
 - **`add-change-approval-gate` carries a `dashboard-html-views` delta** targeting files this change deletes. It is last in priority and may never be built, so it is left alone rather than re-scoped speculatively. If it is ever started, re-scope it first. Its approve control becomes the primary slot of the floating bar on change pages.

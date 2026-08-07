@@ -1,6 +1,6 @@
 ---
 name: openspec-visual-language
-description: Ingest the observatory visual language from web/public/assets/images before any web/ frontend work; push past conventional dashboard UI toward the abstract, weird, dev-fluent design system in the mockups.
+description: Ingest the observatory visual language from designs/visual-language before any web/ frontend work; push past conventional dashboard UI toward the abstract, weird, dev-fluent design system in the mockups.
 license: MIT
 compatibility: Requires this repository and its Bun-managed web workspace.
 metadata:
@@ -20,10 +20,10 @@ the failure mode this skill exists to prevent.
 Read these images. Actually read them, every frontend task, before choosing layout, type,
 or motif:
 
-1. `web/public/assets/images/design-system.png` — the source of truth. Color system,
+1. `designs/visual-language/design-system.png` — the source of truth. Color system,
    typography pairing, spacing scale, states, iconography, motion principles, example
    fragment.
-2. `web/public/assets/images/dashboard-mockup.png` — the target experience. Study how the
+2. `designs/visual-language/dashboard-mockup.png` — the target experience. Study how the
    system feels: density, hierarchy, atmosphere, the relationship between document content
    and the celestial artwork.
 
@@ -72,17 +72,16 @@ The ratchet that keeps "weird" fluent for a developer:
 - **Content stays primary.** Artwork frames the document; it never competes with it. The
   mockup's stippled face sits beside the requirement text, not under it.
 - **Accessibility and gates still apply.** Everything in the `frontend-design` skill —
-  semantic tokens from `web/src/style.css`, bundled IBM Plex fonts, offline assets,
-  reduced-motion, `bun run test:e2e` — is unchanged. Express the visual language *through*
+  semantic tokens from `web/src/style.css`, bundled Cormorant Garamond and IBM Plex fonts,
+  offline assets, reduced-motion, `bun run test:e2e` — is unchanged. Express the visual language *through*
   the semantic tokens; extend the token set centrally rather than hardcoding locally.
 - **Motion is instrument-grade.** 100–200ms, `cubic-bezier(0.2, 0, 0.2, 1)`, fades and
   slight lateral shifts. No parallax theatrics, no decorative loaders.
 
 ## Using the image assets
 
-Assets live under `web/public/assets/images/` and are large PNGs (1.7–2.8 MB). Use them
-deliberately: CSS backgrounds, decorative layers, activity thumbnails — never as
-render-blocking critical content, and only where the mockup's composition calls for that
-motif. If a screen needs a motif that doesn't exist as an asset yet, recreate it with CSS/
-SVG hairlines and stipple-style treatment in the same spirit rather than importing a new
-stock style.
+Original assets live under `designs/visual-language/` and must never be referenced by
+runtime code or copied into `web/public/`. Runtime raster derivatives require a named slot
+in `designs/dashboard-review-workbench.md`, WebP sizing for that slot, and inclusion in the
+runtime-image allowlist. Prefer CSS/SVG hairlines and stipple-style geometry when they can
+express the motif without another embedded raster.
