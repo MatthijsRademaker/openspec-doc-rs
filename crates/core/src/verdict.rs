@@ -100,11 +100,11 @@ fn sidecar_relative(key: &ScopeKey, extension: &str) -> Result<String, Error> {
     }
 }
 
-/// Record `verdict` for `key`, with `notes` as the reviewer's free text.
+/// Record `verdict` for `key`, with optional `notes` from non-dashboard callers.
 ///
 /// A verdict that does not belong to the kind of scope it was submitted for is
-/// refused, as is a keep-exploring verdict with nothing written in it: its whole
-/// content is what is still open, so an empty one says nothing.
+/// refused. Dashboard feedback lives in the comment sidecar, so every verdict
+/// may be recorded without notes.
 pub fn add(root: &Path, key: &ScopeKey, verdict: Verdict, notes: &str) -> Result<Record, Error> {
     let session_scoped = matches!(key, ScopeKey::Session(_));
     if session_scoped != verdict.is_session_phase() {
@@ -115,9 +115,6 @@ pub fn add(root: &Path, key: &ScopeKey, verdict: Verdict, notes: &str) -> Result
     }
 
     let notes = notes.trim();
-    if verdict == Verdict::KeepExploring && notes.is_empty() {
-        return Err(Error::EmptyVerdictNotes);
-    }
 
     let record = Record {
         id: Uuid::new_v4().to_string(),
@@ -295,22 +292,12 @@ mod tests {
     }
 
     #[test]
-    fn a_keep_exploring_verdict_with_nothing_written_in_it_is_refused() {
+    fn a_keep_exploring_verdict_needs_no_notes() {
         let temp = TempDir::new().expect("temp dir");
 
-        for notes in ["", "   \n\t"] {
-            assert!(
-                matches!(
-                    add(temp.path(), &session(), Verdict::KeepExploring, notes),
-                    Err(Error::EmptyVerdictNotes)
-                ),
-                "accepted {notes:?}"
-            );
-        }
-        assert!(
-            !path(temp.path(), &session()).expect("path").exists(),
-            "a refused verdict writes no sidecar"
-        );
+        let record = add(temp.path(), &session(), Verdict::KeepExploring, "").expect("add verdict");
+
+        assert!(record.notes.is_empty());
     }
 
     #[test]

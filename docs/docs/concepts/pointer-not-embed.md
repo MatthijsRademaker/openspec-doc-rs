@@ -2,14 +2,13 @@
 
 An injected directive **names files for the agent to read**. It never quotes the reviewer's words.
 
-```
+```text
 Review feedback from this project's openspec-doc dashboard: the reviewer looked at
-this exploration and kept it in the explore phase, with notes on what is still open.
-Those notes are the last record in `.openspec-doc/verdicts/_session/<id>.jsonl`, the
-exploration itself is at `.openspec-doc/scratch/_session/<id>.md`, and any anchored
-comments are in `.openspec-doc/comments/_session/<id>.jsonl` —
-`openspec-doc comment list --session <id>` prints them readably. Read those, then keep
-working on what they say is unsettled.
+this exploration and kept it in the explore phase. Their feedback is in
+`.openspec-doc/comments/_session/<id>.jsonl` — `openspec-doc comment list --session
+<id>` prints it readably — and the exploration itself is at
+`.openspec-doc/scratch/_session/<id>.md`. Read both, then keep working on what the
+comments say is unsettled.
 ```
 
 The reviewer's actual note — *"Lets dig deeper into the lingering server"* — appears nowhere in that text.
@@ -47,9 +46,9 @@ The pi.dev run is the clearest evidence. The agent was asked to run a script and
 what it returned instead was an assessment of the reviewer's question, because the directive had arrived
 between the two. It had abandoned the prompt to answer the review.
 
-There was also an unplanned benefit: once pointed at the verdict sidecar, an agent started checking that
-file again later without being asked. The pointer taught it where the reviewer's decisions live. Pleasant,
-but not something to rely on.
+There was also an unplanned benefit: once pointed at a review sidecar, an agent started checking that
+file again later without being asked. The pointer taught it where reviewer feedback lives. Pleasant, but
+not something to rely on.
 
 ## Enforced, not just intended
 
@@ -75,8 +74,7 @@ one worth building on.
 
 ## The corollary for the reviewer
 
-Your verdict notes are not pasted into the agent's context; they are read from
-`.openspec-doc/verdicts/…`. For a one-line note that is real overhead — the agent reads a JSONL file to
-retrieve one sentence. It is still the right trade, because the property being protected is that *no*
-injected text ever carries free-form content, and that property is what makes the channel corroborable at
-all.
+Your dashboard comments are not pasted into agent context; they are read from
+`.openspec-doc/comments/…`. For one-line feedback that is real overhead — agent reads JSONL to retrieve
+one sentence. It remains right trade because *no* injected directive carries free-form reviewer content,
+and that property makes channel corroborable.

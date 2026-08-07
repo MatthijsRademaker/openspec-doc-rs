@@ -3,7 +3,7 @@
 Everything the tool writes lives under `.openspec-doc/` at the project root. Nothing is stored in a
 database, and every file is readable and hand-editable.
 
-```
+```text
 .openspec-doc/
   directives/_session/<session-id>.json    the session's directive slot; also what makes a
                                            session appear in the dashboard at all
@@ -29,7 +29,8 @@ the approved outcome lives in `openspec/`. Review state is machine-local by desi
 Comment and verdict sidecars are JSONL and append-only. Replaying the records in order is what
 reconstructs current state, and a later record never rewrites an earlier one. A comment thread is a
 `Comment` event plus its `Reply` and `Status` events; a relocation is another event, which is how anchors
-survive promotion.
+survive promotion. Reply events carry `"author": "reviewer"` or `"author": "agent"`. Authorless replies
+from older sidecars read as agent-authored because agent-facing CLI was then the only reply writer.
 
 A malformed line is an error, not a skipped record.
 
@@ -45,7 +46,7 @@ A malformed line is an error, not a skipped record.
 ```
 
 | State | `pending` | `consumedAt` | Meaning |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Registered, nothing waiting | `false` | `null` | Session is discoverable; nothing to inject |
 | Waiting | `true` | `null` | Will be injected at the next turn boundary |
 | Consumed | `false` | timestamp | Already injected; kept as an audit trail |

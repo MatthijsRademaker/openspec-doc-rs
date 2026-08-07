@@ -14,7 +14,7 @@ use crate::session::check_session_id;
 use super::anchor::{self, Anchor};
 use super::artifact;
 use super::record::{
-    Comment, Edit, Event, Relocation, Reply, Status, StatusUpdate, Thread, new_id,
+    new_id, Comment, Edit, Event, Relocation, Reply, ReplyAuthor, Status, StatusUpdate, Thread,
 };
 use super::{COMMENTS_DIR, SESSION_DIR};
 
@@ -138,11 +138,23 @@ fn record_comment(
 
 /// Append a reply to the comment `comment_id` in `key`'s sidecar.
 pub fn reply(root: &Path, key: &ScopeKey, comment_id: &str, body: &str) -> Result<Reply, Error> {
+    reply_as(root, key, comment_id, body, ReplyAuthor::Agent)
+}
+
+/// Add a response with the identity of the actor who wrote it.
+pub fn reply_as(
+    root: &Path,
+    key: &ScopeKey,
+    comment_id: &str,
+    body: &str,
+    author: ReplyAuthor,
+) -> Result<Reply, Error> {
     require_comment(root, key, comment_id)?;
 
     let reply = Reply {
         id: new_id(),
         comment_id: comment_id.to_owned(),
+        author,
         body: body.to_owned(),
         created_at: Utc::now().to_rfc3339(),
     };
@@ -707,6 +719,13 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["Because of X.", "Understood."],
             "replies keep the order they were appended in"
+        );
+        assert!(
+            thread
+                .replies
+                .iter()
+                .all(|reply| reply.author == ReplyAuthor::Agent),
+            "agent-facing reply writer records agent authorship"
         );
         assert_eq!(thread.status_history.len(), 1);
     }

@@ -1,29 +1,24 @@
-//! The route table: the built frontend at `/` with the index's data behind it,
-//! then a page and an update stream per scoping regime —
-//! `/sessions/<session_id>` for pre-proposal sessions, `/changes/<name>` for
-//! active changes.
+//! Embedded frontend routes, scope JSON APIs, and scope update streams.
 
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use axum::Json;
-use axum::Router;
-use axum::extract::{Form, Path, State};
+use axum::extract::{Path, State};
 use axum::http::{StatusCode, Uri};
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::response::{Html, IntoResponse, Redirect, Response};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use openspec_doc_core::comments::{self};
-use openspec_doc_core::verdict::{self, Verdict};
+use axum::{Json, Router};
+use openspec_doc_core::comments::{self, Comment, Reply, ReplyAuthor, Status, StatusUpdate};
+use openspec_doc_core::verdict::{self, Record, Verdict};
 use openspec_doc_core::{Error as CoreError, Project};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio_stream::{StreamExt, wrappers::BroadcastStream};
 
 use crate::error::{self, Error};
-use crate::page::{Anchored, Review};
 use crate::scope::Resolved;
 use crate::watch::{Hub, Target};
-use crate::{api, assets, page, scope};
+use crate::{api, assets, scope};
 
 #[derive(Clone)]
 struct AppState {
@@ -41,87 +36,130 @@ pub fn router(project: Project) -> Router {
         .route("/", get(app))
         .route("/api/index", get(index_data))
         .route("/sessions/{session_id}", get(session_page))
-        .route("/sessions/{session_id}/events", get(session_events))
-        .route("/sessions/{session_id}/review", get(session_review))
-        .route("/sessions/{session_id}/comments", post(session_comment))
-        .route("/sessions/{session_id}/verdict", post(session_verdict))
         .route("/changes/{name}", get(change_page))
-        .route("/changes/{name}/events", get(change_events))
-        .route("/changes/{name}/review", get(change_review))
-        .route("/changes/{name}/comments", post(change_comment))
-        .route("/changes/{name}/verdict", post(change_verdict))
+        .route("/api/sessions/{session_id}", get(session_detail))
+        .route("/api/changes/{name}", get(change_detail))
+        .route("/api/sessions/{session_id}/events", get(session_events))
+        .route("/api/changes/{name}/events", get(change_events))
+        .route("/api/sessions/{session_id}/comments", post(session_comment))
+        .route("/api/changes/{name}/comments", post(change_comment))
+        .route(
+            "/api/sessions/{session_id}/comments/{comment_id}/replies",
+            post(session_reply),
+        )
+        .route(
+            "/api/changes/{name}/comments/{comment_id}/replies",
+            post(change_reply),
+        )
+        .route(
+            "/api/sessions/{session_id}/comments/{comment_id}/status",
+            post(session_status),
+        )
+        .route(
+            "/api/changes/{name}/comments/{comment_id}/status",
+            post(change_status),
+        )
+        .route("/api/sessions/{session_id}/verdict", post(session_verdict))
+        .route("/api/changes/{name}/verdict", post(change_verdict))
         .fallback(unknown)
         .with_state(state)
 }
 
-/// A comment submitted from a page's composer. The offsets and context an anchor
-/// needs are not accepted from the client: the server re-finds `selected_text` in
-/// the artifact as it stands on disk, so an anchor is never recorded against
-/// markdown only the browser believed was there.
 #[derive(Debug, Deserialize)]
-struct NewComment {
-    artifact_path: String,
-    selected_text: String,
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
+enum NewComment {
+    Anchored {
+        artifact_path: String,
+        selected_text: String,
+        search_from: usize,
+        body: String,
+    },
+    Unanchored {
+        body: String,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+struct NewReply {
     body: String,
 }
 
-/// A phase verdict submitted from a page's verdict controls.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ReviewerStatus {
+    Open,
+    Resolved,
+}
+
+impl From<ReviewerStatus> for Status {
+    fn from(status: ReviewerStatus) -> Self {
+        match status {
+            ReviewerStatus::Open => Self::Open,
+            ReviewerStatus::Resolved => Self::Resolved,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct NewStatus {
+    status: ReviewerStatus,
+}
+
 #[derive(Debug, Deserialize)]
 struct NewVerdict {
     verdict: Verdict,
-    /// Absent for a verdict whose form carries no notes field.
-    #[serde(default)]
-    notes: String,
 }
 
-/// The application shell. Everything it shows is data it fetches, so the server
-/// hands it the shell and nothing else.
 async fn app() -> Response {
     assets::shell()
 }
 
 async fn index_data(State(state): State<AppState>) -> Result<Json<api::Index>, RouteError> {
     let (sessions, changes) = scope::discovered(&state.project)?;
-
     Ok(Json(api::Index::new(&sessions, &changes)))
 }
 
 async fn session_page(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
-) -> Result<Html<String>, RouteError> {
-    let resolved = scope::session(&state.project, &session_id)?.ok_or(RouteError::NotFound)?;
-    let review = review_state(&state, &resolved)?;
-
-    Ok(Html(page::session(
-        &session_id,
-        resolved.title.as_deref(),
-        &resolved.artifacts,
-        &review,
-    )))
+) -> Result<Response, RouteError> {
+    require_session(&state, &session_id)?;
+    Ok(assets::shell())
 }
 
 async fn change_page(
     State(state): State<AppState>,
     Path(name): Path<String>,
-) -> Result<Html<String>, RouteError> {
-    let resolved = scope::change(&state.project, &name)?.ok_or(RouteError::NotFound)?;
-    let review = review_state(&state, &resolved)?;
+) -> Result<Response, RouteError> {
+    require_change(&state, &name)?;
+    Ok(assets::shell())
+}
 
-    Ok(Html(page::change(
-        &name,
-        resolved.title.as_deref(),
-        &resolved.artifacts,
-        &review,
-    )))
+async fn session_detail(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+) -> Result<Json<api::Detail>, RouteError> {
+    let resolved = require_session(&state, &session_id)?;
+    Ok(Json(api::Detail::new(&state.project, &resolved)?))
+}
+
+async fn change_detail(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Result<Json<api::Detail>, RouteError> {
+    let resolved = require_change(&state, &name)?;
+    Ok(Json(api::Detail::new(&state.project, &resolved)?))
 }
 
 async fn session_events(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
 ) -> Result<impl IntoResponse, RouteError> {
-    let resolved = scope::session(&state.project, &session_id)?.ok_or(RouteError::NotFound)?;
-
+    let resolved = require_session(&state, &session_id)?;
     Ok(stream(&state.hub, &resolved.target))
 }
 
@@ -129,82 +167,147 @@ async fn change_events(
     State(state): State<AppState>,
     Path(name): Path<String>,
 ) -> Result<impl IntoResponse, RouteError> {
-    let resolved = scope::change(&state.project, &name)?.ok_or(RouteError::NotFound)?;
-
+    let resolved = require_change(&state, &name)?;
     Ok(stream(&state.hub, &resolved.target))
-}
-
-/// The review-state fragment an open page refetches when its stream pushes, so
-/// the comment list and verdict state update without the page being reloaded.
-async fn session_review(
-    State(state): State<AppState>,
-    Path(session_id): Path<String>,
-) -> Result<Html<String>, RouteError> {
-    let resolved = scope::session(&state.project, &session_id)?.ok_or(RouteError::NotFound)?;
-
-    Ok(Html(page::review_fragment(&review_state(
-        &state, &resolved,
-    )?)))
-}
-
-async fn change_review(
-    State(state): State<AppState>,
-    Path(name): Path<String>,
-) -> Result<Html<String>, RouteError> {
-    let resolved = scope::change(&state.project, &name)?.ok_or(RouteError::NotFound)?;
-
-    Ok(Html(page::review_fragment(&review_state(
-        &state, &resolved,
-    )?)))
 }
 
 async fn session_comment(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
-    Form(form): Form<NewComment>,
-) -> Result<Redirect, RouteError> {
-    let resolved = scope::session(&state.project, &session_id)?.ok_or(RouteError::NotFound)?;
-    add_comment(&state, &resolved, &form)?;
-
-    Ok(Redirect::to(&format!("/sessions/{session_id}")))
+    Json(request): Json<NewComment>,
+) -> Result<(StatusCode, Json<Comment>), RouteError> {
+    let resolved = require_session(&state, &session_id)?;
+    let comment = add_comment(&state, &resolved, request)?;
+    Ok((StatusCode::CREATED, Json(comment)))
 }
 
 async fn change_comment(
     State(state): State<AppState>,
     Path(name): Path<String>,
-    Form(form): Form<NewComment>,
-) -> Result<Redirect, RouteError> {
-    let resolved = scope::change(&state.project, &name)?.ok_or(RouteError::NotFound)?;
-    add_comment(&state, &resolved, &form)?;
+    Json(request): Json<NewComment>,
+) -> Result<(StatusCode, Json<Comment>), RouteError> {
+    let resolved = require_change(&state, &name)?;
+    let comment = add_comment(&state, &resolved, request)?;
+    Ok((StatusCode::CREATED, Json(comment)))
+}
 
-    Ok(Redirect::to(&format!("/changes/{name}")))
+async fn session_reply(
+    State(state): State<AppState>,
+    Path((session_id, comment_id)): Path<(String, String)>,
+    Json(request): Json<NewReply>,
+) -> Result<(StatusCode, Json<Reply>), RouteError> {
+    let resolved = require_session(&state, &session_id)?;
+    let reply = comments::reply_as(
+        &state.project.root,
+        &resolved.key,
+        &comment_id,
+        &request.body,
+        ReplyAuthor::Reviewer,
+    )?;
+    Ok((StatusCode::CREATED, Json(reply)))
+}
+
+async fn change_reply(
+    State(state): State<AppState>,
+    Path((name, comment_id)): Path<(String, String)>,
+    Json(request): Json<NewReply>,
+) -> Result<(StatusCode, Json<Reply>), RouteError> {
+    let resolved = require_change(&state, &name)?;
+    let reply = comments::reply_as(
+        &state.project.root,
+        &resolved.key,
+        &comment_id,
+        &request.body,
+        ReplyAuthor::Reviewer,
+    )?;
+    Ok((StatusCode::CREATED, Json(reply)))
+}
+
+async fn session_status(
+    State(state): State<AppState>,
+    Path((session_id, comment_id)): Path<(String, String)>,
+    Json(request): Json<NewStatus>,
+) -> Result<Json<StatusUpdate>, RouteError> {
+    let resolved = require_session(&state, &session_id)?;
+    let update = comments::set_status(
+        &state.project.root,
+        &resolved.key,
+        &comment_id,
+        request.status.into(),
+    )?;
+    Ok(Json(update))
+}
+
+async fn change_status(
+    State(state): State<AppState>,
+    Path((name, comment_id)): Path<(String, String)>,
+    Json(request): Json<NewStatus>,
+) -> Result<Json<StatusUpdate>, RouteError> {
+    let resolved = require_change(&state, &name)?;
+    let update = comments::set_status(
+        &state.project.root,
+        &resolved.key,
+        &comment_id,
+        request.status.into(),
+    )?;
+    Ok(Json(update))
 }
 
 async fn session_verdict(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
-    Form(form): Form<NewVerdict>,
-) -> Result<Redirect, RouteError> {
-    let resolved = scope::session(&state.project, &session_id)?.ok_or(RouteError::NotFound)?;
-    add_verdict(&state, &resolved, &form)?;
-
-    Ok(Redirect::to(&format!("/sessions/{session_id}")))
+    Json(request): Json<NewVerdict>,
+) -> Result<(StatusCode, Json<Record>), RouteError> {
+    let resolved = require_session(&state, &session_id)?;
+    let record = verdict::add(&state.project.root, &resolved.key, request.verdict, "")?;
+    Ok((StatusCode::CREATED, Json(record)))
 }
 
 async fn change_verdict(
     State(state): State<AppState>,
     Path(name): Path<String>,
-    Form(form): Form<NewVerdict>,
-) -> Result<Redirect, RouteError> {
-    let resolved = scope::change(&state.project, &name)?.ok_or(RouteError::NotFound)?;
-    add_verdict(&state, &resolved, &form)?;
-
-    Ok(Redirect::to(&format!("/changes/{name}")))
+    Json(request): Json<NewVerdict>,
+) -> Result<(StatusCode, Json<Record>), RouteError> {
+    let resolved = require_change(&state, &name)?;
+    let record = verdict::add(&state.project.root, &resolved.key, request.verdict, "")?;
+    Ok((StatusCode::CREATED, Json(record)))
 }
 
-/// Anything the route table did not answer: an embedded asset where the frontend
-/// owns the path, and a 404 otherwise. The shell is deliberately not a fallback
-/// — an unknown session id or change name is a 404, not a page.
+fn require_session(state: &AppState, session_id: &str) -> Result<Resolved, RouteError> {
+    scope::session(&state.project, session_id)?.ok_or(RouteError::NotFound)
+}
+
+fn require_change(state: &AppState, name: &str) -> Result<Resolved, RouteError> {
+    scope::change(&state.project, name)?.ok_or(RouteError::NotFound)
+}
+
+fn add_comment(
+    state: &AppState,
+    resolved: &Resolved,
+    request: NewComment,
+) -> Result<Comment, RouteError> {
+    match request {
+        NewComment::Anchored {
+            artifact_path,
+            selected_text,
+            search_from,
+            body,
+        } => Ok(comments::add(
+            &state.project.root,
+            &resolved.key,
+            &artifact_path,
+            &selected_text,
+            search_from,
+            &body,
+        )?),
+        NewComment::Unanchored { body } => Ok(comments::add_unanchored(
+            &state.project.root,
+            &resolved.key,
+            &body,
+        )?),
+    }
+}
+
 async fn unknown(uri: Uri) -> Response {
     match assets::asset(uri.path().trim_start_matches('/')) {
         Some(response) => response,
@@ -212,51 +315,6 @@ async fn unknown(uri: Uri) -> Response {
     }
 }
 
-/// The scope's comment threads, each with where its anchor lands in the artifact
-/// as it stands now, and its verdicts.
-fn review_state(state: &AppState, resolved: &Resolved) -> Result<Review, RouteError> {
-    let root = &state.project.root;
-    let mut comments = Vec::new();
-
-    for thread in comments::read(root, &resolved.key)? {
-        let resolution = comments::resolve_anchor(root, thread.comment.anchor.as_ref())?;
-        comments.push(Anchored { thread, resolution });
-    }
-
-    Ok(Review {
-        comments,
-        verdicts: verdict::read(root, &resolved.key)?,
-    })
-}
-
-fn add_comment(state: &AppState, resolved: &Resolved, form: &NewComment) -> Result<(), RouteError> {
-    comments::add(
-        &state.project.root,
-        &resolved.key,
-        &form.artifact_path,
-        &form.selected_text,
-        0,
-        &form.body,
-    )?;
-
-    Ok(())
-}
-
-fn add_verdict(state: &AppState, resolved: &Resolved, form: &NewVerdict) -> Result<(), RouteError> {
-    verdict::add(
-        &state.project.root,
-        &resolved.key,
-        form.verdict,
-        &form.notes,
-    )?;
-
-    Ok(())
-}
-
-/// Push an event whenever `target` changes on disk. A subscriber that lagged is
-/// told the same thing: it too needs to reload.
-///
-/// The response borrows neither argument (`use<>`): it outlives the handler.
 fn stream(hub: &Hub, target: &Target) -> impl IntoResponse + use<> {
     let updates = hub.subscribe(target);
     let events = BroadcastStream::new(updates)
@@ -265,11 +323,13 @@ fn stream(hub: &Hub, target: &Target) -> impl IntoResponse + use<> {
     Sse::new(events).keep_alive(KeepAlive::default())
 }
 
+#[derive(Serialize)]
+struct ErrorBody {
+    error: String,
+}
+
 enum RouteError {
     NotFound,
-    /// The submission itself was not usable — a selection that is no longer in
-    /// the artifact, or a verdict that does not apply to the scope. The reviewer
-    /// is told what was wrong with it rather than being shown a server error.
     Rejected(CoreError),
     Internal(Error),
 }
@@ -285,15 +345,13 @@ impl From<Error> for RouteError {
 
 impl From<CoreError> for RouteError {
     fn from(error: CoreError) -> Self {
-        // Everything a reviewer can get wrong by submitting a form, as against a
-        // project the server failed to read.
         match error {
             CoreError::EmptySelection
             | CoreError::SelectionNotFound { .. }
             | CoreError::MissingArtifact { .. }
             | CoreError::InvalidArtifactPath { .. }
             | CoreError::MisscopedVerdict { .. }
-            | CoreError::EmptyVerdictNotes => Self::Rejected(error),
+            | CoreError::UnknownComment { .. } => Self::Rejected(error),
             other => Self::Internal(Error::Core(other)),
         }
     }
@@ -302,17 +360,27 @@ impl From<CoreError> for RouteError {
 impl IntoResponse for RouteError {
     fn into_response(self) -> Response {
         match self {
-            Self::NotFound => (StatusCode::NOT_FOUND, Html(page::not_found())).into_response(),
+            Self::NotFound => (
+                StatusCode::NOT_FOUND,
+                Json(ErrorBody {
+                    error: "scope or asset not found".to_owned(),
+                }),
+            )
+                .into_response(),
             Self::Rejected(error) => (
                 StatusCode::BAD_REQUEST,
-                Html(page::rejected(&error.to_string())),
+                Json(ErrorBody {
+                    error: error.to_string(),
+                }),
             )
                 .into_response(),
             Self::Internal(error) => {
                 eprintln!("error: {}", error::chain(&error));
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Html(page::internal_error()),
+                    Json(ErrorBody {
+                        error: "internal server error".to_owned(),
+                    }),
                 )
                     .into_response()
             }
@@ -325,47 +393,42 @@ mod tests {
     use super::*;
     use std::fs;
     use std::net::SocketAddr;
-    use std::path::Path;
+    use std::path::Path as FsPath;
     use std::time::Duration;
 
-    use openspec_doc_core::comments::ScopeKey;
-    use openspec_doc_core::project_at;
+    use openspec_doc_core::comments::{AnchorState, ScopeKey};
+    use openspec_doc_core::{hook, project_at};
     use tempfile::TempDir;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
 
     const SESSION_ID: &str = "0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d74";
     const CHANGE: &str = "add-a";
+    const REPEATED: &str = "Repeated review block.";
 
-    /// Text present in both the scratch note and the change's proposal, and so
-    /// selectable on either page.
-    const SELECTED: &str = "An idea worth keeping.";
-
-    /// A project with one active change carrying a proposal and a spec delta, and
-    /// one session with a directive record and a scratch note.
     fn project_fixture() -> TempDir {
         let temp = TempDir::new().expect("temp dir");
         let change_dir = temp.path().join("openspec/changes").join(CHANGE);
-        let sessions = temp.path().join(".openspec-doc/directives/_session");
+        let directives = temp.path().join(".openspec-doc/directives/_session");
         let notes = temp.path().join(".openspec-doc/scratch/_session");
 
         fs::create_dir_all(change_dir.join("specs/some-cap")).expect("create change dir");
-        fs::create_dir_all(&sessions).expect("create directives dir");
+        fs::create_dir_all(&directives).expect("create directives dir");
         fs::create_dir_all(&notes).expect("create scratch dir");
         fs::write(temp.path().join("openspec/config.yaml"), "").expect("write config");
         fs::write(
-            sessions.join(format!("{SESSION_ID}.json")),
-            r#"{"pending":false,"reason":"x","createdAt":"2026-07-31T08:00:00Z","consumedAt":null}"#,
+            directives.join(format!("{SESSION_ID}.json")),
+            r#"{"pending":false,"reason":"","createdAt":"2026-07-31T08:00:00Z","consumedAt":null}"#,
         )
         .expect("write directive");
         fs::write(
             notes.join(format!("{SESSION_ID}.md")),
-            format!("# Exploration\n\n{SELECTED}\n"),
+            format!("# Exploration\n\n{REPEATED}\n\n{REPEATED}\n"),
         )
         .expect("write scratch note");
         fs::write(
             change_dir.join("proposal.md"),
-            format!("## Why\n\n{SELECTED}\n"),
+            format!("## Why\n\n{REPEATED}\n\n{REPEATED}\n"),
         )
         .expect("write proposal");
         fs::write(
@@ -384,61 +447,24 @@ mod tests {
         ScopeKey::Change(CHANGE.to_owned())
     }
 
-    async fn serve(root: &Path) -> SocketAddr {
+    async fn serve(root: &FsPath) -> SocketAddr {
         let project = project_at(root).expect("project root");
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let address = listener.local_addr().expect("local addr");
-
         tokio::spawn(async move {
             axum::serve(listener, router(project)).await.expect("serve");
         });
-
         address
     }
 
-    async fn get(address: SocketAddr, path: &str) -> TcpStream {
-        let mut stream = TcpStream::connect(address).await.expect("connect");
-        stream
-            .write_all(format!("GET {path} HTTP/1.1\r\nHost: localhost\r\n\r\n").as_bytes())
-            .await
-            .expect("write request");
-        stream
-    }
-
-    /// Read until `needle` shows up, so a streaming response can be inspected
-    /// without waiting for a close that never comes.
-    async fn read_until(stream: &mut TcpStream, needle: &str) -> String {
-        let mut response = String::new();
-        let mut buffer = [0_u8; 1024];
-
-        while !response.contains(needle) {
-            let read = stream.read(&mut buffer).await.expect("read response");
-            assert_ne!(
-                read, 0,
-                "connection closed before {needle:?} in:\n{response}"
-            );
-            response.push_str(&String::from_utf8_lossy(&buffer[..read]));
-        }
-
-        response
-    }
-
-    /// One request/response exchange. `Connection: close` makes the server hang
-    /// up at the end of the response, so a body of any shape — a page, a bare
-    /// fragment, or a redirect with none at all — is read the same way.
     async fn exchange(address: SocketAddr, request: &str) -> String {
         let mut stream = TcpStream::connect(address).await.expect("connect");
-        stream
-            .write_all(request.as_bytes())
-            .await
-            .expect("write request");
-
+        stream.write_all(request.as_bytes()).await.expect("write");
         let mut response = Vec::new();
         tokio::time::timeout(Duration::from_secs(10), stream.read_to_end(&mut response))
             .await
             .expect("response before timeout")
-            .expect("read response");
-
+            .expect("read");
         String::from_utf8_lossy(&response).into_owned()
     }
 
@@ -450,212 +476,99 @@ mod tests {
         .await
     }
 
-    /// A JSON response's body, parsed. The status line is asserted on first, so a
-    /// failure reports the response rather than a parse error against an error
-    /// page.
     async fn fetch_json(address: SocketAddr, path: &str) -> serde_json::Value {
-        let response = fetch(address, path).await;
-        assert!(
-            response.starts_with("HTTP/1.1 200 OK"),
-            "{path} did not serve JSON:\n{response}"
-        );
-        let body = response.split_once("\r\n\r\n").expect("headers and body").1;
-
-        serde_json::from_str(body).unwrap_or_else(|source| panic!("{source} in:\n{body}"))
+        response_json(&fetch(address, path).await, StatusCode::OK)
     }
 
-    /// Post `body` as a form, the way the pages' own forms submit.
-    async fn post(address: SocketAddr, path: &str, body: &str) -> String {
-        exchange(
+    async fn post_json(
+        address: SocketAddr,
+        path: &str,
+        body: serde_json::Value,
+        status: StatusCode,
+    ) -> serde_json::Value {
+        let body = serde_json::to_string(&body).expect("encode body");
+        let response = exchange(
             address,
             &format!(
                 "POST {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\
-                 Content-Type: application/x-www-form-urlencoded\r\n\
-                 Content-Length: {length}\r\n\r\n{body}",
-                length = body.len()
+                 Content-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
             ),
         )
-        .await
+        .await;
+        response_json(&response, status)
     }
 
-    fn form(fields: &[(&str, &str)]) -> String {
-        fields
-            .iter()
-            .map(|(name, value)| format!("{name}={}", encode(value)))
-            .collect::<Vec<_>>()
-            .join("&")
-    }
-
-    /// Percent-encode a form value. Only what the fixtures actually contain: the
-    /// pages themselves rely on the browser to encode their forms.
-    fn encode(value: &str) -> String {
-        value
-            .bytes()
-            .map(|byte| match byte {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                    (byte as char).to_string()
-                }
-                b' ' => "+".to_owned(),
-                other => format!("%{other:02X}"),
-            })
-            .collect()
+    fn response_json(response: &str, status: StatusCode) -> serde_json::Value {
+        assert!(
+            response.starts_with(&format!("HTTP/1.1 {}", status.as_str())),
+            "unexpected response:\n{response}"
+        );
+        let body = response.split_once("\r\n\r\n").expect("body").1;
+        serde_json::from_str(body).unwrap_or_else(|error| panic!("{error} in {body}"))
     }
 
     #[tokio::test]
-    async fn discovered_sessions_and_changes_have_pages() {
+    async fn discovered_scopes_serve_the_shell_and_unknown_scopes_are_404() {
         let fixture = project_fixture();
         let address = serve(fixture.path()).await;
 
         for path in [
-            "/",
-            &format!("/changes/{CHANGE}"),
             &format!("/sessions/{SESSION_ID}"),
+            &format!("/changes/{CHANGE}"),
         ] {
             let response = fetch(address, path).await;
-            assert!(
-                response.starts_with("HTTP/1.1 200 OK"),
-                "{path} did not serve a page:\n{response}"
-            );
+            assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
+            assert!(response.contains("<div id=\"app\">"), "{response}");
         }
-    }
-
-    #[tokio::test]
-    async fn undiscovered_ids_and_names_are_not_found() {
-        let fixture = project_fixture();
-        let address = serve(fixture.path()).await;
-
-        for path in ["/changes/no-such-change", "/sessions/no-such-session"] {
+        for path in ["/api/sessions/no-such", "/api/changes/no-such"] {
             let response = fetch(address, path).await;
-            assert!(
-                response.starts_with("HTTP/1.1 404 Not Found"),
-                "{path} was served instead of 404:\n{response}"
-            );
+            assert!(response.starts_with("HTTP/1.1 404 Not Found"), "{response}");
         }
     }
 
-    /// `/` is the built frontend's shell and nothing else. If this ever serves a
-    /// rendered list again, the index has two implementations.
     #[tokio::test]
-    async fn the_root_serves_the_built_frontends_shell() {
+    async fn scope_detail_contains_blocks_comments_counts_and_verdict_delivery() {
         let fixture = project_fixture();
-        let address = serve(fixture.path()).await;
-
-        let response = fetch(address, "/").await;
-
-        assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
-        assert!(
-            response.contains("<div id=\"app\">"),
-            "the shell was not served:\n{response}"
-        );
-        assert!(
-            !response.contains(SESSION_ID),
-            "the shell carries no scope data; the frontend fetches it:\n{response}"
-        );
-    }
-
-    /// The distribution decision, exercised: the module bundle the shell loads is
-    /// in the binary, not on disk beside it.
-    #[tokio::test]
-    async fn the_shells_assets_are_served_from_the_binary() {
-        let fixture = project_fixture();
-        let address = serve(fixture.path()).await;
-        let shell = fetch(address, "/").await;
-
-        let asset = shell
-            .split_once("src=\"/assets/")
-            .expect("the shell loads a bundle from /assets/")
-            .1
-            .split_once('"')
-            .expect("a quoted src")
-            .0;
-        let response = fetch(address, &format!("/assets/{asset}")).await;
-
-        assert!(
-            response.starts_with("HTTP/1.1 200 OK"),
-            "/assets/{asset} was not served:\n{response}"
-        );
-        assert!(
-            response.contains("javascript"),
-            "the bundle was served without a script content type:\n{response}"
-        );
-    }
-
-    /// Every field the index shows, on the wire. The derivation behind each one
-    /// is `scope`'s and `core`'s; what is asserted here is that the endpoint
-    /// carries all of it.
-    #[tokio::test]
-    async fn the_index_endpoint_lists_every_discovered_scope_with_its_fields() {
-        let fixture = project_fixture();
-        let address = serve(fixture.path()).await;
-        post(
-            address,
-            &format!("/sessions/{SESSION_ID}/comments"),
-            &form(&[
-                (
-                    "artifact_path",
-                    &format!(".openspec-doc/scratch/_session/{SESSION_ID}.md"),
-                ),
-                ("selected_text", SELECTED),
-                ("body", "Which part?"),
-            ]),
+        let root = fixture.path().canonicalize().expect("root");
+        let second = fs::read_to_string(root.join("openspec/changes/add-a/proposal.md"))
+            .expect("read")
+            .rfind(REPEATED)
+            .expect("second");
+        comments::add(
+            &root,
+            &change_scope(),
+            "openspec/changes/add-a/proposal.md",
+            REPEATED,
+            second,
+            "Second occurrence only.",
         )
-        .await;
-        post(
-            address,
-            &format!("/sessions/{SESSION_ID}/verdict"),
-            &form(&[("verdict", "keep-exploring"), ("notes", "Still open.")]),
-        )
-        .await;
-
-        let index = fetch_json(address, "/api/index").await;
-
-        let session = &index["sessions"][0];
-        assert_eq!(session["key"], SESSION_ID);
-        assert_eq!(session["title"], "Exploration");
-        assert!(
-            session["modifiedAt"].is_string(),
-            "the note is on disk and has an mtime: {session}"
-        );
-        assert_eq!(session["openComments"], 1);
-        assert_eq!(session["verdict"], "keep-exploring");
-        assert_eq!(
-            session["mostRecentlyActive"], true,
-            "the only session is the one that spoke last: {session}"
-        );
-
-        let change = &index["changes"][0];
-        assert_eq!(change["key"], CHANGE);
-        assert_eq!(change["openComments"], 0);
-        assert_eq!(change["verdict"], serde_json::Value::Null);
-    }
-
-    /// A promoted session has no note of its own left to be titled from, and its
-    /// id alone is the row the index existed to fix. It is still addressed by
-    /// that id, because the redirect is not a page.
-    #[tokio::test]
-    async fn a_promoted_session_is_named_by_the_change_it_became() {
-        let fixture = project_fixture();
+        .expect("comment");
+        let record =
+            verdict::add(&root, &change_scope(), Verdict::CommentResolution, "").expect("verdict");
+        verdict::mark_translated(&root, &change_scope(), &record.id).expect("translated");
         fs::write(
-            fixture
-                .path()
-                .join(".openspec-doc/scratch/_session")
+            root.join(".openspec-doc/scratch/_session")
                 .join(format!("{SESSION_ID}.md")),
-            "<!-- openspec-doc:moved-to .openspec-doc/scratch/add-a.md -->\n\n\
-             This scratch note moved to `.openspec-doc/scratch/add-a.md`.\n",
+            "<!-- openspec-doc:moved-to .openspec-doc/scratch/add-a.md -->\n",
         )
-        .expect("write redirect");
-        let address = serve(fixture.path()).await;
+        .expect("record promotion");
+        let pending = hook::write_pending(&root, SESSION_ID, "Review change.").expect("pending");
+        hook::mark_consumed(&root, SESSION_ID, &pending).expect("consume");
 
-        let index = fetch_json(address, "/api/index").await;
+        let address = serve(&root).await;
+        let detail = fetch_json(address, &format!("/api/changes/{CHANGE}")).await;
 
-        assert_eq!(index["sessions"][0]["title"], "Promoted to add-a");
-        assert_eq!(index["sessions"][0]["key"], SESSION_ID);
+        assert_eq!(detail["kind"], "change");
+        assert!(detail["artifacts"][0]["blocks"].as_array().is_some());
+        assert_eq!(detail["comments"][0]["anchorState"], "exact");
+        assert!(detail["comments"][0]["blockId"].is_string());
+        assert_eq!(detail["commentCounts"]["open"], 1);
+        assert_eq!(detail["standingVerdict"]["directiveDelivered"], true);
     }
 
-    /// No title means no title. Nothing invents a name for the scope; the
-    /// frontend leads with the identifier it is addressed by.
     #[tokio::test]
-    async fn an_untitled_session_has_no_title_and_keeps_its_identifier() {
+    async fn scopes_with_no_artifacts_or_comments_return_empty_arrays() {
         let fixture = project_fixture();
         fs::remove_file(
             fixture
@@ -666,427 +579,240 @@ mod tests {
         .expect("remove note");
         let address = serve(fixture.path()).await;
 
-        let index = fetch_json(address, "/api/index").await;
-
-        assert_eq!(index["sessions"][0]["title"], serde_json::Value::Null);
-        assert_eq!(index["sessions"][0]["key"], SESSION_ID);
-        assert_eq!(
-            index["sessions"][0]["modifiedAt"],
-            serde_json::Value::Null,
-            "no exploration has been written yet"
-        );
+        let session = fetch_json(address, &format!("/api/sessions/{SESSION_ID}")).await;
+        let change = fetch_json(address, &format!("/api/changes/{CHANGE}")).await;
+        assert_eq!(session["artifacts"].as_array().map(Vec::len), Some(0));
+        assert_eq!(session["comments"].as_array().map(Vec::len), Some(0));
+        assert_eq!(change["comments"].as_array().map(Vec::len), Some(0));
     }
 
-    /// A project nobody has explored yet is an empty index, not a failure.
     #[tokio::test]
-    async fn a_project_with_no_scopes_returns_an_empty_index() {
-        let temp = TempDir::new().expect("temp dir");
-        fs::create_dir_all(temp.path().join("openspec/changes")).expect("create changes dir");
-        fs::write(temp.path().join("openspec/config.yaml"), "").expect("write config");
-        let address = serve(temp.path()).await;
-
-        let index = fetch_json(address, "/api/index").await;
-
-        assert_eq!(
-            index["sessions"].as_array().map(Vec::len),
-            Some(0),
-            "{index}"
-        );
-        assert_eq!(
-            index["changes"].as_array().map(Vec::len),
-            Some(0),
-            "{index}"
-        );
-    }
-
-    /// The point of the SSE endpoint: the client issues one request and the
-    /// server pushes, rather than the client polling for a new version.
-    #[tokio::test]
-    async fn a_file_change_is_pushed_to_the_scopes_event_stream() {
+    async fn anchored_and_unanchored_comment_handlers_use_the_core_writers() {
         let fixture = project_fixture();
         let address = serve(fixture.path()).await;
-        let mut stream = get(address, &format!("/changes/{CHANGE}/events")).await;
+        let artifact = format!(".openspec-doc/scratch/_session/{SESSION_ID}.md");
+        let markdown = fs::read_to_string(fixture.path().join(&artifact)).expect("read");
+        let second = markdown.rfind(REPEATED).expect("second");
 
-        // The handler subscribes while building the response, so keep writing:
-        // a single write could land before the watcher is registered.
-        let file = fixture
-            .path()
-            .join("openspec/changes")
-            .join(CHANGE)
-            .join("proposal.md");
-        let writes = tokio::spawn(async move {
-            for revision in 0.. {
-                fs::write(&file, format!("revision {revision}")).expect("write proposal");
-                tokio::time::sleep(Duration::from_millis(250)).await;
-            }
-        });
-
-        let pushed = tokio::time::timeout(
-            Duration::from_secs(10),
-            read_until(&mut stream, "data: changed"),
-        )
-        .await;
-        writes.abort();
-
-        assert!(pushed.is_ok(), "no event was pushed for the changed file");
-    }
-
-    #[tokio::test]
-    async fn a_session_page_renders_its_scratch_note() {
-        let fixture = project_fixture();
-        let address = serve(fixture.path()).await;
-
-        let response = fetch(address, &format!("/sessions/{SESSION_ID}")).await;
-
-        assert!(
-            response.contains(SELECTED),
-            "the note's content:\n{response}"
-        );
-        assert!(
-            response.contains(&format!(
-                "data-artifact-path=\".openspec-doc/scratch/_session/{SESSION_ID}.md\""
-            )),
-            "the note is the commentable artifact:\n{response}"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_change_page_renders_its_artifacts_and_spec_deltas() {
-        let fixture = project_fixture();
-        let address = serve(fixture.path()).await;
-
-        let response = fetch(address, &format!("/changes/{CHANGE}")).await;
-
-        for artifact in [
-            &format!("openspec/changes/{CHANGE}/proposal.md"),
-            &format!("openspec/changes/{CHANGE}/specs/some-cap/spec.md"),
-        ] {
-            assert!(
-                response.contains(&format!("data-artifact-path=\"{artifact}\"")),
-                "{artifact} was not rendered:\n{response}"
-            );
-        }
-        assert!(
-            response.contains("The system SHALL do a thing."),
-            "the spec delta's content:\n{response}"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_selection_submitted_from_a_session_page_becomes_an_anchored_comment() {
-        let fixture = project_fixture();
-        let address = serve(fixture.path()).await;
-
-        let response = post(
+        post_json(
             address,
-            &format!("/sessions/{SESSION_ID}/comments"),
-            &form(&[
-                (
-                    "artifact_path",
-                    &format!(".openspec-doc/scratch/_session/{SESSION_ID}.md"),
-                ),
-                ("selected_text", SELECTED),
-                ("body", "Which part is worth keeping?"),
-            ]),
+            &format!("/api/sessions/{SESSION_ID}/comments"),
+            serde_json::json!({
+                "kind": "anchored",
+                "artifactPath": artifact,
+                "selectedText": REPEATED,
+                "searchFrom": second,
+                "body": "Second block."
+            }),
+            StatusCode::CREATED,
         )
         .await;
-
-        assert!(
-            response.starts_with("HTTP/1.1 303 See Other"),
-            "the comment was not accepted:\n{response}"
-        );
-        let threads = comments::read(&fixture.path().canonicalize().unwrap(), &session_scope())
-            .expect("read");
-        let [thread] = threads.as_slice() else {
-            panic!("expected one comment, got {}", threads.len());
-        };
-        assert_eq!(thread.comment.body, "Which part is worth keeping?");
-        let anchor = thread.comment.anchor.as_ref().expect("an anchored comment");
-        assert_eq!(
-            anchor.selected_text, SELECTED,
-            "the anchor is created from the selection"
-        );
-        assert_eq!(
-            anchor.heading_path,
-            ["Exploration"],
-            "the anchor is derived from the raw markdown, not from the rendered page"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_selection_submitted_from_a_change_page_becomes_an_anchored_comment() {
-        let fixture = project_fixture();
-        let address = serve(fixture.path()).await;
-
-        post(
+        post_json(
             address,
-            &format!("/changes/{CHANGE}/comments"),
-            &form(&[
-                (
-                    "artifact_path",
-                    &format!("openspec/changes/{CHANGE}/proposal.md"),
-                ),
-                ("selected_text", SELECTED),
-                ("body", "Why is it worth keeping?"),
-            ]),
+            &format!("/api/sessions/{SESSION_ID}/comments"),
+            serde_json::json!({
+                "kind": "anchored",
+                "artifactPath": artifact,
+                "selectedText": "review",
+                "searchFrom": second,
+                "body": "Selected word."
+            }),
+            StatusCode::CREATED,
+        )
+        .await;
+        post_json(
+            address,
+            &format!("/api/sessions/{SESSION_ID}/comments"),
+            serde_json::json!({"kind": "unanchored", "body": "Whole scope."}),
+            StatusCode::CREATED,
         )
         .await;
 
-        let threads =
-            comments::read(&fixture.path().canonicalize().unwrap(), &change_scope()).expect("read");
-        let [thread] = threads.as_slice() else {
-            panic!("expected one comment, got {}", threads.len());
-        };
-        assert_eq!(thread.comment.body, "Why is it worth keeping?");
+        let root = fixture.path().canonicalize().unwrap();
+        let threads = comments::read(&root, &session_scope()).expect("read");
+        assert_eq!(threads.len(), 3);
         assert_eq!(
-            thread
+            threads[0]
                 .comment
                 .anchor
                 .as_ref()
-                .expect("an anchored comment")
-                .heading_path,
-            ["Why"]
+                .expect("anchor")
+                .start_offset,
+            second
         );
-    }
-
-    /// The anchor is created against the file, not against what the browser
-    /// believed was in it — so a selection the artifact has moved on from is
-    /// refused outright rather than anchored to a guess.
-    #[tokio::test]
-    async fn a_selection_that_is_not_in_the_artifact_is_refused() {
-        let fixture = project_fixture();
-        let address = serve(fixture.path()).await;
-
-        let response = post(
-            address,
-            &format!("/changes/{CHANGE}/comments"),
-            &form(&[
-                (
-                    "artifact_path",
-                    &format!("openspec/changes/{CHANGE}/proposal.md"),
-                ),
-                ("selected_text", "text that was never written"),
-                ("body", "Body."),
-            ]),
-        )
-        .await;
-
-        assert!(
-            response.starts_with("HTTP/1.1 400 Bad Request"),
-            "a stale selection was accepted:\n{response}"
-        );
-        assert!(
-            response.contains("was not found in"),
-            "the reviewer is told what was wrong:\n{response}"
-        );
-        assert!(
-            comments::read(&fixture.path().canonicalize().unwrap(), &change_scope())
-                .expect("read")
-                .is_empty(),
-            "a refused selection records no comment"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_keep_exploring_verdict_is_recorded_with_its_notes() {
-        let fixture = project_fixture();
-        let address = serve(fixture.path()).await;
-
-        let response = post(
-            address,
-            &format!("/sessions/{SESSION_ID}/verdict"),
-            &form(&[
-                ("verdict", "keep-exploring"),
-                ("notes", "Still unclear how promotion is detected."),
-            ]),
-        )
-        .await;
-
-        assert!(
-            response.starts_with("HTTP/1.1 303 See Other"),
-            "the verdict was not accepted:\n{response}"
-        );
-        let records =
-            verdict::read(&fixture.path().canonicalize().unwrap(), &session_scope()).expect("read");
-        let [record] = records.as_slice() else {
-            panic!("expected one verdict, got {}", records.len());
-        };
-        assert_eq!(record.verdict, Verdict::KeepExploring);
-        assert_eq!(record.notes, "Still unclear how promotion is detected.");
-    }
-
-    #[tokio::test]
-    async fn a_move_to_proposal_verdict_is_recorded() {
-        let fixture = project_fixture();
-        let address = serve(fixture.path()).await;
-
-        post(
-            address,
-            &format!("/sessions/{SESSION_ID}/verdict"),
-            &form(&[("verdict", "move-to-proposal"), ("notes", "")]),
-        )
-        .await;
-
-        let records =
-            verdict::read(&fixture.path().canonicalize().unwrap(), &session_scope()).expect("read");
         assert_eq!(
-            records
-                .iter()
-                .map(|record| record.verdict)
-                .collect::<Vec<_>>(),
-            [Verdict::MoveToProposal]
+            comments::resolve_anchor(&root, threads[1].comment.anchor.as_ref())
+                .expect("resolve selection")
+                .state,
+            AnchorState::Exact
         );
+        assert_eq!(threads[2].comment.anchor, None);
     }
 
     #[tokio::test]
-    async fn a_send_to_agent_verdict_is_recorded_for_the_change() {
+    async fn reply_and_reviewer_status_handlers_update_one_thread() {
         let fixture = project_fixture();
-        let address = serve(fixture.path()).await;
+        let root = fixture.path().canonicalize().expect("root");
+        let comment =
+            comments::add_unanchored(&root, &change_scope(), "Question.").expect("comment");
+        let address = serve(&root).await;
 
-        post(
+        post_json(
             address,
-            &format!("/changes/{CHANGE}/verdict"),
-            &form(&[("verdict", "comment-resolution")]),
+            &format!("/api/changes/{CHANGE}/comments/{}/replies", comment.id),
+            serde_json::json!({"body": "Response."}),
+            StatusCode::CREATED,
+        )
+        .await;
+        post_json(
+            address,
+            &format!("/api/changes/{CHANGE}/comments/{}/status", comment.id),
+            serde_json::json!({"status": "resolved"}),
+            StatusCode::OK,
         )
         .await;
 
-        let records =
-            verdict::read(&fixture.path().canonicalize().unwrap(), &change_scope()).expect("read");
+        let thread = comments::read(&root, &change_scope())
+            .expect("read")
+            .remove(0);
+        assert_eq!(thread.replies[0].body, "Response.");
+        assert_eq!(thread.replies[0].author, ReplyAuthor::Reviewer);
+        assert_eq!(thread.status, Status::Resolved);
+    }
+
+    #[tokio::test]
+    async fn dashboard_status_handler_cannot_set_addressed() {
+        let fixture = project_fixture();
+        let root = fixture.path().canonicalize().expect("root");
+        let comment =
+            comments::add_unanchored(&root, &change_scope(), "Question.").expect("comment");
+        let address = serve(&root).await;
+        let body =
+            serde_json::to_string(&serde_json::json!({"status": "addressed"})).expect("body");
+        let response = exchange(
+            address,
+            &format!(
+                "POST /api/changes/{CHANGE}/comments/{}/status HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                comment.id,
+                body.len()
+            ),
+        )
+        .await;
+
+        assert!(response.starts_with("HTTP/1.1 422"), "{response}");
         assert_eq!(
-            records
-                .iter()
-                .map(|record| record.verdict)
-                .collect::<Vec<_>>(),
-            [Verdict::CommentResolution]
+            comments::read(&root, &change_scope()).expect("read")[0].status,
+            Status::Open
         );
     }
 
-    /// A verdict record is a session-level decision, so it must not be smuggled
-    /// onto a scope it does not apply to by a hand-made request.
     #[tokio::test]
-    async fn a_verdict_that_does_not_apply_to_the_scope_is_refused() {
+    async fn verdict_handlers_record_scope_appropriate_verdicts_without_notes() {
         let fixture = project_fixture();
         let address = serve(fixture.path()).await;
 
-        let response = post(
+        post_json(
             address,
-            &format!("/changes/{CHANGE}/verdict"),
-            &form(&[("verdict", "keep-exploring"), ("notes", "Notes.")]),
+            &format!("/api/sessions/{SESSION_ID}/verdict"),
+            serde_json::json!({"verdict": "move-to-proposal"}),
+            StatusCode::CREATED,
+        )
+        .await;
+        post_json(
+            address,
+            &format!("/api/changes/{CHANGE}/verdict"),
+            serde_json::json!({"verdict": "comment-resolution"}),
+            StatusCode::CREATED,
         )
         .await;
 
-        assert!(
-            response.starts_with("HTTP/1.1 400 Bad Request"),
-            "a misscoped verdict was accepted:\n{response}"
+        let root = fixture.path().canonicalize().expect("root");
+        assert_eq!(
+            verdict::read(&root, &session_scope()).expect("read")[0].notes,
+            ""
         );
-        assert!(
-            verdict::read(&fixture.path().canonicalize().unwrap(), &change_scope())
-                .expect("read")
-                .is_empty()
+        assert_eq!(
+            verdict::read(&root, &change_scope()).expect("read")[0].notes,
+            ""
         );
     }
 
-    /// What an already-open page refetches when its stream pushes: the comment
-    /// list and verdict state on their own, without the page around them.
     #[tokio::test]
-    async fn the_review_fragment_reflects_a_comment_added_after_the_page_was_served() {
+    async fn stale_selection_is_refused_with_its_reason_as_json() {
         let fixture = project_fixture();
         let address = serve(fixture.path()).await;
-        let page = fetch(address, &format!("/changes/{CHANGE}")).await;
-        assert!(page.contains("No comments yet."), "{page}");
 
-        // Added the way the other tab's form would, while this page stays open.
-        post(
+        let error = post_json(
             address,
-            &format!("/changes/{CHANGE}/comments"),
-            &form(&[
-                (
-                    "artifact_path",
-                    &format!("openspec/changes/{CHANGE}/proposal.md"),
-                ),
-                ("selected_text", SELECTED),
-                ("body", "Added from the other tab."),
-            ]),
+            &format!("/api/changes/{CHANGE}/comments"),
+            serde_json::json!({
+                "kind": "anchored",
+                "artifactPath": "openspec/changes/add-a/proposal.md",
+                "selectedText": "not in source",
+                "searchFrom": 0,
+                "body": "Why?"
+            }),
+            StatusCode::BAD_REQUEST,
         )
         .await;
-        let fragment = fetch(address, &format!("/changes/{CHANGE}/review")).await;
 
-        assert!(
-            fragment.contains("Added from the other tab."),
-            "the fragment is stale:\n{fragment}"
-        );
-        assert!(
-            !fragment.contains("<html"),
-            "the fragment replaces one element, not the document:\n{fragment}"
-        );
+        assert!(error["error"].as_str().unwrap().contains("was not found"));
     }
 
-    /// The other half of the live-update path: a comment written into the scope's
-    /// sidecar has to push an event, or an open page never learns to refetch.
     #[tokio::test]
-    async fn a_new_comment_is_pushed_to_the_scopes_event_stream() {
+    async fn comment_status_changes_are_pushed_to_the_event_stream() {
         let fixture = project_fixture();
-        let address = serve(fixture.path()).await;
-        let mut stream = get(address, &format!("/changes/{CHANGE}/events")).await;
+        let root = fixture.path().canonicalize().expect("root");
+        let comment =
+            comments::add_unanchored(&root, &change_scope(), "Question.").expect("comment");
+        let address = serve(&root).await;
+        let mut stream = TcpStream::connect(address).await.expect("connect");
+        stream
+            .write_all(
+                format!("GET /api/changes/{CHANGE}/events HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                    .as_bytes(),
+            )
+            .await
+            .expect("write");
 
-        // The handler subscribes while building the response, so keep posting: a
-        // single comment could land before the watcher is registered.
-        let comments = tokio::spawn(async move {
-            for revision in 0.. {
-                post(
+        let updates = tokio::spawn(async move {
+            for _ in 0..20 {
+                let _ = post_json(
                     address,
-                    &format!("/changes/{CHANGE}/comments"),
-                    &form(&[
-                        (
-                            "artifact_path",
-                            &format!("openspec/changes/{CHANGE}/proposal.md"),
-                        ),
-                        ("selected_text", SELECTED),
-                        ("body", &format!("comment {revision}")),
-                    ]),
+                    &format!("/api/changes/{CHANGE}/comments/{}/status", comment.id),
+                    serde_json::json!({"status": "resolved"}),
+                    StatusCode::OK,
                 )
                 .await;
                 tokio::time::sleep(Duration::from_millis(250)).await;
             }
         });
-
-        let pushed = tokio::time::timeout(
-            Duration::from_secs(10),
-            read_until(&mut stream, "data: changed"),
-        )
+        let mut response = String::new();
+        let mut buffer = [0_u8; 1024];
+        let pushed = tokio::time::timeout(Duration::from_secs(10), async {
+            while !response.contains("data: changed") {
+                let read = stream.read(&mut buffer).await.expect("read");
+                assert_ne!(read, 0, "stream closed: {response}");
+                response.push_str(&String::from_utf8_lossy(&buffer[..read]));
+            }
+        })
         .await;
-        comments.abort();
+        updates.abort();
 
-        assert!(pushed.is_ok(), "no event was pushed for the new comment");
+        assert!(pushed.is_ok(), "no event pushed: {response}");
     }
 
-    /// A verdict lands in its own sidecar, in a different directory from the
-    /// comments, so it needs its own proof that the scope is watching it.
-    #[tokio::test]
-    async fn a_new_verdict_is_pushed_to_the_scopes_event_stream() {
+    #[test]
+    fn exact_resolution_is_exposed_for_created_block_comment() {
         let fixture = project_fixture();
-        let address = serve(fixture.path()).await;
-        let mut stream = get(address, &format!("/sessions/{SESSION_ID}/events")).await;
-
-        let verdicts = tokio::spawn(async move {
-            loop {
-                post(
-                    address,
-                    &format!("/sessions/{SESSION_ID}/verdict"),
-                    &form(&[("verdict", "keep-exploring"), ("notes", "Still open.")]),
-                )
-                .await;
-                tokio::time::sleep(Duration::from_millis(250)).await;
-            }
-        });
-
-        let pushed = tokio::time::timeout(
-            Duration::from_secs(10),
-            read_until(&mut stream, "data: changed"),
-        )
-        .await;
-        verdicts.abort();
-
-        assert!(pushed.is_ok(), "no event was pushed for the new verdict");
+        let root = fixture.path().canonicalize().expect("root");
+        let artifact = "openspec/changes/add-a/proposal.md";
+        let markdown = fs::read_to_string(root.join(artifact)).expect("read");
+        let second = markdown.rfind(REPEATED).expect("second");
+        let comment = comments::add(&root, &change_scope(), artifact, REPEATED, second, "Here.")
+            .expect("comment");
+        let resolution = comments::resolve_anchor(&root, comment.anchor.as_ref()).expect("resolve");
+        assert_eq!(resolution.state, AnchorState::Exact);
+        assert_eq!(resolution.offset, Some(second));
     }
 }

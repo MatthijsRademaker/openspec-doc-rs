@@ -1,55 +1,47 @@
 # Anchoring
 
-A comment is attached to a span of markdown, not to a line number. The problem is that the file keeps
-changing underneath it — the agent is still writing — so an anchor has to survive edits and, when it
-cannot, say so instead of pretending.
+Comment attaches to markdown span, not line number. File keeps changing underneath it, so anchor must survive edits and report when it cannot.
 
-## Artifacts render as their own source
+## Rendered blocks keep exact source
 
-Markdown is shown verbatim inside a `<pre>`, not converted to HTML.
+Dashboard renders formatted markdown decomposed into commentable blocks. Every block carries two forms of same parser range:
 
-That one decision removes an entire class of bug. A browser selection is byte-for-byte a substring of the
-file, so there is no mapping from rendered DOM ranges back onto source offsets to get wrong. The cost is
-that the page shows raw markdown; the benefit is that a selection cannot be subtly misplaced.
+- sanitized HTML shown in browser
+- exact source bytes plus byte range from artifact
 
-## The client sends only the selected text
+Source is sliced, never reconstructed from parser events. Reviewer gets readable document while server still anchors against bytes actually on disk.
 
-The page posts `selection.toString()` and nothing else. The **server** re-finds that text in the file as
-it stands on disk and builds the anchor itself, recording:
+## Block comments name occurrence
 
-- the selected text
-- its enclosing heading path
-- 80 bytes of context either side
+Block action submits block source and range start. Server re-reads artifact and searches from that byte position. If same text appears twice, comment on second block anchors to second occurrence rather than first.
+
+Free-text selection remains secondary path. Client submits rendered selection plus containing block's start position. If selection crosses inline markup and rendered text does not occur in markdown source, server returns `400` with refusal reason. Client shows that reason; no guessed anchor is written.
+
+Server records:
+
+- selected source text
+- enclosing heading path
+- 80 bytes context on either side
 - byte offsets
 
-A selection no longer present in the file is refused with a `400` telling the reviewer to reselect. It is
-never anchored to a guess.
-
-This ordering matters: the client cannot be trusted about offsets, because the file may have changed
-between page load and submission. The server reads the file at the moment of the write.
+File may change between page load and submission, so server always validates current file before writing.
 
 ## Drift is reported, not hidden
 
-When a comment is read back its anchor is re-resolved against the current file:
+When comment reads back, anchor resolves against current artifact:
 
 | State | Meaning |
-|---|---|
-| `exact` | the recorded offset still holds the selected text |
-| `fuzzy` | found elsewhere, via heading path or surrounding context |
-| `orphaned` | the file is there, but nothing in it matches |
-| `missing` | the file is gone |
+| --- | --- |
+| `exact` | recorded offset still holds selected text |
+| `fuzzy` | text or context found elsewhere |
+| `orphaned` | artifact exists but no landmark matches |
+| `missing` | artifact is gone |
+| `unanchored` | comment intentionally targets whole scope |
 
-The page colours a comment's left border by state — amber for `fuzzy`, red for `orphaned` and `missing`.
-A comment whose text was rewritten out from under it is shown as such rather than presented as
-confidently placed.
+Exact and fuzzy comments stay beside block they resolve to; fuzzy marker says anchor moved. Orphaned and missing comments remain reachable with original quote in comments-without-block panel. Unanchored comments share that panel but are not mislabeled lost.
 
-`fuzzy` is the normal case in practice, not a failure. A comment anchored to an exploration note that
-then doubles in length will report `fuzzy at offset <n>` — the anchor found its text, just not where it
-was left. That is the honest answer, and it is more useful than either silently re-pointing or dropping
-the comment.
+`fuzzy` is normal after surrounding edits. It reports relocation rather than silently pretending recorded offset remains exact.
 
 ## Anchors survive promotion
 
-Promotion relocates a comment sidecar by appending a relocation event, so anchors recorded against
-`scratch/_session/<id>.md` continue to resolve against `scratch/<change>.md`. See
-[Scoping](/concepts/scoping.md).
+Promotion relocates comment sidecar by appending relocation event, so anchors recorded against `scratch/_session/<id>.md` resolve against `scratch/<change>.md`. See [Scoping](/concepts/scoping.md).

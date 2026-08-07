@@ -65,9 +65,9 @@ pub fn path(root: &Path, session_id: &str) -> Result<PathBuf, Error> {
     Ok(root.join(DIRECTIVES_DIR).join(format!("{session_id}.json")))
 }
 
-/// The session's pending directive, or `None` when it has no directive file or
-/// its directive was already consumed. A malformed directive file is an error.
-pub fn load_pending(root: &Path, session_id: &str) -> Result<Option<Directive>, Error> {
+/// The session's directive record, or `None` when it has no directive file.
+/// A malformed directive file is an error.
+pub fn load(root: &Path, session_id: &str) -> Result<Option<Directive>, Error> {
     let path = path(root, session_id)?;
 
     let contents = match fs::read_to_string(&path) {
@@ -76,10 +76,15 @@ pub fn load_pending(root: &Path, session_id: &str) -> Result<Option<Directive>, 
         Err(source) => return Err(Error::io(path, source)),
     };
 
-    let directive: Directive =
-        serde_json::from_str(&contents).map_err(|source| Error::Directive { path, source })?;
+    serde_json::from_str(&contents)
+        .map(Some)
+        .map_err(|source| Error::Directive { path, source })
+}
 
-    Ok(directive.pending.then_some(directive))
+/// The session's pending directive, or `None` when it has no directive file or
+/// its directive was already consumed. A malformed directive file is an error.
+pub fn load_pending(root: &Path, session_id: &str) -> Result<Option<Directive>, Error> {
+    Ok(load(root, session_id)?.filter(|directive| directive.pending))
 }
 
 /// Ensure `session_id` has a directive file, so the dashboard can discover the

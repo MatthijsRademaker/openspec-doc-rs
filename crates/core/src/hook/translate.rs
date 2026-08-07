@@ -98,7 +98,6 @@ fn standing(project: &Project, keys: Vec<ScopeKey>) -> Result<Option<(ScopeKey, 
 /// that resolves its own threads has ended the review loop rather than completed
 /// a pass of it.
 pub fn reason(key: &ScopeKey, verdict: Verdict) -> Result<String, Error> {
-    let verdicts = verdict::relative(key)?;
     let comments = key.relative()?;
 
     match (key, verdict) {
@@ -106,21 +105,19 @@ pub fn reason(key: &ScopeKey, verdict: Verdict) -> Result<String, Error> {
             let note = scratch::session_relative(session_id)?;
             Ok(format!(
                 "{ATTRIBUTION}: the reviewer looked at this exploration and kept it in the \
-                 explore phase, with notes on what is still open. Those notes are the last \
-                 record in `{verdicts}`, the exploration itself is at `{note}`, and any \
-                 anchored comments are in `{comments}` — \
-                 `openspec-doc comment list --session {session_id}` prints them readably. \
-                 Read those, then keep working on what they say is unsettled."
+                 explore phase. Their feedback is in `{comments}` — \
+                 `openspec-doc comment list --session {session_id}` prints it readably — and \
+                 the exploration itself is at `{note}`. Read both, then keep working on what \
+                 the comments say is unsettled."
             ))
         }
         (ScopeKey::Session(session_id), Verdict::MoveToProposal) => {
             let note = scratch::session_relative(session_id)?;
             Ok(format!(
                 "{ATTRIBUTION}: the reviewer judged this exploration ready to formalize. The \
-                 exploration is at `{note}`, the verdict with any parting notes is the last \
-                 record in `{verdicts}`, and the comments they anchored to the exploration are \
-                 in `{comments}` — `openspec-doc comment list --session {session_id}` prints \
-                 them readably. Turn what is in that note into an OpenSpec change under \
+                 exploration is at `{note}`, and all parting or anchored feedback is in \
+                 `{comments}` — `openspec-doc comment list --session {session_id}` prints it \
+                 readably. Turn what is in that note into an OpenSpec change under \
                  `openspec/changes/`, and account for every open comment in what you write: a \
                  passage the reviewer marked is one they want changed before it is formalized. \
                  Once that directory exists, run \
@@ -133,12 +130,12 @@ pub fn reason(key: &ScopeKey, verdict: Verdict) -> Result<String, Error> {
             "{ATTRIBUTION}: the reviewer sent the open comments on change `{name}` back for \
              work. They are in `{comments}` — `openspec-doc comment list --change {name}` \
              prints them with the artifacts they anchor to, all under \
-             `openspec/changes/{name}/` — and the verdict is the last record in `{verdicts}`. \
-             Work through each open comment, then say what you did on its thread with \
-             `openspec-doc comment reply --change {name} --comment <id> --body <what changed>` \
-             and mark it with `openspec-doc comment address --change {name} --comment <id>`. \
-             That says the work is done, which is yours to claim; whether it is right is the \
-             reviewer's to judge, and closing the thread is theirs alone."
+             `openspec/changes/{name}/`. Work through each open comment, then say what you did \
+             on its thread with `openspec-doc comment reply --change {name} --comment <id> \
+             --body <what changed>` and mark it with \
+             `openspec-doc comment address --change {name} --comment <id>`. That says the work \
+             is done, which is yours to claim; whether it is right is the reviewer's to judge, \
+             and closing the thread is theirs alone."
         )),
         // `verdict::add` refuses a verdict that does not belong to the kind of
         // scope it was filed under, so a sidecar holding one is corrupt.
@@ -212,17 +209,16 @@ mod tests {
     }
 
     #[test]
-    fn a_keep_exploring_verdict_points_at_the_note_and_its_sidecars() {
+    fn a_keep_exploring_verdict_points_at_the_note_and_comments() -> Result<(), Error> {
         let (_fixture, project) = explored_project();
-        verdict::add(
+        crate::comments::add_unanchored(
             &project.root,
             &session_key(),
-            Verdict::KeepExploring,
             "The promotion trigger is still hand-waved.",
-        )
-        .expect("add verdict");
+        )?;
+        verdict::add(&project.root, &session_key(), Verdict::KeepExploring, "")?;
 
-        let translated = translate(&project, SESSION).expect("translate");
+        let translated = translate(&project, SESSION)?;
 
         assert_eq!(translated, Some((session_key(), Verdict::KeepExploring)));
         let reason = pending_reason(&project);
@@ -231,17 +227,18 @@ mod tests {
             "{reason}"
         );
         assert!(
-            reason.contains(".openspec-doc/verdicts/_session/session-a.jsonl"),
-            "{reason}"
-        );
-        assert!(
             reason.contains(".openspec-doc/comments/_session/session-a.jsonl"),
             "{reason}"
         );
         assert!(
-            !reason.contains("The promotion trigger is still hand-waved."),
-            "the reviewer's notes are pointed at, not embedded: {reason}"
+            !reason.contains(".openspec-doc/verdicts/"),
+            "dashboard feedback belongs to comments, not verdict notes: {reason}"
         );
+        assert!(
+            !reason.contains("The promotion trigger is still hand-waved."),
+            "the reviewer's comments are pointed at, not embedded: {reason}"
+        );
+        Ok(())
     }
 
     #[test]
@@ -463,8 +460,12 @@ mod tests {
                 "{verdict} does not say where it came from: {reason}"
             );
             assert!(
-                reason.contains(".openspec-doc/"),
-                "{verdict} names no in-project path to read: {reason}"
+                reason.contains(".openspec-doc/comments/"),
+                "{verdict} does not point at the comment sidecar: {reason}"
+            );
+            assert!(
+                !reason.contains(".openspec-doc/verdicts/"),
+                "{verdict} still promises feedback in verdict notes: {reason}"
             );
         }
     }

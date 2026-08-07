@@ -18,7 +18,7 @@ Beyond those: the composer reveals itself hundreds of lines below where the sele
 - **Comments render beside the block they anchor to,** collapsed behind expandable markers. The pooled list at the bottom is deleted.
 - **Commenting is a hover gesture on a block.** Free-text selection within a block remains as a secondary path, refusing with its reason when the selection crosses inline markup.
 - **Unanchored and orphaned comments share one surface,** with a count. They are both "comments with no block to sit beside", and a comment must not vanish at the moment its anchor breaks.
-- **A comment thread can be acted on**: reply, resolve, reopen, selected by status, with the scope's open/addressed/resolved counts. No control marks a comment `addressed` — that asserts work an agent did. An `addressed` comment is shown as the agent's claim awaiting judgement, never as resolved.
+- **A comment thread can be acted on**: reply, resolve, reopen, selected by status, with the scope's open/addressed/resolved counts. Reply events record whether reviewer or agent wrote them, so a browser reply is never presented as agent speech; existing records without authors remain agent replies. No control marks a comment `addressed` — that asserts work an agent did. An `addressed` comment is shown as the agent's claim awaiting judgement, never as resolved.
 - **A floating bar carries two controls**: a `+` opening a composer whose send submits the keep-exploring or comment-resolution verdict, and a primary control submitting the verdict that advances the work.
 - **The verdict notes field is deleted.** The composer's text is recorded as an unanchored comment and the verdict becomes a pure send, so the directive templates must point at the comment sidecar instead of promising notes that will always be empty.
 - **A header shows the standing verdict and whether it has been delivered,** read from `directives/_session/<id>.json`, which records it and which nothing has ever surfaced.
@@ -33,6 +33,7 @@ None.
 
 - `dashboard-html-views`: substantially rewritten. Artifact rendering, the comment surface, the commenting gesture, thread actions and the verdict controls all change. Its Purpose loses the "server-rendered HTML" clause that `add-vue-dashboard-foundation` narrowed to the scope pages.
 - `dashboard-server`: the scope routes serve the interface plus a JSON endpoint; form-post handling is removed.
+- `anchored-comments`: reply events persist their author, defaulting authorless existing records to the agent.
 
 ## Impact
 
@@ -40,6 +41,7 @@ None.
 - `crates/server/src/routes.rs` — 881 lines; HTML routes and form handling replaced with JSON handlers.
 - `web/` — the scope pages, observatory shell composition, document spine, anchored conversation surface, composer and decision instrument.
 - `crates/core/src/hook/translate.rs` — the directive templates, which currently promise verdict notes.
+- `crates/core/src/comments/` — reply authorship needed to distinguish dashboard reviewer responses from agent CLI replies.
 - `openspec/specs/dashboard-html-views/spec.md` and `openspec/specs/dashboard-server/spec.md`.
 - `docs/docs/` — anything describing the pages.
 

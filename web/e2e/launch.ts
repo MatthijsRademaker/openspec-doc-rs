@@ -62,12 +62,93 @@ async function createFixture(): Promise<string> {
   await mkdir(changeRoot, { recursive: true })
   await mkdir(scratchRoot, { recursive: true })
 
+  const repeatedBlock = 'Repeated review target.'
+  const proposal =
+    '# Observatory Design System Fixture\n\nBrowser lane must see this proposal.\n\n' +
+    `${repeatedBlock}\n\nA bridge between repeated blocks.\n\n${repeatedBlock}\n\n` +
+    'Selection with **inline markup** crosses source.\n'
+  const secondRepeatedOffset = proposal.lastIndexOf(repeatedBlock)
+  const comments = [
+    {
+      type: 'comment',
+      comment: {
+        id: 'e2e-open-comment',
+        anchor: {
+          artifactPath: `openspec/changes/${fixtureChange}/proposal.md`,
+          selectedText: repeatedBlock,
+          headingPath: ['Observatory Design System Fixture'],
+          beforeText: '',
+          afterText: '',
+          startOffset: secondRepeatedOffset,
+          endOffset: secondRepeatedOffset + repeatedBlock.length,
+        },
+        body: 'Keep repeated occurrence mapping exact.',
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+    },
+    {
+      type: 'reply',
+      reply: {
+        id: 'e2e-agent-reply',
+        commentId: 'e2e-open-comment',
+        author: 'agent',
+        body: 'Second occurrence is now explicit.',
+        createdAt: '2026-01-01T00:01:00Z',
+      },
+    },
+    {
+      type: 'comment',
+      comment: {
+        id: 'e2e-orphaned-comment',
+        anchor: {
+          artifactPath: `openspec/changes/${fixtureChange}/proposal.md`,
+          selectedText: 'Original text rewritten away.',
+          headingPath: [],
+          beforeText: '',
+          afterText: '',
+          startOffset: 900,
+          endOffset: 929,
+        },
+        body: 'Lost anchors must stay reachable.',
+        createdAt: '2026-01-01T00:02:00Z',
+      },
+    },
+    {
+      type: 'status',
+      status: {
+        id: 'e2e-orphan-resolved',
+        commentId: 'e2e-orphaned-comment',
+        status: 'resolved',
+        createdAt: '2026-01-01T00:03:00Z',
+      },
+    },
+    {
+      type: 'comment',
+      comment: {
+        id: 'e2e-unanchored-comment',
+        anchor: null,
+        body: 'Whole-scope agent claim.',
+        createdAt: '2026-01-01T00:04:00Z',
+      },
+    },
+    {
+      type: 'status',
+      status: {
+        id: 'e2e-unanchored-addressed',
+        commentId: 'e2e-unanchored-comment',
+        status: 'addressed',
+        createdAt: '2026-01-01T00:05:00Z',
+      },
+    },
+  ]
+    .map((event) => JSON.stringify(event))
+    .join('\n')
+
   const files: Record<string, string> = {
     'openspec/config.yaml': '',
     [`openspec/changes/${fixtureChange}/.openspec.yaml`]:
       'schema: spec-driven\ncreated: 2026-01-01\n',
-    [`openspec/changes/${fixtureChange}/proposal.md`]:
-      '# Observatory Design System Fixture\n\nBrowser lane must see this proposal.\n',
+    [`openspec/changes/${fixtureChange}/proposal.md`]: proposal,
     [`openspec/changes/${fixtureChange}/design.md`]:
       '# Fixture design\n\nA deterministic embedded-app fixture.\n',
     [`openspec/changes/${fixtureChange}/tasks.md`]: '# Fixture tasks\n\n- [x] Render index data\n',
@@ -79,8 +160,7 @@ async function createFixture(): Promise<string> {
       '{"pending":false,"reason":"none","createdAt":"2026-01-01T00:00:00Z","consumedAt":null}\n',
     [`.openspec-doc/scratch/_session/${fixtureSession}.md`]:
       '# Agent-guided observatory exploration session\n\nReview atmosphere must yield before content.\n',
-    [`.openspec-doc/comments/${fixtureChange}.jsonl`]:
-      '{"type":"comment","comment":{"id":"e2e-open-comment","anchor":null,"body":"Keep the instrument state visible.","createdAt":"2026-01-01T00:00:00Z"}}\n',
+    [`.openspec-doc/comments/${fixtureChange}.jsonl`]: `${comments}\n`,
     [`.openspec-doc/verdicts/${fixtureChange}.jsonl`]:
       '{"id":"e2e-verdict","verdict":"comment-resolution","notes":"","createdAt":"2026-01-01T00:00:01Z"}\n',
   }
@@ -101,6 +181,7 @@ async function waitForServer(server: ChildProcess, output: string[]): Promise<vo
       throw new Error(`openspec-doc exited before readiness:\n${output.join('')}`)
     }
     try {
+      // pi-lens-ignore: typescript.react.security.react-insecure-request.react-insecure-request
       const response = await fetch(`${baseURL}/api/index`)
       if (response.ok) {
         return

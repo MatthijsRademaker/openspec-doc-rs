@@ -1,100 +1,81 @@
 # HTTP routes
 
-The dashboard binds `127.0.0.1` by default. There is no authentication, because there is no remote mode —
-see [what is excluded](/vision.md#what-is-deliberately-excluded).
+Dashboard binds `127.0.0.1` by default. No authentication exists because no remote mode exists — see [what is excluded](/vision.md#what-is-deliberately-excluded).
+
+Vue Router owns all three interface routes. Rust validates scope routes before serving embedded shell, supplies JSON, records mutations through core writers, and pushes filesystem changes over SSE.
 
 | Route | Method | Purpose |
-|---|---|---|
-| `/` | GET | the built frontend, which renders the index |
-| `/api/index` | GET | the index's data: every discovered session and active change, as JSON |
-| `/sessions/<id>` | GET | the session review page |
-| `/changes/<name>` | GET | the change review page |
-| `…/events` | GET | server-sent events; emits `data: changed` when the scope's files change |
-| `…/review` | GET | the comment-list + verdict-state fragment an open page refetches |
-| `…/comments` | POST | `artifact_path`, `selected_text`, `body` |
-| `…/verdict` | POST | `verdict`, `notes` |
+| --- | --- | --- |
+| `/` | GET | embedded frontend index |
+| `/sessions/<id>` | GET | embedded session review workbench |
+| `/changes/<name>` | GET | embedded change review workbench |
+| `/api/index` | GET | all discovered sessions and active changes |
+| `/api/sessions/<id>` | GET | session artifacts as blocks, comments, counts, verdict history, delivery state |
+| `/api/changes/<name>` | GET | change artifacts as blocks, comments, counts, verdict history, delivery state |
+| `/api/<scope>/<key>/events` | GET | server-sent `data: changed` events |
+| `/api/<scope>/<key>/comments` | POST | create anchored or unanchored comment JSON |
+| `/api/<scope>/<key>/comments/<comment-id>/replies` | POST | append reply JSON |
+| `/api/<scope>/<key>/comments/<comment-id>/status` | POST | reviewer transition to `open` or `resolved` |
+| `/api/<scope>/<key>/verdict` | POST | submit scope-appropriate verdict JSON |
 
-An unknown session id or change name is a `404`, not an empty page. So is any other unrecognised URL: the
-frontend's own assets are served from the binary at their own paths, and nothing falls back to serving the
-application shell.
+Unknown scope data returns `404`, never empty scope. Unknown interface scope also returns `404`; shell is not generic fallback. Embedded assets remain available at their built paths.
 
-The index is the only screen the frontend renders so far. The scope pages are still server-rendered HTML —
-`migrate-dashboard-review-to-vue` moves them across.
+Session exists when directive record exists. `hook stop` writes empty slot on first sight, making session discoverable — see [On-disk state](/reference/on-disk-state.md#the-directive-slot).
 
-A session appears here only if it has a directive record. `hook stop` writes an empty slot on first sight,
-which is what makes a session discoverable — see [On-disk state](/reference/on-disk-state.md#the-directive-slot).
+## Scope detail
 
-## What a page renders
+Each scope response contains:
 
-The index is rendered in the browser from `/api/index`; the fields below are exactly what that endpoint
-serves. Deriving them — the title in particular — is still the server's job, in `crates/core/src/scratch/`.
+- exact scope kind, key, and optional title
+- artifacts in reading order, each decomposed into rendered blocks carrying exact source and byte range
+- reconstructed comment threads with status, replies, resolved anchor state, and resolved block id
+- open, addressed, and resolved counts
+- verdict history, standing verdict, and whether standing directive is pending or delivered
 
-The index lists each session and change with its **title** — the first heading of its scratch note, which is
-what the exploring agent wrote there — followed by its identifier, when its artifacts were last modified, how
-many of its comments are open, and its standing verdict. A session whose note has been promoted away is listed
-as *Promoted to `<change>`* — the redirect left at its note path is where that comes from. A scope with neither
-is listed by its identifier alone; nothing invents a name for it. The session with the most recent directive or verdict
-activity is marked *most recently active*, which is a statement about timestamps on disk and not a heartbeat:
-nothing here knows whether that session is still running.
+Session has one possible artifact: scratch note. Session with no note is valid and returns empty artifact list. Change returns present `proposal.md`, `design.md`, `tasks.md`, spec deltas, and promoted scratch note in reading order.
 
-Titles are display text. Every link, sidecar filename and hook payload is keyed on the identifier, so
-rewriting a note's heading changes what the index says and nothing else.
-
-A session page renders exactly one artifact: its scratch note. **If no exploration has been written, the
-page has nothing to select** — the composer stays hidden and no comment can be made. That is not a bug;
-it means nothing has been explored yet.
-
-A change page renders `proposal.md`, `design.md`, `tasks.md`, each spec delta under `specs/<capability>/`,
-and the promoted scratch note if there is one.
-
-:::warning Artifacts render on full page load only
-Live updates refetch the `…/review` fragment — comments and verdicts — not the artifacts. A note written
-while the page is open will not appear until you reload.
-:::
+Artifacts do not live-update yet. SSE causes client to refetch scope detail, but open scope intentionally keeps current artifact rendering until `add-live-artifact-updates` lands.
 
 ## Comments
 
-```
-POST /sessions/<id>/comments
-  artifact_path=.openspec-doc/scratch/_session/<id>.md
-  selected_text=The foo must be reconciled with the bar.
-  body=Is the bar load-bearing?
+Block comment names exact source position, avoiding first-occurrence ambiguity:
+
+```json
+{
+  "kind": "anchored",
+  "artifactPath": "openspec/changes/add-widget/proposal.md",
+  "selectedText": "Repeated requirement.",
+  "searchFrom": 412,
+  "body": "This second occurrence needs evidence."
+}
 ```
 
-Responds `303` back to the page on success. If `selected_text` is not in the artifact as it stands on
-disk, `400` — the reviewer is told to reselect rather than having the comment anchored to a guess.
+Free-text selection uses same shape. Selection absent from current source returns `400` JSON with refusal reason. Scope-level comment uses:
+
+```json
+{ "kind": "unanchored", "body": "Reconcile terminology across artifacts." }
+```
+
+Reply body is `{ "body": "…" }`. Server persists and returns dashboard replies with `"author": "reviewer"`; agent-facing CLI replies carry `"author": "agent"`, and older authorless replies read as agent-authored. Reviewer status body is `{ "status": "resolved" }` or `{ "status": "open" }`. Dashboard exposes no `addressed` transition because addressed is agent claim, not reviewer judgement.
 
 ## Verdicts
 
-```
-POST /sessions/<id>/verdict
-  verdict=keep-exploring
-  notes=Work out whether the bar is load-bearing
+Verdict body has no notes field:
+
+```json
+{ "verdict": "keep-exploring" }
 ```
 
 | Verdict | Valid scope | Meaning |
-|---|---|---|
-| `keep-exploring` | session | stay in the explore phase; `notes` say what is still open (**required**) |
-| `move-to-proposal` | session | the exploration is ready to be formalized |
-| `comment-resolution` | change | address the change's open comments |
+| --- | --- | --- |
+| `keep-exploring` | session | keep exploration open; feedback lives in comments |
+| `move-to-proposal` | session | formalize exploration |
+| `comment-resolution` | change | address change comments |
 
-Submitting a verdict to the wrong kind of scope is a `400`, as is `keep-exploring` with empty notes — its
-entire content is what remains open, so a blank one says nothing.
+Composer text is first recorded as unanchored comment, then verdict submitted. Empty composer submits verdict only. Wrong-scope verdict returns `400`.
 
-:::tip A verdict is the trigger; a comment is not
-Comments accumulate while you are still forming a view. Only a verdict produces a directive. If you leave
-comments and no verdict, the agent hears nothing.
-:::
+Comments accumulate without notifying agent. Verdict triggers directive, and directive points agent at comment sidecar.
 
 ## Live updates
 
-Each scope gets one filesystem watcher and one broadcast channel. A watcher covers the scope's own tree
-(`openspec/changes/<name>/`) and the whole of `.openspec-doc/`, because comments and verdicts land in a
-different tree from the artifacts they discuss. Events are filtered down to the scope's own paths, and a
-burst of writes from one edit is coalesced into a single update.
-
-When the SSE endpoint pushes, the page refetches `…/review` and swaps that one element rather than
-reloading — a reviewer half-way through typing a comment does not lose it because someone else commented.
-
-If the watcher backend fails to initialize, the scope falls back to polling every second and says so on
-stderr rather than silently serving no updates.
+Each scope gets filesystem watcher and broadcast channel. Watcher covers scope tree plus `.openspec-doc/`, filters events to scope paths, and coalesces write bursts. Vue client refetches scope detail after event, so replies, statuses, counts, and verdict delivery reconcile without reload. Watcher initialization failure falls back to one-second polling and logs fallback.

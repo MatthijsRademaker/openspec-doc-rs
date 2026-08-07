@@ -9,7 +9,7 @@ a directive it acts on — with your next prompt, or at the turn boundary if no 
 
 Everything is a plain file under `.openspec-doc/`. No database, no daemon, no cloud.
 
-```
+```text
    agent explores                              reviewer reads
         │                                             │
         ▼                                             ▼
@@ -45,7 +45,7 @@ cd docs && bun install && bun dev
 ```
 
 | | |
-|---|---|
+| --- | --- |
 | **Quickstart** | `docs/docs/quickstart.md` — install, wire hooks, drive one loop |
 | **Vision & MVP scope** | `docs/docs/vision.md` — what is in scope, what is not, when it is done |
 | **Roadmap** | `docs/docs/roadmap.md` — shipped capabilities and open changes |
@@ -58,9 +58,9 @@ substantially agents.
 
 ## Layout
 
-```
+```text
 crates/core     project discovery, comments, scratch notes, verdicts, hook bridge   (no I/O framework)
-crates/server   the axum dashboard: routes, pages, filesystem watcher, SSE
+crates/server   the axum dashboard boundary: JSON routes, embedded assets, watcher, SSE
 crates/cli      the openspec-doc binary
 web             the dashboard's frontend: Vite, Vue, Tailwind, shadcn-vue
 ```
@@ -108,6 +108,10 @@ Vite proxies same-origin `/api` to `http://127.0.0.1:8791`; set
 `OPENSPEC_DOC_API_PROXY_TARGET` for another local target. `bun run test:e2e` builds and serves the
 embedded Rust application on its own fixed test port, so a Vite-only check is not enough.
 
+For frontend-only work, run `bun run dev:mock`. This starts the MSW browser worker with deterministic
+index, scope, comment, reply, status, verdict, and SSE handlers; no Rust server is needed. Handlers and
+fixture data live under `web/src/mocks/`. Vitest uses the same handlers through `setupServer`.
+
 No network needed, but `scratch::promote`'s validation tests shell out to `openspec validate`, so that
 binary must be on `PATH`. See `docs/docs/development/testing.md`.
 
@@ -121,9 +125,9 @@ The MVP criterion has been run end to end — anchored comments on an exploratio
 and a proposal that accounts for those comments because they arrived before it was written rather than
 after.
 
-Two things still need a terminal or insider knowledge — closing out a comment, and remembering to start
-`serve`. Setup is a third: the hook config lives in gitignored local settings, so a fresh clone has no hooks
-and nothing says so. Whether those sit inside the MVP boundary is an open scope question; see the roadmap.
+Comment threads now support reply, resolve, reopen, and addressed-claim judgement in browser. Remembering
+to start `serve` still needs operator knowledge. Setup remains another gap: hook config lives in gitignored
+local settings, so fresh clone has no hooks and nothing says so. See roadmap.
 
 Rust rewrite of a TypeScript prototype, kept under `openspec-doc-rs-example/` for reference.
 `AGENTS.md` holds the working rules for this repo.

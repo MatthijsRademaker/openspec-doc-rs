@@ -104,224 +104,118 @@ and drop `--no-open` to have it open a browser for you.
 
 Open <http://127.0.0.1:8791/>. You should see one session and one change, both linked.
 
-## 4. Walk the interactions from a terminal
+## 4. Walk JSON boundary from terminal
 
-This proves the server half without a browser. Selection is the only thing a browser does that `curl`
-cannot, and the server does not trust it anyway.
+Browser routes serve embedded Vue shell. Inspect scope data and mutation boundary under `/api`.
 
-### 4.1 Session page renders the scratch note
+### 4.1 Scope detail returns rendered blocks
 
 ```bash
-curl -s "http://127.0.0.1:8791/sessions/$SID" | grep -E 'data-artifact-path|Unclear how'
+curl -s "http://127.0.0.1:8791/api/sessions/$SID" | jq '{kind,key,title,artifacts,commentCounts,standingVerdict}'
+curl -s "http://127.0.0.1:8791/api/changes/add-widget" | jq '.artifacts[] | {path,blocks}'
 ```
 
-The note's source appears verbatim inside `<pre class="source">`, and the `<article>` around it carries
-`data-artifact-path=".openspec-doc/scratch/_session/<id>.md"` — the path a comment will be anchored to.
+Session artifact may be absent before exploration starts. Change response includes every present artifact in reading order. Each block carries sanitized `html`, exact `source`, and byte `range`.
 
-### 4.2 Comment on a selection
+### 4.2 Create comments
 
-The browser sends exactly these three fields. `selected_text` must appear in the file as written.
+Anchored comment names source occurrence with `searchFrom`:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' -X POST "http://127.0.0.1:8791/sessions/$SID/comments" \
-  --data-urlencode "artifact_path=.openspec-doc/scratch/_session/$SID.md" \
-  --data-urlencode 'selected_text=Unclear how invalidation works.' \
-  --data-urlencode 'body=Which cache layer are you invalidating?'
+curl -s -X POST "http://127.0.0.1:8791/api/sessions/$SID/comments" \
+  -H 'content-type: application/json' \
+  --data '{"kind":"anchored","artifactPath":".openspec-doc/scratch/_session/'"$SID"'.md","selectedText":"Unclear how invalidation works.","searchFrom":0,"body":"Which cache layer are you invalidating?"}' | jq
 ```
 
-`303` — the form redirects back to the page. Confirm it rendered and anchored:
+Unanchored scope comment needs no artifact:
 
 ```bash
-curl -s "http://127.0.0.1:8791/sessions/$SID" | grep -E 'Comments \(|anchor exact|<blockquote>'
-"$BIN" --root "$PROJ" comment list --session "$SID"
+curl -s -X POST "http://127.0.0.1:8791/api/sessions/$SID/comments" \
+  -H 'content-type: application/json' \
+  --data '{"kind":"unanchored","body":"Reconcile cache terminology across note."}' | jq
 ```
 
-### 4.3 A stale selection is refused, not guessed at
+Submit absent selection and confirm `400` JSON reason. Nothing is recorded:
 
 ```bash
-curl -s -w '\n-> %{http_code}\n' -X POST "http://127.0.0.1:8791/sessions/$SID/comments" \
-  --data-urlencode "artifact_path=.openspec-doc/scratch/_session/$SID.md" \
-  --data-urlencode 'selected_text=text that was never written' \
-  --data-urlencode 'body=x' | grep -E '<p>|->'
+curl -s -w '
+-> %{http_code}
+' -X POST "http://127.0.0.1:8791/api/sessions/$SID/comments" \
+  -H 'content-type: application/json' \
+  --data '{"kind":"anchored","artifactPath":".openspec-doc/scratch/_session/'"$SID"'.md","selectedText":"text never written","searchFrom":0,"body":"x"}'
 ```
 
-`400`, with `selected text "…" was not found in …`. Nothing is recorded.
+### 4.3 Reply and reviewer status transitions
 
-### 4.4 Keep-exploring verdict
+Recover comment id from scope detail, then exercise same core writers browser uses:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' -X POST "http://127.0.0.1:8791/sessions/$SID/verdict" \
-  --data-urlencode 'verdict=keep-exploring' \
-  --data-urlencode 'notes=Answer the invalidation question before proposing.'
-
-cat "$PROJ/.openspec-doc/verdicts/_session/$SID.jsonl"
+COMMENT=$(curl -s "http://127.0.0.1:8791/api/sessions/$SID" | jq -r '.comments[0].comment.id')
+curl -s -X POST "http://127.0.0.1:8791/api/sessions/$SID/comments/$COMMENT/replies" \
+  -H 'content-type: application/json' --data '{"body":"Response recorded."}' | jq -e '.author == "reviewer"'
+curl -s -X POST "http://127.0.0.1:8791/api/sessions/$SID/comments/$COMMENT/status" \
+  -H 'content-type: application/json' --data '{"status":"resolved"}' | jq
+curl -s -X POST "http://127.0.0.1:8791/api/sessions/$SID/comments/$COMMENT/status" \
+  -H 'content-type: application/json' --data '{"status":"open"}' | jq
 ```
 
-Empty notes are a 400 — a keep-exploring verdict whose whole content is what remains open says nothing
-if that content is blank:
+`addressed` is intentionally rejected by dashboard endpoint. Agent sets that claim through CLI; reviewer can only accept it as resolved or reopen it.
+
+### 4.4 Verdict without notes
+
+Dashboard verdict body has no notes field. Feedback lives in comments, and empty composer is valid:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' -X POST "http://127.0.0.1:8791/sessions/$SID/verdict" \
-  --data-urlencode 'verdict=keep-exploring' --data-urlencode 'notes=   '
+curl -s -X POST "http://127.0.0.1:8791/api/sessions/$SID/verdict" \
+  -H 'content-type: application/json' --data '{"verdict":"keep-exploring"}' | jq
+curl -s "http://127.0.0.1:8791/api/sessions/$SID" | jq '.standingVerdict'
 ```
 
-### 4.5 Move-to-proposal verdict
+Change uses `comment-resolution`; session advancing control uses `move-to-proposal`. Wrong-scope verdict returns `400`.
+
+### 4.5 Live-update push
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' -X POST "http://127.0.0.1:8791/sessions/$SID/verdict" \
-  --data-urlencode 'verdict=move-to-proposal' --data-urlencode 'notes='
-```
-
-The page lists verdicts most-recent-first, so `move-to-proposal` now leads.
-
-### 4.6 Change page: artifacts and spec deltas
-
-```bash
-curl -s http://127.0.0.1:8791/changes/add-widget | grep -E 'data-artifact-path|SHALL cache'
-```
-
-`proposal.md` and `specs/widget/spec.md` both render. `design.md` and `tasks.md` are absent from the
-fixture, and absent artifacts are left out rather than rendered empty — add them and reload to see them
-appear.
-
-### 4.7 Comment on the proposal, then send to agent
-
-```bash
-curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8791/changes/add-widget/comments \
-  --data-urlencode 'artifact_path=openspec/changes/add-widget/proposal.md' \
-  --data-urlencode 'selected_text=Widgets are slow today.' \
-  --data-urlencode 'body=Slow by what measure?'
-
-curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8791/changes/add-widget/verdict \
-  --data-urlencode 'verdict=comment-resolution'
-
-cat "$PROJ/.openspec-doc/verdicts/add-widget.jsonl"
-cat "$PROJ/.openspec-doc/comments/add-widget.jsonl"
-```
-
-A verdict aimed at the wrong kind of scope is a 400 — a change has no explore phase to keep exploring:
-
-```bash
-curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8791/changes/add-widget/verdict \
-  --data-urlencode 'verdict=keep-exploring' --data-urlencode 'notes=Notes.'
-```
-
-### 4.8 Anchor states: what happens when the file moves underneath a comment
-
-The point of anchoring is that it degrades visibly rather than silently. Each step below is a
-progressively worse fate for the same comment. Run them in order.
-
-Grep for `anchor <state>` rather than `data-anchor-state`, since the latter also appears in the page's
-CSS.
-
-**Text pushed to a new offset → `fuzzy`.** The recorded offset is stale, but the text is still there:
-
-```bash
-printf '## Note\n\nInserted above.\n\n%s' "$(cat "$PROJ/openspec/changes/add-widget/proposal.md")" \
-  > "$PROJ/openspec/changes/add-widget/proposal.md"
-curl -s http://127.0.0.1:8791/changes/add-widget | grep -oE 'anchor (exact|fuzzy|orphaned|missing)[^<]*'
-```
-
-**Text rewritten, context intact → still `fuzzy`.** Deleting the commented sentence is *not* enough to
-orphan the anchor: its heading (`## Why`) and the 80 bytes either side still resolve, so it lands where
-that context ends. This is the design working, not a stale read:
-
-```bash
-sed -i 's/Widgets are slow today./Entirely different prose./' \
-  "$PROJ/openspec/changes/add-widget/proposal.md"
-curl -s http://127.0.0.1:8791/changes/add-widget | grep -oE 'anchor (exact|fuzzy|orphaned|missing)[^<]*'
-```
-
-**No landmark left at all → `orphaned`** (red border). Every fallback has to fail — text, before/after
-context, and heading:
-
-```bash
-printf 'Completely unrelated content with no shared landmarks.\n' \
-  > "$PROJ/openspec/changes/add-widget/proposal.md"
-curl -s http://127.0.0.1:8791/changes/add-widget | grep -oE 'anchor (exact|fuzzy|orphaned|missing)[^<]*'
-```
-
-**File gone → `missing`.** Reported apart from `orphaned` so "the artifact left" and "the text left" are
-distinguishable:
-
-```bash
-rm "$PROJ/openspec/changes/add-widget/proposal.md"
-curl -s http://127.0.0.1:8791/changes/add-widget | grep -oE 'anchor (exact|fuzzy|orphaned|missing)[^<]*'
-```
-
-The comment survives all four; only its reported confidence changes. Restore the file to continue:
-
-```bash
-cat > "$PROJ/openspec/changes/add-widget/proposal.md" <<'MD'
-## Why
-
-Widgets are slow today.
-
-## What Changes
-
-- Add a widget cache.
-MD
-```
-
-### 4.9 The live-update push
-
-What an already-open page relies on. Hold the stream open, write a comment, watch the push arrive:
-
-```bash
-curl -siN http://127.0.0.1:8791/changes/add-widget/events > /tmp/sse.log &
+curl -siN "http://127.0.0.1:8791/api/changes/add-widget/events" > /tmp/sse.log &
 SSE=$!
-until grep -qi 'text/event-stream' /tmp/sse.log; do :; done   # wait for a real subscription
+until grep -qi 'text/event-stream' /tmp/sse.log; do :; done
 
-curl -s -o /dev/null -X POST http://127.0.0.1:8791/changes/add-widget/comments \
-  --data-urlencode 'artifact_path=openspec/changes/add-widget/proposal.md' \
-  --data-urlencode 'selected_text=Add a widget cache.' \
-  --data-urlencode 'body=Comment made while the stream was open.'
+curl -s -X POST "http://127.0.0.1:8791/api/changes/add-widget/comments" \
+  -H 'content-type: application/json' \
+  --data '{"kind":"unanchored","body":"Comment made while stream was open."}' >/dev/null
 
 until grep -q 'data: changed' /tmp/sse.log; do :; done
-echo "pushed"; kill $SSE
+echo pushed; kill $SSE
 ```
 
-> Wait for the `text/event-stream` header before posting. The handler subscribes while building the
-> response, so a comment written too early lands before the watcher exists and no event fires. This
-> race is why the automated test posts on a loop.
+Client refetches whole scope detail after event. Artifacts remain current-page snapshot until `add-live-artifact-updates` lands.
 
-Then the fragment the page refetches — one element, not a document:
+## 5. Embedded browser check
+
+Run deterministic desktop and 390px lane:
 
 ```bash
-curl -s http://127.0.0.1:8791/changes/add-widget/review | head -5
+cd web
+bun run test:e2e
 ```
 
-## 5. The browser check (the only part that needs a human)
+Lane builds frontend, embeds it in Rust binary, creates realistic scope data, and verifies:
 
-Everything above is server-side. These two steps are the client JavaScript, and nothing else verifies
-it.
+- block comment on second repeated occurrence resolves `exact`
+- rendered selection crossing inline markup reports server refusal
+- anchored, fuzzy, orphaned, unanchored, addressed, and resolved states remain reachable
+- reply, resolve, reopen, and second-tab SSE reconciliation work without leaving browser
+- empty composer submits verdict without comment
+- document remains primary, persistent controls do not cause horizontal overflow, and artwork yields at 390px
+- keyboard focus, reduced motion, bundled fonts, same-origin assets, and console/request health
 
-**5.1 Select-to-comment.** Open <http://127.0.0.1:8791/changes/add-widget>. Drag-select a phrase inside
-one of the artifact boxes. The comment composer should appear, showing the artifact path and the text
-you selected. Type a body and submit — the page reloads with your comment listed, anchored `exact`.
+For manual inspection use repository-pinned Playwright CLI, not Vite screenshot:
 
-Selections that should behave sensibly:
-
-- A phrase inside one paragraph → works.
-- Markdown syntax itself, e.g. `## Why` including the hashes → works; the source is what is rendered.
-- A selection spanning two artifact boxes → the composer records whichever artifact the selection
-  started in; submitting will 400 if the combined text is not in that file. Loud, not silent.
-- Selecting nothing (a click) → composer stays as it was.
-
-**5.2 Two tabs, no reload.** *(This is `tasks.md` 4.2, the one open task.)*
-
-1. Open the same change page in two browser tabs.
-2. In tab A, select text and submit a comment.
-3. **Without touching tab B**, watch tab B's comment list.
-
-Tab B's comment count and list should update within about a second, and tab B must **not** flash or
-reload — only the review-state block is replaced. Verify the no-reload part deliberately: start typing
-into tab B's composer *before* commenting in tab A, and confirm your half-typed text survives the
-update. A full reload would eat it, and that regression is exactly what this check exists to catch.
-
-Also worth a look: edit `proposal.md` in your editor while a tab is open. The artifact does not
-re-render (only the review state swaps), but any comment on the text you changed should shift to
-`fuzzy` or `orphaned`.
+```bash
+cd web
+bunx --bun playwright test --config playwright.config.ts --project=desktop --headed
+bunx --bun playwright test --config playwright.config.ts --project=narrow --headed
+```
 
 ## 6. The hook end of the loop
 
@@ -339,17 +233,16 @@ The first prints `{"decision":"block","reason":…}`; the second prints `{"conti
 directive is consumed exactly once. Check `consumedAt` in the directive file for the audit trail, and
 `verdicts/_session/$SID.translated` for the id of the verdict that produced it.
 
-Confirm the reason text is a pointer: it should name the sidecar paths and **not** contain the verdict
-notes you typed. See [Pointer, not embed](/concepts/pointer-not-embed.md).
+Confirm reason text is a pointer: it should name comment sidecar and **not** contain comment bodies.
+See [Pointer, not embed](/concepts/pointer-not-embed.md).
 
 ### 6.2 The same directive delivered at prompt time
 
 `hook prompt` is the other delivery point. §6.1 consumed the directive, so submit a fresh verdict first:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' -X POST "http://127.0.0.1:8791/sessions/$SID/verdict" \
-  --data-urlencode 'verdict=keep-exploring' \
-  --data-urlencode 'notes=Still unsettled.'
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "http://127.0.0.1:8791/api/sessions/$SID/verdict" \
+-H 'content-type: application/json' --data '{"verdict":"keep-exploring"}'
 
 echo '{"session_id":"'"$SID"'"}' | "$BIN" --root "$PROJ" hook prompt --agent claude
 ```
@@ -460,7 +353,7 @@ rm -rf "$PROJ" /tmp/sse.log
 ## Troubleshooting
 
 | Symptom | Cause |
-|---|---|
+| --- | --- |
 | Session list is empty | no `.openspec-doc/directives/_session/<id>.json`; sessions are discovered from directive records, not scratch notes |
 | `no OpenSpec project found` | no `openspec/config.yaml` in the cwd or any parent — pass `--root` |
 | `404` on a page you expected | the change directory or directive record does not exist; unknown keys are a 404 by design |

@@ -46,20 +46,34 @@ pub struct Comment {
     pub created_at: String,
 }
 
+/// Who added a response to a comment thread.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReplyAuthor {
+    Reviewer,
+    /// Replies written before authorship was recorded came from the agent-facing
+    /// CLI, so missing fields in existing sidecars retain that meaning.
+    #[default]
+    Agent,
+}
+
 /// A response added to an existing comment's thread.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Reply {
     pub id: String,
     pub comment_id: String,
+    #[serde(default)]
+    pub author: ReplyAuthor,
     pub body: String,
     pub created_at: String,
 }
 
 /// A replacement for an existing comment's body.
 ///
-/// Only a comment can be edited, never a reply: a reply is the agent's report of
-/// what it did, and rewriting it would remove the record the reviewer is judging.
+/// Only a comment can be edited, never a reply: a reply is part of the
+/// conversation's append-only record, and rewriting it would remove words one
+/// participant already contributed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Edit {
@@ -118,4 +132,22 @@ pub struct Thread {
 /// first — an append must not depend on what is already in the file.
 pub(super) fn new_id() -> String {
     Uuid::new_v4().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Event, ReplyAuthor};
+
+    #[test]
+    fn a_reply_written_before_authorship_existed_remains_an_agent_reply() {
+        let event: Event = serde_json::from_str(
+            r#"{"type":"reply","reply":{"id":"reply-a","commentId":"comment-a","body":"Done.","createdAt":"2026-08-07T10:00:00Z"}}"#,
+        )
+        .expect("legacy reply");
+
+        let Event::Reply { reply } = event else {
+            panic!("expected reply event")
+        };
+        assert_eq!(reply.author, ReplyAuthor::Agent);
+    }
 }

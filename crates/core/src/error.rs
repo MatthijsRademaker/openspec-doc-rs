@@ -101,9 +101,6 @@ pub enum Error {
         session_scoped: bool,
     },
 
-    #[error("a keep-exploring verdict needs notes saying what is still open")]
-    EmptyVerdictNotes,
-
     #[error("malformed verdict sidecar {}", path.display())]
     VerdictSidecar {
         path: PathBuf,

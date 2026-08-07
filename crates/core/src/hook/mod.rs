@@ -9,8 +9,8 @@ mod translate;
 
 pub use adapter::{encode_decision, parse_event, parse_session_id};
 pub use directive::{
-    Directive, ensure_session, load_pending, mark_consumed, path as directive_path, sessions,
-    sessions_dir, write_pending,
+    Directive, ensure_session, load as load_directive, load_pending, mark_consumed,
+    path as directive_path, sessions, sessions_dir, write_pending,
 };
 pub use event::{Agent, HookDecision, HookEvent};
 pub use explore::start as start_explore;

@@ -92,8 +92,8 @@ An anchored comment that is only reachable in a list hundreds of lines below the
 
 #### Scenario: The reviewer's words and the agent's are distinguishable
 
-- **WHEN** a comment thread contains both the reviewer's comment and an agent's reply
-- **THEN** the system SHALL render them visually distinct from one another
+- **WHEN** a comment thread contains reviewer-authored and agent-authored records
+- **THEN** the system SHALL render them visually distinct from one another and SHALL label each persisted reply with its recorded author
 
 ### Requirement: The scope's review state is visible without scrolling to it
 

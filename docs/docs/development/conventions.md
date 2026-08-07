@@ -4,14 +4,15 @@
 
 ```text
 crates/core     project discovery, comments, scratch notes, verdicts, hook bridge   (no I/O framework)
-crates/server   the axum dashboard: routes, pages, filesystem watcher, SSE
+crates/server   the axum dashboard boundary: JSON routes, embedded assets, watcher, SSE
 crates/cli      the openspec-doc binary
 web             the dashboard's frontend: Vite, Vue, Tailwind, shadcn-vue
 ```
 
 `core` holds **every rule and every file format**. `server` and `cli` are two front ends over it and
-contain no persistence logic of their own. This is what makes the CLI a real check on the dashboard: both go
-through the same code, so `comment list` shows exactly what a browser interaction recorded.
+contain no persistence logic of their own; Vue is browser rendering and interaction over server JSON. This
+makes CLI a real check on dashboard: both mutation paths use same core writers, so `comment list` shows
+exactly what browser interaction recorded.
 
 It is also what keeps two agents supportable. Decision logic lives in `core`; the agent-specific parts are
 a thin adapter that translates wire formats and nothing else.

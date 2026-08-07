@@ -1,3 +1,5 @@
+# Dashboard review migration design
+
 ## Context
 
 Two changes have already landed the parts of this rewrite that could be settled without an interface. `add-artifact-block-model` proved that markdown can be rendered without giving up anchoring, and that the block a reviewer comments on anchors to the occurrence they meant. `add-vue-dashboard-foundation` proved that a Vue application ships inside the binary, installs without Node, and does not go stale unnoticed.
@@ -76,6 +78,8 @@ Two consequences:
 - **The composer's text is optional.** Keep-exploring notes are `required` today. Once inline comments carry the substance, the common case is sending five anchored comments back with nothing to add, and demanding a sentence to allow it is friction for its own sake.
 - **The directive templates must change in this change.** `translate::reason` currently says *"with notes on what is still open. Those notes are the last record in `{verdicts}`"*. That becomes false the moment notes are always empty, so the template edit is not a follow-up — it is the same unit of work, and the tests in `translate.rs` that assert the templates name the verdict sidecar for its notes move with it.
 
+`Record.notes` survives in core. Existing verdict sidecars contain it, and non-dashboard CLI callers may still use it as record metadata; removing the field would make those append-only records unreadable for no product gain. Dashboard writes it empty, keep-exploring no longer requires it, and directive templates never treat it as feedback. Comments are the sole dashboard feedback channel.
+
 ### The primary button says "Move to proposal", not "Approve"
 
 `add-change-approval-gate` introduces an `approved` verdict with real preconditions: every comment resolved, bound to a fingerprint of the artifacts approved, stale once they change. Two buttons in the same product both labelled Approve — one meaning "formalize this exploration", one meaning "I accept this as ready to implement" — is a trap, and the second is the consequential one.
@@ -92,6 +96,8 @@ The change page gains a notes-carrying way to send comments back, which it does 
 `addressed` means the agent says it did the work. `resolved` means the reviewer accepts that it did. Those are different people making different statements, and collapsing them is the one thing this interface must not do.
 
 So: no control anywhere marks a comment `addressed`, and an `addressed` comment is rendered as a report awaiting judgement — the agent's reply, with accept and reopen — never as a tick. A tick the agent set itself would be the tool lying about the single judgement the reviewer is present to make.
+
+Reply records therefore carry their author. The agent-facing CLI writes `agent`; dashboard reply endpoints write `reviewer`; the page renders the persisted value rather than inferring authorship from event shape. Existing replies predate browser thread actions and came through the agent-facing CLI, so an absent author deserializes as `agent`. Rejected: treating every reply as agent speech. Once the reviewer can reply in the browser, that would make the interface forge the agent's identity.
 
 This also settles what the reviewer's and the agent's words look like: visually distinct, always. The current page renders them identically, which in a tool whose entire output is a conversation between two parties is not a styling gap.
 
@@ -118,7 +124,7 @@ The old and new scope pages do not coexist. `page/` is deleted in the same chang
 
 `extend-comment-model` and `add-comment-thread-actions` have both landed, so the comment model can already express everything this interface offers: unanchored comments, replies, and the `addressed` status.
 
-Existing comment records are unaffected. The anchoring contract is unchanged — an anchor is still created by finding the submitted text in the artifact's markdown — so every record written by the old interface resolves exactly as before.
+Existing comment and reply records remain readable. Reply events without an `author` deserialize as `agent`, matching the only reply-writing path that existed before browser thread actions. The anchoring contract is unchanged — an anchor is still created by finding the submitted text in the artifact's markdown — so every record written by the old interface resolves exactly as before.
 
 ## Open Questions
 
