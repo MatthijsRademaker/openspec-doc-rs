@@ -52,13 +52,10 @@ The same applies to what a change makes obsolete elsewhere. If landing it would 
 
 ## Frontend dashboard routing
 
-Every task touching `web/` must load the repository-specific `frontend-design`,
-`shadcn-vue`, and `openspec-doc-dashboard` skills before editing. Visual work must also
-read `designs/dashboard-review-workbench.md`; browser behavior and visual claims must use
-the `browser-verification` skill and the embedded `bun run test:e2e` lane.
-
 Use Bun 1.3.2 and `bun install --frozen-lockfile`; do not introduce npm metadata or a second
-frontend package-manager path. Preserve committed `web/dist/`, bundled offline assets,
+frontend package-manager path. `web/dist/` is a gitignored build artifact that rust-embed
+compiles into the binary at compile time — build it before cargo (`make build`); a fresh
+clone has no dist and cargo will not compile without one. Preserve bundled offline assets,
 central semantic status tokens, explicit Tailwind sources, Vue Router ownership, and the
 Rust embedded-asset boundary. Existing shadcn-vue primitives and `web/components.json`
 are the starting point, not generic component guesses.

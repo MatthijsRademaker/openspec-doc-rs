@@ -25,28 +25,31 @@ bun run build                   # type-checks with vue-tsc, then writes web/dist
 bun run dev                     # Vite dev server; pair with `openspec-doc serve --port 8791 --no-open` for the API
 ```
 
-**`web/dist/` is committed.** That is what keeps Bun and Node out of `cargo install`: `crates/server` compiles
-the built assets in with `rust-embed`, so the binary serves the interface with no asset directory, no
-checked-out repository and no toolchain. The cost is that a stale `dist/` would ship an interface that does
-not match its source, silently.
+**`web/dist/` is a build artifact, not committed.** `crates/server` compiles the built assets in with
+`rust-embed`, so the binary serves the interface with no asset directory and no checked-out repository.
+The consequence for local development: rust-embed needs a dist present at compile time, a fresh clone
+has none, and cargo will not compile without one — `make build` builds the frontend first, then the
+binary. Distribution is headed for prebuilt binaries (a release workflow that builds the frontend,
+then the embedding binary, plus an install script), so user machines will need neither Bun nor cargo.
 
-**So CI rebuilds it and fails if it differs** — `.github/workflows/frontend-assets.yml` does
-`bun install --frozen-lockfile && bun run build` from a clean checkout and goes red on any drift in `web/`.
-Rebuild and commit `dist/` in the same commit as the source change; they are one unit.
+**CI proves a clean checkout builds and embeds** — `.github/workflows/frontend-assets.yml` does
+`bun install --frozen-lockfile && bun run build` from a clean checkout, then drives the embedded app in
+Chromium.
 
-Two things keep that check honest, and both are load-bearing:
+Two things keep that lane honest, and both are load-bearing:
 
 - **Bun is pinned exactly** in `web/package.json` (`packageManager`) and `web/.bun-version`, and `bun.lock` is
   the only frontend lockfile. The package manager decides which esbuild and bundler build the assets, so a
   different one is the likeliest source of a difference that has nothing to do with the source.
 - **Tailwind's sources are listed explicitly** in `src/style.css` via `source(none)` and `@source`. Left on
-  automatic detection Tailwind scans everything the repository does not gitignore, and `web/dist/` is
-  deliberately not gitignored — so it read class names out of the previous build's own output, and the CSS
-  grew depending on whether `dist/` happened to exist when the build started.
+  automatic detection Tailwind scans everything the repository does not gitignore, so the CSS could grow
+  from class names found in files that merely happen to exist on disk. Explicit sources keep the CSS a
+  function of the source tree alone.
 
 `bun run check` is the bounded frontend gate: Biome formats and lints TypeScript, JSON, CSS, and Vue;
 `vue-tsc -b` owns Vue/TypeScript semantics; Vitest and Vue Test Utils cover logic and components. The
-embedded browser lane is explicit: `bun run test:e2e` builds the Rust binary and tests its committed assets.
+embedded browser lane is explicit: `bun run test:e2e` builds the frontend and the Rust binary, then tests
+the embedded assets it just built.
 `vue-tsc -b` also runs as the first half of `bun run build`, which is where a type error fails.
 
 `shadcn-vue`'s scaffold imported Geist from Google Fonts. It is replaced by bundled IBM Plex Sans and

@@ -1,10 +1,9 @@
 target/
 node_modules/
 dist/
-# The dashboard's frontend build is committed, so `cargo install` needs no Node
-# toolchain. CI rebuilds it from a clean checkout and fails if it differs — see
-# .github/workflows/frontend-assets.yml.
-!web/dist/
+# web/dist is a build artifact, embedded into the binary at compile time via
+# rust-embed. Build it with `make build`; a fresh clone has no dist and cargo
+# will not compile without one.
 coverage/
 web/test-results/
 web/playwright-report/

@@ -17,7 +17,9 @@ Use this skill for any visual change under `web/`.
 Read `designs/dashboard-review-workbench.md` before choosing layout, type, color, status
 language, or motion. Treat `designs/frames/` as visual direction, not a license to copy
 empty placeholder screens. Preserve long identifiers, realistic review states, and the
-document-first hierarchy.
+document-first hierarchy. Load the `openspec-visual-language` skill and ingest
+`web/public/assets/images/design-system.png` and `dashboard-mockup.png` for the product's
+visual identity; this skill covers mechanics, that one covers essence.
 
 ## Non-negotiable constraints
 

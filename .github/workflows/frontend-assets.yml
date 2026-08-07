@@ -1,6 +1,6 @@
-# `web/dist/` is committed so that `cargo install` needs no JavaScript toolchain.
-# That trade is only safe with this check: without it a stale `dist/` ships an
-# interface that does not match its source, and does it silently.
+# `web/dist/` is a gitignored build artifact: crates/server embeds whatever the
+# local build produced at compile time (rust-embed). This lane proves a clean
+# checkout can build the frontend, embed it, and serve it in a real browser.
 name: Frontend assets
 
 on:
@@ -9,8 +9,8 @@ on:
   pull_request:
 
 jobs:
-  dist-is-current:
-    name: web/dist matches a clean build
+  frontend-lane:
+    name: clean build embeds and serves
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -31,19 +31,6 @@ jobs:
       - run: bun run check
 
       - run: bun run build
-
-      - name: Fail if the committed assets are stale
-        run: |
-          if [ -n "$(git status --porcelain -- .)" ]; then
-            echo "::error::web/dist is stale: a clean build differs from the committed assets. Run 'bun install --frozen-lockfile && bun run build' in web/ and commit the result."
-            # --porcelain, not just the diff: an untracked freshly hashed bundle
-            # is drift too, and only status reports it.
-            git status --porcelain -- .
-            # --stat, not the diff itself: a minified bundle's content diff is
-            # noise, and which files moved is the whole answer.
-            git diff --stat -- .
-            exit 1
-          fi
 
       - name: Install Chromium for embedded browser verification
         run: bunx --bun playwright install --with-deps chromium

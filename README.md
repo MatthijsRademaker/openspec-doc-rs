@@ -68,13 +68,16 @@ web             the dashboard's frontend: Vite, Vue, Tailwind, shadcn-vue
 `core` holds every rule and every file format; `server` and `cli` are two front ends over it with no
 persistence logic of their own.
 
-`web/dist/` is committed and compiled into the binary, so `cargo install` needs no Node or Bun toolchain.
-CI rebuilds it from a clean checkout and fails if it differs — see
+`web/dist/` is a gitignored build artifact, compiled into the binary via rust-embed. `make build`
+builds the frontend first, then the binary — a fresh clone has no dist and cargo will not compile
+without one. Distribution will move to prebuilt binaries (release workflow + install script), so
+user machines need neither Bun nor cargo — see
 [conventions](docs/docs/development/conventions.md#the-frontend).
 
 ## Build and test
 
 ```bash
+make build                                             # first step on a fresh clone: builds web/dist, then the binary
 cargo test --workspace                                 # 228 tests
 cargo test -p openspec-doc-core -p openspec-doc-cli    # 182 of them, hermetic
 cargo clippy --workspace --all-targets
@@ -83,7 +86,7 @@ cargo fmt --all --check
 
 ## Dashboard frontend development
 
-`web/dist/` is generated and committed. Use Bun 1.3.2 from `web/.bun-version`; do not use npm or
+`web/dist/` is generated, not committed. Use Bun 1.3.2 from `web/.bun-version`; do not use npm or
 regenerate assets with a different package manager.
 
 ```bash
