@@ -7,6 +7,7 @@ mod api;
 mod assets;
 mod browser;
 mod error;
+pub mod markdown;
 mod page;
 mod routes;
 mod scope;

@@ -53,12 +53,14 @@ impl ScopeKey {
 /// `key`'s sidecar.
 ///
 /// The artifact is read as it stands on disk, so an anchor is never created
-/// against markdown the caller only believes is there.
+/// against markdown the caller only believes is there. `search_from` names the
+/// occurrence to use when the selected text appears more than once.
 pub fn add(
     root: &Path,
     key: &ScopeKey,
     artifact_path: &str,
     selected_text: &str,
+    search_from: usize,
     body: &str,
 ) -> Result<Comment, Error> {
     let markdown = artifact::read(root, artifact_path)?.ok_or_else(|| Error::MissingArtifact {
@@ -68,7 +70,12 @@ pub fn add(
     record_comment(
         root,
         key,
-        Some(anchor::create(artifact_path, &markdown, selected_text)?),
+        Some(anchor::create(
+            artifact_path,
+            &markdown,
+            selected_text,
+            search_from,
+        )?),
         body,
     )
 }
@@ -410,6 +417,19 @@ mod tests {
             .collect()
     }
 
+    /// Existing sidecar tests do not care which occurrence their unique
+    /// selections choose; keep that assertion path explicit while exercising
+    /// the production API's zero-offset compatibility at one boundary.
+    fn add(
+        root: &Path,
+        key: &ScopeKey,
+        artifact_path: &str,
+        selected_text: &str,
+        body: &str,
+    ) -> Result<Comment, Error> {
+        super::add(root, key, artifact_path, selected_text, 0, body)
+    }
+
     #[test]
     fn a_session_sidecar_sits_under_the_session_scoped_directory() {
         let temp = TempDir::new().expect("temp dir");
@@ -467,6 +487,28 @@ mod tests {
     /// The sidecars in this repository were written before the anchor became
     /// optional. Every one of their lines carries an `anchor` object, and they
     /// are real review history rather than a fixture.
+    #[test]
+    fn a_repeated_list_item_anchors_to_the_named_heading() {
+        let temp = root_with_artifact();
+        let markdown = "# Tests\n\n- [ ] Add tests\n\n# Docs\n\n- [ ] Add tests\n";
+        fs::write(temp.path().join(ARTIFACT), markdown).expect("write repeated artifact");
+        let second_offset = markdown.rfind("- [ ] Add tests").expect("second list item");
+
+        let comment = super::add(
+            temp.path(),
+            &change(),
+            ARTIFACT,
+            "- [ ] Add tests",
+            second_offset,
+            "Comment on docs.",
+        )
+        .expect("add repeated item comment");
+
+        let anchor = comment.anchor.as_ref().expect("anchored comment");
+        assert_eq!(anchor.start_offset, second_offset);
+        assert_eq!(anchor.heading_path, ["Docs"]);
+    }
+
     #[test]
     fn a_comment_line_written_with_an_anchor_still_reads_into_a_thread() {
         let temp = TempDir::new().expect("temp dir");

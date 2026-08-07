@@ -72,13 +72,25 @@ impl fmt::Display for AnchorState {
 ///
 /// Selected text that is absent from the markdown is an error rather than a
 /// guessed-at anchor: the caller is describing a selection that does not exist.
-pub fn create(artifact_path: &str, markdown: &str, selected_text: &str) -> Result<Anchor, Error> {
+/// Search begins at `search_from`, allowing a caller with a parser range to name
+/// the intended occurrence of repeated text. Passing zero keeps first-occurrence
+/// behaviour for callers that do not know the selection's source position.
+pub fn create(
+    artifact_path: &str,
+    markdown: &str,
+    selected_text: &str,
+    search_from: usize,
+) -> Result<Anchor, Error> {
     let selected_text = selected_text.trim();
     if selected_text.is_empty() {
         return Err(Error::EmptySelection);
     }
 
-    let Some(start_offset) = markdown.find(selected_text) else {
+    let Some(start_offset) = markdown
+        .get(search_from..)
+        .and_then(|remaining| remaining.find(selected_text))
+        .map(|offset| search_from + offset)
+    else {
         return Err(Error::SelectionNotFound {
             artifact_path: artifact_path.to_owned(),
             selected_text: selected_text.to_owned(),
@@ -245,7 +257,7 @@ mod tests {
     const SELECTED: &str = "Selected sentence.";
 
     fn anchor() -> Anchor {
-        create(ARTIFACT, ORIGINAL, SELECTED).expect("create anchor")
+        create(ARTIFACT, ORIGINAL, SELECTED, 0).expect("create anchor")
     }
 
     #[test]
@@ -350,7 +362,7 @@ mod tests {
 
     #[test]
     fn selected_text_absent_from_the_markdown_is_an_error() {
-        let error = create(ARTIFACT, ORIGINAL, "never written").expect_err("absent selection");
+        let error = create(ARTIFACT, ORIGINAL, "never written", 0).expect_err("absent selection");
 
         assert!(matches!(error, Error::SelectionNotFound { .. }), "{error}");
     }
@@ -360,7 +372,7 @@ mod tests {
         for selection in ["", "   \n\t"] {
             assert!(
                 matches!(
-                    create(ARTIFACT, ORIGINAL, selection),
+                    create(ARTIFACT, ORIGINAL, selection, 0),
                     Err(Error::EmptySelection)
                 ),
                 "accepted {selection:?}"
@@ -372,7 +384,7 @@ mod tests {
     fn a_skipped_heading_level_leaves_no_gap_in_the_path() {
         let markdown = "# Top\n\n### Deep\n\nSelected sentence.\n";
 
-        let anchor = create(ARTIFACT, markdown, SELECTED).expect("create anchor");
+        let anchor = create(ARTIFACT, markdown, SELECTED, 0).expect("create anchor");
 
         assert_eq!(anchor.heading_path, ["Top", "Deep"]);
     }
@@ -381,7 +393,7 @@ mod tests {
     fn a_sibling_heading_replaces_its_predecessor_in_the_path() {
         let markdown = "# Top\n\n## First\n\n## Second\n\nSelected sentence.\n";
 
-        let anchor = create(ARTIFACT, markdown, SELECTED).expect("create anchor");
+        let anchor = create(ARTIFACT, markdown, SELECTED, 0).expect("create anchor");
 
         assert_eq!(anchor.heading_path, ["Top", "Second"]);
     }
@@ -390,9 +402,33 @@ mod tests {
     fn seven_hashes_are_not_a_heading() {
         let markdown = "####### Not a heading\n\nSelected sentence.\n";
 
-        let anchor = create(ARTIFACT, markdown, SELECTED).expect("create anchor");
+        let anchor = create(ARTIFACT, markdown, SELECTED, 0).expect("create anchor");
 
         assert!(anchor.heading_path.is_empty());
+    }
+
+    #[test]
+    fn a_search_offset_selects_the_repeated_occurrence_and_its_heading() {
+        let markdown = "# First\n\nRepeated item.\n\n# Second\n\nRepeated item.\n";
+        let second_offset = markdown.rfind("Repeated item.").expect("second occurrence");
+
+        let anchor = create(ARTIFACT, markdown, "Repeated item.", second_offset)
+            .expect("create second anchor");
+
+        assert_eq!(anchor.start_offset, second_offset);
+        assert_eq!(anchor.heading_path, ["Second"]);
+    }
+
+    #[test]
+    fn search_from_zero_keeps_first_occurrence_behaviour() {
+        let markdown = "First occurrence.\n\nFirst occurrence.\n";
+        let anchor =
+            create(ARTIFACT, markdown, "First occurrence.", 0).expect("create first anchor");
+
+        assert_eq!(
+            anchor.start_offset,
+            markdown.find("First occurrence.").expect("first")
+        );
     }
 
     #[test]
@@ -401,7 +437,7 @@ mod tests {
         let padding = "—".repeat(40);
         let markdown = format!("# Top\n\n{padding}Selected sentence.{padding}\n");
 
-        let anchor = create(ARTIFACT, &markdown, SELECTED).expect("create anchor");
+        let anchor = create(ARTIFACT, &markdown, SELECTED, 0).expect("create anchor");
 
         assert!(
             anchor.before_text.ends_with('—'),

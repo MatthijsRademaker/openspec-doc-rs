@@ -3,7 +3,6 @@
 ## Purpose
 
 The `serve` subcommand's local HTTP server: binding to a host and an available port, printing the resolved URL and opening a browser at it unless suppressed, and routing over the project's two scoping regimes — session-keyed routes for pre-proposal explore tabs, change-name-keyed routes for proposal and apply tabs. It also owns the live-update mechanism those routes share: a filesystem watcher per scope feeding a server-sent-events endpoint, so an open page updates without a reload. What a page *contains* belongs to other capabilities; this one owns the server, its route table, and the push channel they render into.
-
 ## Requirements
 ### Requirement: Serve subcommand startup
 The system SHALL bind a local HTTP server to `127.0.0.1` by default (or `--host` when given), SHALL select an available port when `--port` is omitted or `0`, and SHALL print the resolved local URL on successful startup.
@@ -52,4 +51,28 @@ The system SHALL provide a server-sent-events endpoint per session or change rou
 #### Scenario: Watcher initialization failure falls back to polling
 - **WHEN** the filesystem watcher backend fails to initialize for a route
 - **THEN** the system SHALL fall back to a bounded polling interval for that route and SHALL log the fallback rather than silently serving no updates
+
+### Requirement: An artifact is decomposed into anchorable blocks
+The system SHALL decompose an artifact's markdown into blocks, each carrying a stable identifier, its rendered form, the exact source text it was sliced from, and that text's byte range in the artifact.
+
+Blocks are paragraphs, headings, list items, table rows, and lines within a code fence. A list item is a block rather than the whole list, because a tasks file is one list and commenting on it as a single unit says nothing.
+
+The source text is sliced from the artifact by the reported range and is never reconstructed from the parse events. Reconstruction produces text that differs from the file wherever the parser normalised anything, and that difference is invisible until an anchor's substring search fails in front of a reviewer.
+
+#### Scenario: Every block's source occurs in its artifact
+- **WHEN** an artifact is decomposed into blocks
+- **THEN** each block's source text SHALL occur in that artifact's markdown
+
+#### Scenario: A block reports where its source is
+- **WHEN** an artifact is decomposed into blocks
+- **THEN** each block SHALL report the byte range its source text occupies in the artifact
+
+### Requirement: Markup in an artifact is not markup on the page
+The system SHALL render raw HTML found in an artifact as text rather than emitting it as markup.
+
+Artifacts are written by an agent and rendered into the reviewer's browser. Passing agent-written markup through to the page is a stored-injection path, and "it is only localhost" is the reasoning that keeps one alive until the day it matters.
+
+#### Scenario: A script element in an artifact arrives as text
+- **WHEN** an artifact contains a `<script>` element
+- **THEN** the block containing it SHALL carry that element as escaped text and SHALL NOT carry it as markup
 

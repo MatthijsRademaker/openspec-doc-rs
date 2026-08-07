@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn a_missing_artifact_resolves_an_anchor_as_missing() {
         let temp = TempDir::new().expect("temp dir");
-        let anchor = anchor::create("openspec/gone.md", "Selected text.", "Selected text.")
+        let anchor = anchor::create("openspec/gone.md", "Selected text.", "Selected text.", 0)
             .expect("create anchor");
 
         let resolution = resolve(temp.path(), Some(&anchor)).expect("resolve");
@@ -108,8 +108,8 @@ mod tests {
     fn a_comment_with_no_anchor_resolves_as_unanchored_not_orphaned() {
         let temp = TempDir::new().expect("temp dir");
         fs::write(temp.path().join("note.md"), "Nothing matching here.\n").expect("write artifact");
-        let lost =
-            anchor::create("note.md", "Rewritten away.", "Rewritten away.").expect("create anchor");
+        let lost = anchor::create("note.md", "Rewritten away.", "Rewritten away.", 0)
+            .expect("create anchor");
 
         let unanchored = resolve(temp.path(), None).expect("resolve");
         let orphaned = resolve(temp.path(), Some(&lost)).expect("resolve");

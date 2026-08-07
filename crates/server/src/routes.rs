@@ -235,6 +235,7 @@ fn add_comment(state: &AppState, resolved: &Resolved, form: &NewComment) -> Resu
         &resolved.key,
         &form.artifact_path,
         &form.selected_text,
+        0,
         &form.body,
     )?;
 

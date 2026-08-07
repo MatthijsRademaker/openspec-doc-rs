@@ -8,6 +8,7 @@ axum.workspace = true
 chrono.workspace = true
 notify.workspace = true
 openspec-doc-core.workspace = true
+pulldown-cmark.workspace = true
 rust-embed.workspace = true
 serde.workspace = true
 thiserror.workspace = true

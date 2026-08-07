@@ -422,6 +422,7 @@ mod tests {
             &key,
             &scratch::session_relative(SESSION_A).expect("relative"),
             "An idea worth keeping.",
+            0,
             "Which part?",
         )
         .expect("add comment");

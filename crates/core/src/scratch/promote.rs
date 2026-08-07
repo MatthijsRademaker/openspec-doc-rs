@@ -307,6 +307,7 @@ mod tests {
             &session_scope,
             &note::session_relative("session-a").expect("relative path"),
             "An idea worth keeping.",
+            0,
             "Which part is worth keeping?",
         )
         .expect("add comment");

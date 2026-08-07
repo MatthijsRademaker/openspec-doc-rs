@@ -15,7 +15,7 @@ pub fn add(
 ) -> Result<(), Error> {
     let comment = match (artifact, selected_text) {
         (Some(artifact), Some(selected_text)) => {
-            comments::add(&project.root, &scope, artifact, selected_text, body)?
+            comments::add(&project.root, &scope, artifact, selected_text, 0, body)?
         }
         (None, None) => comments::add_unanchored(&project.root, &scope, body)?,
         // The two arguments require each other.
