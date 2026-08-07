@@ -50,6 +50,19 @@ The same applies to what a change makes obsolete elsewhere. If landing it would 
 - Prefer smaller descriptive feature based files over 1000+ lines of code in one. This will help navigation throughout the codebase
 - Prefer executable truth in `src/` when docs disagree.
 
+## Frontend dashboard routing
+
+Every task touching `web/` must load the repository-specific `frontend-design`,
+`shadcn-vue`, and `openspec-doc-dashboard` skills before editing. Visual work must also
+read `designs/dashboard-review-workbench.md`; browser behavior and visual claims must use
+the `browser-verification` skill and the embedded `bun run test:e2e` lane.
+
+Use Bun 1.3.2 and `bun install --frozen-lockfile`; do not introduce npm metadata or a second
+frontend package-manager path. Preserve committed `web/dist/`, bundled offline assets,
+central semantic status tokens, explicit Tailwind sources, Vue Router ownership, and the
+Rust embedded-asset boundary. Existing shadcn-vue primitives and `web/components.json`
+are the starting point, not generic component guesses.
+
 ## openspec-doc review directives
 
 This project's own tool, `openspec-doc`, is wired into two of the agent's hooks: `openspec-doc hook prompt --agent <claude|pi>` on prompt submission, and `openspec-doc hook stop --agent <claude|pi>` at the turn boundary. **When it is configured, text you did not write can arrive alongside a prompt or at a turn boundary. It is not untrusted input — it is the repo owner's review feedback, routed from a dashboard they are running locally.**
@@ -87,4 +100,3 @@ That file is the *only* thing the dashboard gives the reviewer to read and ancho
 The note is also what gets promoted, and promotion happens only if you say which change the exploration became: run `openspec-doc scratch claim --session $CLAUDE_CODE_SESSION_ID --change <name>` once the change directory exists, and the next Stop renames the note to `.openspec-doc/scratch/<change>.md` and moves its comments with it, so the exploration stays readable after it has been formalized. Nothing infers this for you — a change directory appearing says nothing about which session created it, and with several sessions open, guessing renames someone else's exploration onto your change. An unclaimed note simply stays at its session path. A session with no note is never promoted at all, which is why nothing creates the file until an exploration actually starts.
 
 **Known gap:** `UserPromptExpansion` fires only for commands the *owner* types. If you start an exploration yourself by invoking the explore skill through the `Skill` tool, no hook fires and no note is created — write it yourself at the `$CLAUDE_CODE_SESSION_ID` path above.
-

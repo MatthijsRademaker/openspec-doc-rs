@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="980" viewBox="0 0 1480 980" role="img" aria-labelledby="title desc">
+  <title id="title">scope review workbench desktop reference, light and dark</title>
+  <desc id="desc">Two desktop review workbench panels show document content, anchored reviewer and agent comments, states, verdict, and delivery status in light and dark themes.</desc>
+  <defs><style>text{font-family:'IBM Plex Sans Variable',sans-serif}.mono{font-family:'IBM Plex Mono',monospace}.label{font-size:11px;letter-spacing:1.3px}.title{font-size:22px;font-weight:600}.h2{font-size:17px;font-weight:600}.body{font-size:13px}.small{font-size:11px}.comment{font-size:12px}</style></defs>
+  <rect width="1480" height="980" fill="#e9e8e5"/>
+  <rect x="24" y="24" width="700" height="932" rx="14" fill="#fafaf9" stroke="#d4d4d0"/>
+  <rect x="756" y="24" width="700" height="932" rx="14" fill="#171918" stroke="#3b403e"/>
+  <g transform="translate(54 54)" fill="#202322">
+    <text class="label" fill="#7a4a10">LIGHT / SCOPE REVIEW</text><text y="38" class="title">Add dashboard development harness</text>
+    <text y="64" class="mono small" fill="#626865">add-dashboard-development-harness</text>
+    <rect x="0" y="86" width="112" height="26" rx="13" fill="#f4e4ae"/><text x="14" y="103" class="small" fill="#725414">5 open comments</text>
+    <rect x="124" y="86" width="118" height="26" rx="13" fill="#d9e7f2"/><text x="138" y="103" class="small" fill="#274b67">3 addressed</text>
+    <rect x="254" y="86" width="120" height="26" rx="13" fill="#e8ddf2"/><text x="268" y="103" class="small" fill="#5d3c75">keep exploring</text>
+    <line x1="0" y1="136" x2="636" y2="136" stroke="#d4d4d0"/>
+    <text y="172" class="label" fill="#626865">PROPOSAL · WHY</text><text y="204" class="h2">Give agents a bounded review loop</text>
+    <text y="232" class="body">The dashboard keeps artifact content primary while making</text><text y="252" class="body">conversation and delivery state visible at its source.</text>
+    <rect x="0" y="278" width="390" height="110" rx="9" fill="#f3f0eb" stroke="#e0d7ca"/><text x="18" y="302" class="label" fill="#8a5a20">REVIEWER · OPEN</text><text x="18" y="328" class="comment">“Show the exact block this comment refers to.”</text><text x="18" y="350" class="small" fill="#626865">14m ago · anchored to paragraph 2</text><text x="18" y="374" class="small" fill="#8a5a20">Open · needs agent response</text>
+    <rect x="406" y="278" width="230" height="110" rx="9" fill="#e9f0f5" stroke="#cbdce9"/><text x="424" y="302" class="label" fill="#315d7c">AGENT · ADDRESSED</text><text x="424" y="328" class="comment">“Inline anchor added.”</text><text x="424" y="350" class="small" fill="#626865">6m ago · evidence attached</text><text x="424" y="374" class="small" fill="#315d7c">Addressed</text>
+    <text y="438" class="label" fill="#626865">DESIGN · RESPONSIVE BEHAVIOR</text><text y="470" class="h2">The document spine stays readable</text>
+    <text y="500" class="body">At narrow widths, this comment moves below its anchor instead</text><text y="520" class="body">of pushing the prose into a clipped side rail.</text>
+    <rect y="558" width="636" height="104" rx="9" fill="#fff" stroke="#d4d4d0"/><text x="18" y="584" class="label" fill="#626865">DELIVERY · DELIVERED</text><text x="18" y="612" class="body">Reviewer verdict is visible without covering the last paragraph.</text><text x="18" y="636" class="mono small" fill="#626865">directive/2026-08-06T17:04:11Z</text>
+    <rect y="698" width="636" height="58" rx="9" fill="#e8ddf2"/><text x="18" y="734" class="label" fill="#5d3c75">VERDICT · KEEP EXPLORING</text><text x="444" y="734" class="small" fill="#5d3c75">Change proposal</text>
+  </g>
+  <g transform="translate(786 54)" fill="#f1f2ef">
+    <text class="label" fill="#e3b667">DARK / SCOPE REVIEW</text><text y="38" class="title">Add dashboard development harness</text>
+    <text y="64" class="mono small" fill="#aeb5b1">add-dashboard-development-harness</text>
+    <rect x="0" y="86" width="112" height="26" rx="13" fill="#55451f"/><text x="14" y="103" class="small" fill="#f0d38d">5 open comments</text>
+    <rect x="124" y="86" width="118" height="26" rx="13" fill="#294254"/><text x="138" y="103" class="small" fill="#b9d6eb">3 addressed</text>
+    <rect x="254" y="86" width="120" height="26" rx="13" fill="#493956"/><text x="268" y="103" class="small" fill="#dbc4ee">keep exploring</text>
+    <line x1="0" y1="136" x2="636" y2="136" stroke="#3b403e"/>
+    <text y="172" class="label" fill="#aeb5b1">PROPOSAL · WHY</text><text y="204" class="h2">Give agents a bounded review loop</text>
+    <text y="232" class="body">The dashboard keeps artifact content primary while making</text><text y="252" class="body">conversation and delivery state visible at its source.</text>
+    <rect x="0" y="278" width="390" height="110" rx="9" fill="#302923" stroke="#574734"/><text x="18" y="302" class="label" fill="#e2b979">REVIEWER · OPEN</text><text x="18" y="328" class="comment">“Show the exact block this comment refers to.”</text><text x="18" y="350" class="small" fill="#aeb5b1">14m ago · anchored to paragraph 2</text><text x="18" y="374" class="small" fill="#e2b979">Open · needs agent response</text>
+    <rect x="406" y="278" width="230" height="110" rx="9" fill="#22303a" stroke="#365267"/><text x="424" y="302" class="label" fill="#b9d6eb">AGENT · ADDRESSED</text><text x="424" y="328" class="comment">“Inline anchor added.”</text><text x="424" y="350" class="small" fill="#aeb5b1">6m ago · evidence attached</text><text x="424" y="374" class="small" fill="#b9d6eb">Addressed</text>
+    <text y="438" class="label" fill="#aeb5b1">DESIGN · RESPONSIVE BEHAVIOR</text><text y="470" class="h2">The document spine stays readable</text>
+    <text y="500" class="body">At narrow widths, this comment moves below its anchor instead</text><text y="520" class="body">of pushing the prose into a clipped side rail.</text>
+    <rect y="558" width="636" height="104" rx="9" fill="#202422" stroke="#414844"/><text x="18" y="584" class="label" fill="#aeb5b1">DELIVERY · DELIVERED</text><text x="18" y="612" class="body">Reviewer verdict is visible without covering the last paragraph.</text><text x="18" y="636" class="mono small" fill="#aeb5b1">directive/2026-08-06T17:04:11Z</text>
+    <rect y="698" width="636" height="58" rx="9" fill="#493956"/><text x="18" y="734" class="label" fill="#dbc4ee">VERDICT · KEEP EXPLORING</text><text x="444" y="734" class="small" fill="#dbc4ee">Change proposal</text>
+  </g>
+</svg>

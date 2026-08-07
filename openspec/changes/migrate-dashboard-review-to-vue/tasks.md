@@ -5,6 +5,7 @@
 - [x] 0.3 `extend-comment-model` — archived 2026-08-06. Unanchored comments exist, so the `+` composer has a record to write
 - [x] 0.4 `add-comment-thread-actions` — archived 2026-08-06. The `addressed` status exists and its interface half was deliberately left for this change
 - [ ] 0.5 `add-change-approval-gate` carries a `dashboard-html-views` delta against files this change deletes. It is last in priority and may never be built, so it is left alone rather than re-scoped speculatively. If it is ever started, do this first
+- [ ] 0.6 Confirm `add-dashboard-development-harness` has landed. It provides pinned Bun, Router, working Vite API proxying, frontend and embedded-browser gates, the review-workbench design reference, and repository-specific frontend skills and MCP
 
 ## 1. The JSON API
 

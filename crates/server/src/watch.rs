@@ -228,6 +228,10 @@ mod tests {
         }
     }
 
+    // macOS follow-up (2026-08-07): `notify::RecommendedWatcher` initializes but
+    // can deliver no write event for these temporary directories. If this times
+    // out on macOS while polling passes, rerun on Linux/CI before changing
+    // watcher code; reproduce there before treating it as a product regression.
     #[tokio::test]
     async fn a_write_under_the_watched_path_is_one_update() {
         let dir = TempDir::new().expect("temp dir");
@@ -276,6 +280,10 @@ mod tests {
 
     /// A scope spans separate trees — a change's directory and the sidecars its
     /// comments live in — and a write in either one is that scope's update.
+    // macOS follow-up (2026-08-07): `notify::RecommendedWatcher` initializes but
+    // can deliver no write event for these temporary directories. If this times
+    // out on macOS while polling passes, rerun on Linux/CI before changing
+    // watcher code; reproduce there before treating it as a product regression.
     #[tokio::test]
     async fn a_write_in_any_watched_tree_is_an_update() {
         let dir = TempDir::new().expect("temp dir");
@@ -300,6 +308,10 @@ mod tests {
     /// The comment and verdict sidecars only exist once a reviewer writes one,
     /// so a scope whose sidecar directory is still absent must not fall back to
     /// polling for want of a directory to watch.
+    // macOS follow-up (2026-08-07): `notify::RecommendedWatcher` initializes but
+    // can deliver no write event for these temporary directories. If this times
+    // out on macOS while polling passes, rerun on Linux/CI before changing
+    // watcher code; reproduce there before treating it as a product regression.
     #[tokio::test]
     async fn a_sidecar_directory_that_does_not_exist_yet_is_still_watched() {
         let dir = TempDir::new().expect("temp dir");

@@ -32,7 +32,7 @@ Delivered exactly once across the two.
 ## Install
 
 ```bash
-cargo install --path crates/cli
+cargo install --path crates/cli --locked
 openspec-doc serve          # discovers the project root by walking up from the cwd
 ```
 
@@ -68,8 +68,8 @@ web             the dashboard's frontend: Vite, Vue, Tailwind, shadcn-vue
 `core` holds every rule and every file format; `server` and `cli` are two front ends over it with no
 persistence logic of their own.
 
-`web/dist/` is committed and compiled into the binary, so `cargo install` needs no Node toolchain. CI
-rebuilds it from a clean checkout and fails if it differs — see
+`web/dist/` is committed and compiled into the binary, so `cargo install` needs no Node or Bun toolchain.
+CI rebuilds it from a clean checkout and fails if it differs — see
 [conventions](docs/docs/development/conventions.md#the-frontend).
 
 ## Build and test
@@ -80,6 +80,30 @@ cargo test -p openspec-doc-core -p openspec-doc-cli    # 182 of them, hermetic
 cargo clippy --workspace --all-targets
 cargo fmt --all --check
 ```
+
+## Dashboard frontend development
+
+`web/dist/` is generated and committed. Use Bun 1.3.2 from `web/.bun-version`; do not use npm or
+regenerate assets with a different package manager.
+
+```bash
+cd web
+bun install --frozen-lockfile
+bun run check
+bun run build
+bun run test:e2e
+```
+
+For the live Vite loop, run the Rust API on fixed port 8791 in one shell and Vite in another:
+
+```bash
+openspec-doc serve --port 8791 --no-open
+cd web && bun run dev
+```
+
+Vite proxies same-origin `/api` to `http://127.0.0.1:8791`; set
+`OPENSPEC_DOC_API_PROXY_TARGET` for another local target. `bun run test:e2e` builds and serves the
+embedded Rust application on its own fixed test port, so a Vite-only check is not enough.
 
 No network needed, but `scratch::promote`'s validation tests shell out to `openspec validate`, so that
 binary must be on `PATH`. See `docs/docs/development/testing.md`.

@@ -6,6 +6,8 @@ dist/
 # .github/workflows/frontend-assets.yml.
 !web/dist/
 coverage/
+web/test-results/
+web/playwright-report/
 doc_build/
 .rspress/
 .env

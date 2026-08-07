@@ -2,17 +2,21 @@
 
 Two changes have already landed the parts of this rewrite that could be settled without an interface. `add-artifact-block-model` proved that markdown can be rendered without giving up anchoring, and that the block a reviewer comments on anchors to the occurrence they meant. `add-vue-dashboard-foundation` proved that a Vue application ships inside the binary, installs without Node, and does not go stale unnoticed.
 
+`add-dashboard-development-harness` must land before this cutover. It changes no review behavior; it replaces npm with pinned Bun and establishes Router, local API proxying, frontend and embedded-browser gates, a review-workbench design reference, and repository-specific agent guidance. This design assumes those development contracts rather than recreating them here.
+
 What is left is the part that is genuinely about the interface: what a reviewer sees, what they can do to a comment, and where the controls live. This is the cutover.
 
 ## Goals / Non-Goals
 
 **Goals:**
+
 - A comment is visible next to the text it is about.
 - A comment thread can be replied to, resolved and reopened without leaving the browser.
 - Reading a proposal in the dashboard is not worse than reading it in an editor.
 - The reviewer can tell whether the verdict they submitted actually reached the agent.
 
 **Non-Goals:**
+
 - Not editing artifacts from the browser. The dashboard reads and annotates; the agent writes. That exclusion is in the vision and is unchanged.
 - Not remote or multi-user. `127.0.0.1`, one reviewer.
 - Not a diff view. Comments anchor to text in a live document, not to a frozen revision.

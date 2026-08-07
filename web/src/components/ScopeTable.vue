@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { age } from '@/lib/age'
-import type { Scope } from '@/lib/scopes'
 import { Badge } from '@/components/ui/badge'
 import {
   Table,
@@ -11,6 +9,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { age } from '@/lib/age'
+import type { Scope } from '@/lib/scopes'
 
 const props = defineProps<{
   scopes: Scope[]
@@ -68,7 +68,7 @@ const props = defineProps<{
           <span v-else class="text-muted-foreground">0</span>
         </TableCell>
         <TableCell>
-          <Badge v-if="scope.verdict" variant="secondary">{{ scope.verdict }}</Badge>
+          <Badge v-if="scope.verdict" class="bg-verdict text-verdict-foreground">{{ scope.verdict }}</Badge>
           <span v-else class="text-muted-foreground">—</span>
         </TableCell>
       </TableRow>
