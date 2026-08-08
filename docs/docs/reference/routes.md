@@ -12,7 +12,7 @@ Vue Router owns all three interface routes. Rust validates scope routes before s
 | `/api/index` | GET | all discovered sessions and active changes |
 | `/api/sessions/<id>` | GET | session artifacts as blocks, comments, counts, verdict history, delivery state |
 | `/api/changes/<name>` | GET | change artifacts as blocks, comments, counts, verdict history, delivery state |
-| `/api/<scope>/<key>/events` | GET | server-sent `data: changed` events |
+| `/api/<scope>/<key>/events` | GET | server-sent JSON events with `artifactsChanged` and `reviewStateChanged` flags |
 | `/api/<scope>/<key>/comments` | POST | create anchored or unanchored comment JSON |
 | `/api/<scope>/<key>/comments/<comment-id>/replies` | POST | append reply JSON |
 | `/api/<scope>/<key>/comments/<comment-id>/status` | POST | reviewer transition to `open` or `resolved` |
@@ -34,7 +34,7 @@ Each scope response contains:
 
 Session has one possible artifact: scratch note. Session with no note is valid and returns empty artifact list. Change returns present `proposal.md`, `design.md`, `tasks.md`, spec deltas, and promoted scratch note in reading order.
 
-Artifacts do not live-update yet. SSE causes client to refetch scope detail, but open scope intentionally keeps current artifact rendering until `add-live-artifact-updates` lands.
+Artifacts live-update when an SSE event reports `artifactsChanged`. A clean page applies the new rendered blocks and preserves scroll position; a page with unsent composer text keeps its current artifact and reports the pending refresh until that composer is sent or dismissed. Review-state updates never wait.
 
 ## Comments
 
@@ -78,4 +78,4 @@ Comments accumulate without notifying agent. Verdict triggers directive, and dir
 
 ## Live updates
 
-Each scope gets filesystem watcher and broadcast channel. Watcher covers scope tree plus `.openspec-doc/`, filters events to scope paths, and coalesces write bursts. Vue client refetches scope detail after event, so replies, statuses, counts, and verdict delivery reconcile without reload. Watcher initialization failure falls back to one-second polling and logs fallback.
+Each scope gets filesystem watcher and broadcast channel. Watcher covers scope tree plus `.openspec-doc/`, classifies artifact and review-sidecar paths, and coalesces write bursts into one JSON event. Vue client refetches scope detail after event: replies, statuses, counts, verdict delivery, and clean artifact pages reconcile without reload. Watcher initialization failure falls back to one-second polling and logs fallback.

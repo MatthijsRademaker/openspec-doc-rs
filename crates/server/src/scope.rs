@@ -319,15 +319,18 @@ fn read_dir_names(dir: &Path) -> Result<Vec<String>, Error> {
 /// directory is only created when its first record is written; the relevant
 /// paths then narrow the events back down to this scope's own files.
 fn target(project: &Project, key: &ScopeKey, extra: &[PathBuf]) -> Result<Target, Error> {
-    let mut relevant = vec![key.path(&project.root)?, verdict::path(&project.root, key)?];
-    relevant.extend(extra.iter().cloned());
+    let mut artifacts = Vec::new();
+    let mut review_state = vec![key.path(&project.root)?, verdict::path(&project.root, key)?];
 
     match key {
         ScopeKey::Session(session_id) => {
-            relevant.push(scratch::session_path(&project.root, session_id)?);
-            relevant.push(hook::directive_path(&project.root, session_id)?);
+            artifacts.push(scratch::session_path(&project.root, session_id)?);
+            review_state.push(hook::directive_path(&project.root, session_id)?);
         }
-        ScopeKey::Change(name) => relevant.push(scratch::change_path(&project.root, name)),
+        ScopeKey::Change(name) => {
+            artifacts.extend(extra.iter().cloned());
+            artifacts.push(scratch::change_path(&project.root, name));
+        }
     }
 
     let mut watched_dirs = vec![project.root.join(".openspec-doc")];
@@ -335,7 +338,8 @@ fn target(project: &Project, key: &ScopeKey, extra: &[PathBuf]) -> Result<Target
 
     Ok(Target {
         watched_dirs,
-        relevant,
+        artifacts,
+        review_state,
     })
 }
 

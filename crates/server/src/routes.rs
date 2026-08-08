@@ -17,7 +17,7 @@ use tokio_stream::{StreamExt, wrappers::BroadcastStream};
 
 use crate::error::{self, Error};
 use crate::scope::Resolved;
-use crate::watch::{Hub, Target};
+use crate::watch::{Hub, Target, Update};
 use crate::{api, assets, scope};
 
 #[derive(Clone)]
@@ -317,8 +317,14 @@ async fn unknown(uri: Uri) -> Response {
 
 fn stream(hub: &Hub, target: &Target) -> impl IntoResponse + use<> {
     let updates = hub.subscribe(target);
-    let events = BroadcastStream::new(updates)
-        .map(|_| Ok::<_, Infallible>(Event::default().data("changed")));
+    let events = BroadcastStream::new(updates).map(|update| {
+        let update = update.unwrap_or_else(|_| Update::all());
+        Ok::<_, Infallible>(
+            Event::default()
+                .json_data(update)
+                .expect("live update payload is serializable"),
+        )
+    });
 
     Sse::new(events).keep_alive(KeepAlive::default())
 }
@@ -790,7 +796,9 @@ mod tests {
         let mut response = String::new();
         let mut buffer = [0_u8; 1024];
         let pushed = tokio::time::timeout(Duration::from_secs(10), async {
-            while !response.contains("data: changed") {
+            while !response
+                .contains("data: {\"artifactsChanged\":false,\"reviewStateChanged\":true}")
+            {
                 let read = stream.read(&mut buffer).await.expect("read");
                 assert_ne!(read, 0, "stream closed: {response}");
                 response.push_str(&String::from_utf8_lossy(&buffer[..read]));
@@ -800,6 +808,14 @@ mod tests {
         updates.abort();
 
         assert!(pushed.is_ok(), "no event pushed: {response}");
+        assert!(
+            response.contains("\"artifactsChanged\":false"),
+            "unexpected event: {response}"
+        );
+        assert!(
+            response.contains("\"reviewStateChanged\":true"),
+            "unexpected event: {response}"
+        );
     }
 
     #[test]

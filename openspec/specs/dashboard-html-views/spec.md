@@ -3,9 +3,7 @@
 ## Purpose
 
 What the embedded Vue dashboard renders: an observatory index plus session and change review workbenches composed around formatted artifact blocks, spatially anchored conversation, thread actions, visible verdict delivery state, and persistent decision controls. The Rust server supplies JSON and event streams; Vue Router owns browser navigation and the built assets remain embedded in the binary. Comment records belong to `anchored-comments`; HTTP routing and push transport belong to `dashboard-server`.
-
 ## Requirements
-
 ### Requirement: Session page renders scratch note and comments
 
 The system SHALL render, at `/sessions/<session_id>`, the session's scratch note as formatted markdown decomposed into blocks, with its comments shown against the blocks they anchor to.
@@ -209,13 +207,33 @@ This is what tells a reviewer whether there is anything left to act on without r
 - **THEN** the shown counts SHALL update without the user reloading the page
 
 ### Requirement: Live update without reload
+The system SHALL update a rendered page's comment list, verdict state and rendered artifacts when the underlying SSE endpoint emits an event, without requiring a full page reload. It SHALL defer an artifact update while the reviewer has unsent text in a composer, indicating that the artifact has changed and applying the update once the composer is sent or dismissed. It SHALL NOT defer a review-state update.
 
-The system SHALL update a rendered page's comment list and verdict state when the underlying SSE endpoint emits an event, without requiring a full page reload.
+The filesystem watcher already reports artifact changes and the event already reaches the browser; only the review state is refreshed in response. An exploration that is readable "while it is happening" cannot leave the exploration itself stale. Replacing the document under an open composer is why that refresh was limited in the first place, so the limit is replaced with a rule rather than removed.
 
 #### Scenario: Comment added in one tab appears in another
-
 - **WHEN** a comment is added against an artifact while a second browser tab has the same page open
 - **THEN** the second tab SHALL reflect the new comment without the user reloading the page
+
+#### Scenario: An artifact rewritten under an idle page updates
+- **WHEN** an artifact changes while its page is open with no unsent composer text
+- **THEN** the system SHALL render the new content without the reviewer acting
+
+#### Scenario: An artifact rewritten under a page with unsent text offers a refresh
+- **WHEN** an artifact changes while a composer holds unsent text
+- **THEN** the system SHALL indicate that the artifact has changed and SHALL NOT replace the content until the composer is sent or dismissed
+
+#### Scenario: A deferred update applies once the composer closes
+- **WHEN** a composer holding unsent text is sent or dismissed after an artifact change was deferred
+- **THEN** the system SHALL apply the deferred update
+
+#### Scenario: Reading position survives an update
+- **WHEN** an artifact update is applied to a page the reviewer has scrolled
+- **THEN** the system SHALL preserve the reviewer's position in the document
+
+#### Scenario: An artifact appearing for the first time is rendered
+- **WHEN** a scope's page is open with no artifact on disk and an artifact is then written
+- **THEN** the system SHALL render it without the reviewer reloading
 
 ### Requirement: The index identifies each scope by more than its key
 
@@ -266,24 +284,50 @@ The identifier is what an operator pastes into `openspec-doc comment list`, so i
 
 ### Requirement: The index instantiates the observatory visual system
 
-The system SHALL render the existing session and change index through the shared observatory visual system while preserving every scope field, link, and loading, empty, and failure distinction already required of the index.
+The system SHALL render the existing session and change index through the shared observatory visual system as a dominant Changes observation field and a separate secondary Sessions instrument, while preserving every scope field, identifier-keyed link, and loading, empty, and failure distinction already required of the index. A large session inventory SHALL NOT delay visual or keyboard access to Changes.
 
-#### Scenario: Real scopes render as instrument registers
+#### Scenario: Changes are the primary index subject
 
 - **WHEN** the index returns discovered sessions and changes
-- **THEN** the system SHALL present separate session and change registers with each title, exact identifier, modified time, open-comment count, verdict, and most-recently-active marker supplied by the endpoint
+- **THEN** the system SHALL present Changes before Sessions in semantic reading and keyboard order, and SHALL give Changes the dominant desktop content region
+
+#### Scenario: Real scopes retain complete index data
+
+- **WHEN** the index renders its change and session instruments
+- **THEN** it SHALL show each supplied title, exact identifier, modified time, open-comment count, verdict, and most-recently-active marker, and each primary link SHALL remain keyed by exact identifier
+
+#### Scenario: A large session inventory does not bury changes
+
+- **WHEN** the index contains more sessions than changes at desktop width
+- **THEN** the Changes heading and change links SHALL remain available in the primary initial content region while every session and its metadata remain reachable through the secondary session instrument
+
+#### Scenario: An untitled session does not duplicate its identifier as display text
+
+- **WHEN** a session has neither a title nor a promotion name
+- **THEN** the system SHALL use its exact identifier once as its linked identity in the operational typography role and SHALL NOT repeat the same value as a separate display-serif title
 
 #### Scenario: Index atmosphere does not invent product state
 
-- **WHEN** the index renders celestial framing or instrument labels
-- **THEN** it SHALL NOT show a fake repository, activity event, review control, scope route, or status unsupported by current data
+- **WHEN** the index renders celestial framing, observation plates, or instrument labels
+- **THEN** it SHALL NOT show a fake repository, activity event, lifecycle stage, review control, scope route, or status unsupported by current data
 
 #### Scenario: Index failure remains distinct from emptiness
 
 - **WHEN** loading the index endpoint fails
 - **THEN** the observatory interface SHALL render a failure state distinct from both loading and a successfully loaded empty project
 
-#### Scenario: Index remains complete at narrow width
+#### Scenario: Index loading remains explicit
+
+- **WHEN** the index endpoint has not completed
+- **THEN** the observatory interface SHALL expose an explicit busy loading instrument rather than an empty register or decorative-only state
+
+#### Scenario: Empty registers remain successful results
+
+- **WHEN** the index endpoint returns no changes, no sessions, or neither
+- **THEN** each empty register SHALL be identified as successfully empty and SHALL NOT be presented as a failure
+
+#### Scenario: Index remains complete and Changes-first at narrow width
 
 - **WHEN** the index is rendered at 390 CSS pixels wide
-- **THEN** every scope identifier, modified value, open-comment count, verdict, primary link, and most-recently-active marker SHALL remain visible and reachable without horizontal page scrolling
+- **THEN** Changes SHALL precede Sessions in one logical flow, every scope identifier, modified value, open-comment count, verdict, primary link, and most-recently-active marker SHALL remain visible and reachable, and the page SHALL have no horizontal scrolling
+

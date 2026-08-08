@@ -81,13 +81,20 @@ rail thumbnails, and empty instruments. They are `aria-hidden`, non-interactive,
 sit behind prose, controls, focus rings, or state labels. At narrow width atmosphere shrinks
 or disappears before content.
 
-Only named runtime slots may use raster derivatives. Current allowlist:
+Only named runtime slots may use raster derivatives. Index allowlist:
 
-- `web/public/assets/images/index-orbit.webp` — bounded index masthead atmosphere, derived
-  from `designs/visual-language/abstract-star-system.png`.
+| Runtime slot | Source and crop | Output | Rendered role and responsive behavior |
+| --- | --- | --- | --- |
+| `web/public/assets/images/index-observation-field.webp` | `main-panel-background.png`; crop `x=128, y=75, w=1408, h=845` excludes far-left pseudo-control rail while retaining black safe space and right-side face/orbit field | 1200×720 WebP, quality 84, 95,710 bytes | Decorative asymmetric masthead field. Empty alt and `aria-hidden`; desktop artwork enters from right beside protected text plane. Remains as bounded crop at 390px. |
+| `web/public/assets/images/index-plate-sun.webp` | `abstract-sun.png`; crop `x=196, y=120, w=1280, h=640` centers dark solar aperture and radiating line field | 640×320 WebP, quality 82, 65,168 bytes | Decorative first plate in hard-edged lower strip. May disappear at intermediate width; hidden at 390px. |
+| `web/public/assets/images/index-plate-face.webp` | `abstract-face.png`; crop `x=196, y=150, w=1280, h=640` isolates eye and halftone texture rather than repeating masthead face composition | 640×320 WebP, quality 82, 73,302 bytes | Decorative second plate in hard-edged lower strip. May disappear at intermediate width; hidden at 390px. |
+| `web/public/assets/images/index-plate-star-system.webp` | `abstract-star-system.png`; crop `x=168, y=230, w=1280, h=640` places orbital intersections and nodes off center | 640×320 WebP, quality 82, 15,416 bytes | Decorative third plate in hard-edged lower strip. First plate removed at intermediate width; full strip hidden at 390px. |
 
-Original source boards remain in `designs/visual-language/`. Runtime raster payload is
-checked after every production build and must stay at or below 6 MiB.
+These four slots replace `index-orbit.webp`; retaining that file would create competing index
+art systems. Plate groups and every image remain non-interactive, use empty alt text, and are
+absent from accessibility tree. Original source boards remain in
+`designs/visual-language/`. Runtime raster payload is checked after every production build
+and must stay at or below 6 MiB.
 
 ## Geometry, responsiveness, and motion
 

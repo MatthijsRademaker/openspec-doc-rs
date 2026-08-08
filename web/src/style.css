@@ -360,16 +360,6 @@
   pointer-events: none;
 }
 
-.orbital-frame__image {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0.68;
-  filter: contrast(1.08) saturate(0.72);
-}
-
 .orbital-frame__geometry {
   position: absolute;
   inset: 0;
@@ -385,23 +375,67 @@
   width: min(100%, 90rem);
   min-width: 0;
   margin: 0 auto;
-  padding: clamp(var(--space-2), 4vw, var(--space-8));
-  gap: clamp(var(--space-4), 5vw, var(--space-8));
+  padding: clamp(var(--space-2), 3vw, var(--space-6));
+  gap: clamp(var(--space-3), 3vw, var(--space-4));
 }
 
-.observatory-masthead {
+.index-observation {
+  position: relative;
+  isolation: isolate;
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(18rem, 0.7fr);
   min-width: 0;
+  min-height: clamp(14rem, 24vw, 19rem);
+  overflow: hidden;
   border-block: var(--hairline) solid var(--border-ink);
+  background: var(--canvas);
 }
 
-.observatory-masthead__content {
+.index-observation__content {
+  position: relative;
+  z-index: 1;
   display: grid;
-  align-content: center;
+  width: min(52%, 42rem);
   min-width: 0;
-  padding: clamp(var(--space-4), 6vw, var(--space-8)) clamp(var(--space-2), 4vw, var(--space-6))
-    clamp(var(--space-4), 6vw, var(--space-8)) 0;
+  align-content: center;
+  gap: var(--space-3);
+  padding: clamp(var(--space-3), 4vw, var(--space-6));
+  background: var(--canvas);
+}
+
+.index-product {
+  margin: 0;
+  color: var(--accent-ink);
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.index-observation__art {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  clip-path: inset(0 0 0 46%);
+  pointer-events: none;
+}
+
+.index-observation__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  filter: contrast(1.04) saturate(0.76);
+}
+
+.index-observation::after {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  left: 52%;
+  width: var(--hairline);
+  background: var(--border-ink);
+  content: "";
 }
 
 .index-state {
@@ -427,9 +461,73 @@
   overflow-wrap: anywhere;
 }
 
-.scope-registers {
+.index-workbench {
   display: grid;
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 2fr) minmax(20rem, 0.8fr);
+  min-width: 0;
+  align-items: start;
+  gap: var(--space-2);
+}
+
+.scope-register {
+  min-width: 0;
+  border-radius: 0;
+}
+
+.index-plates {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1.15fr) minmax(12rem, 0.7fr);
+  min-width: 0;
+  border: var(--hairline) solid var(--border-ink);
+  background: var(--border-ink);
+  gap: var(--hairline);
+}
+
+.index-plate {
+  min-width: 0;
+  min-height: 8rem;
+  overflow: hidden;
+  background: var(--canvas);
+  pointer-events: none;
+}
+
+.index-plate__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: contrast(1.06) saturate(0.72);
+}
+
+.index-plate--sun .index-plate__image {
+  object-position: 52% center;
+}
+
+.index-plate--face .index-plate__image {
+  object-position: center;
+}
+
+.index-plate--star-system .index-plate__image {
+  object-position: 46% center;
+}
+
+.index-plates__posture {
+  display: grid;
+  min-width: 0;
+  align-content: end;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--canvas);
+  color: var(--muted-ink);
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  line-height: 1.7;
+  text-transform: uppercase;
+}
+
+.index-plates__posture p {
+  margin: 0;
 }
 
 .scope-register__header {
@@ -466,6 +564,14 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.scope-register--secondary .scope-register__list {
+  max-height: clamp(24rem, calc(100vh - 12rem), 42rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: var(--space-2);
+  scrollbar-gutter: stable;
 }
 
 .scope-register__item + .scope-register__item {
@@ -582,37 +688,146 @@
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 56rem) {
-  .observatory-masthead {
-    grid-template-columns: minmax(0, 1fr) minmax(12rem, 0.45fr);
+.scope-entry__link--identifier {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.scope-register--primary .scope-entry,
+.scope-register--secondary .scope-entry {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+.scope-register--primary .scope-entry__metadata,
+.scope-register--secondary .scope-entry__metadata {
+  border-top: var(--hairline) solid var(--border-ink);
+  border-left: 0;
+  padding-top: var(--space-2);
+}
+
+.scope-register--primary .scope-entry__link:not(.scope-entry__link--identifier) {
+  font-size: clamp(1.6rem, 2.5vw, 2.25rem);
+}
+
+.scope-register--secondary .scope-register__header {
+  align-items: start;
+}
+
+.scope-register--secondary .document-heading__title {
+  font-size: clamp(1.6rem, 2.6vw, 2rem);
+}
+
+.scope-register--secondary .scope-entry__title-line {
+  align-items: start;
+}
+
+.scope-register--secondary .scope-entry__link:not(.scope-entry__link--identifier) {
+  font-size: 1.35rem;
+}
+
+.scope-register--secondary .scope-entry__metadata {
+  grid-template-columns: minmax(0, 1fr);
+  padding-top: 0;
+}
+
+.scope-register--secondary .scope-entry__datum {
+  grid-template-columns: minmax(6.5rem, 0.8fr) minmax(0, 1fr);
+  padding: var(--space-1) 0;
+  border-top: var(--hairline) solid var(--border-ink);
+}
+
+.scope-register--secondary .scope-entry__datum + .scope-entry__datum {
+  border-left: 0;
+}
+
+@media (max-width: 70rem) {
+  .index-observation__content {
+    width: 58%;
   }
 
-  .scope-entry {
+  .index-observation__art {
+    clip-path: inset(0 0 0 54%);
+  }
+
+  .index-observation::after {
+    left: 58%;
+  }
+
+  .index-workbench {
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.55fr);
+  }
+
+  .index-plates {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(12rem, 0.7fr);
+  }
+
+  .index-plate--face {
+    display: none;
+  }
+}
+
+@media (max-width: 56rem) {
+  .index-workbench {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .scope-entry__metadata {
+  .scope-register--primary .scope-entry__metadata {
+    grid-template-columns: minmax(0, 1fr);
+    padding-top: 0;
+  }
+
+  .scope-register--primary .scope-entry__datum {
+    grid-template-columns: minmax(7rem, 0.4fr) minmax(0, 1fr);
+    padding: var(--space-1) 0;
     border-top: var(--hairline) solid var(--border-ink);
+  }
+
+  .scope-register--primary .scope-entry__datum + .scope-entry__datum {
     border-left: 0;
-    padding-top: var(--space-2);
   }
 }
 
 @media (max-width: 37.5rem) {
   .observatory-shell {
     padding: var(--space-2);
-    gap: var(--space-4);
+    gap: var(--space-3);
   }
 
-  .observatory-masthead {
-    grid-template-columns: minmax(0, 1fr);
+  .index-observation {
+    min-height: 0;
   }
 
-  .observatory-masthead__content {
-    padding: var(--space-5) 0;
+  .index-observation__content {
+    width: 100%;
+    padding: var(--space-3) var(--space-2);
   }
 
-  .observatory-masthead .orbital-frame {
+  .index-observation__art {
+    position: relative;
+    height: 11rem;
+    clip-path: none;
+    border-top: var(--hairline) solid var(--border-ink);
+  }
+
+  .index-observation__image {
+    object-position: 72% center;
+  }
+
+  .index-observation::after {
+    display: none;
+  }
+
+  .scope-register--secondary .scope-register__list {
+    max-height: none;
+    overflow-y: visible;
+    scrollbar-gutter: auto;
+  }
+
+  .index-plates {
     display: none;
   }
 
@@ -755,6 +970,19 @@
   border: var(--hairline) solid var(--danger-ink);
   background: var(--surface);
   color: var(--danger-ink);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+
+.scope-artifact-update {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2);
+  border: var(--hairline) solid var(--focus-ink);
+  background: var(--surface);
+  color: var(--focus-ink);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 0.75rem;
 }

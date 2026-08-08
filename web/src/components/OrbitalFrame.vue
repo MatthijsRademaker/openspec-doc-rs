@@ -1,12 +1,5 @@
-<script setup lang="ts">
-defineProps<{
-  imageSrc?: string
-}>()
-</script>
-
 <template>
   <div class="orbital-frame" aria-hidden="true">
-    <img v-if="imageSrc" class="orbital-frame__image" :src="imageSrc" alt="" />
     <svg
       class="orbital-frame__geometry"
       viewBox="0 0 320 240"

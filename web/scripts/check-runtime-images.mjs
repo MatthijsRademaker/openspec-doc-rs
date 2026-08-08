@@ -6,8 +6,21 @@ const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const publicRoot = resolve(webRoot, 'public')
 const distRoot = resolve(webRoot, 'dist')
 const rasterPattern = /\.(?:avif|gif|jpe?g|png|webp)$/i
-const sourceReferences = new Set(['design-system.png', 'dashboard-mockup.png'])
-const allowlist = new Set(['assets/images/index-orbit.webp'])
+const sourceReferences = new Set([
+  'abstract-face.png',
+  'abstract-star-system.png',
+  'abstract-sun.png',
+  'dashboard-mockup.png',
+  'design-system.png',
+  'main-panel-background.png',
+])
+const allowlist = new Set([
+  'assets/images/index-observation-field.webp',
+  'assets/images/index-plate-face.webp',
+  'assets/images/index-plate-star-system.webp',
+  'assets/images/index-plate-sun.webp',
+])
+const supersededRasters = new Set(['assets/images/index-orbit.webp'])
 const maxRuntimeRasterBytes = 6 * 1024 * 1024
 
 async function filesBelow(root) {
@@ -48,12 +61,16 @@ for (const expected of allowlist) {
   }
 }
 for (const path of publicRasters) {
-  if (!allowlist.has(path)) {
+  if (supersededRasters.has(path)) {
+    failures.push(`superseded runtime image remains in public/: ${path}`)
+  } else if (!allowlist.has(path)) {
     failures.push(`unlisted raster in public/: ${path}`)
   }
 }
 for (const path of distRasters) {
-  if (!allowlist.has(path)) {
+  if (supersededRasters.has(path)) {
+    failures.push(`superseded runtime image remains in dist/: ${path}`)
+  } else if (!allowlist.has(path)) {
     failures.push(`unlisted raster in dist/: ${path}`)
   }
   if (sourceReferences.has(path.split('/').at(-1))) {

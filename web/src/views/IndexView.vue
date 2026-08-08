@@ -2,7 +2,6 @@
 import { onMounted, ref } from 'vue'
 import DocumentHeading from '@/components/DocumentHeading.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
-import OrbitalFrame from '@/components/OrbitalFrame.vue'
 import ScopeRegister from '@/components/ScopeRegister.vue'
 import { fetchIndex, type Index } from '@/lib/scopes'
 
@@ -19,18 +18,26 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="observatory-shell">
-    <header class="observatory-masthead">
-      <div class="observatory-masthead__content">
+  <main class="observatory-shell observatory-index">
+    <header class="index-observation">
+      <div class="index-observation__content">
+        <p class="index-product">openspec-doc <span aria-hidden="true">/</span> review index</p>
         <DocumentHeading
+          id="changes-title"
           :level="1"
-          display
-          kicker="Index / review scopes"
-          title="openspec-doc"
-          description="Observe active explorations and proposed changes. Select exact scope coordinates to continue review."
+          kicker="Index / observation field"
+          title="Changes"
+          description="Select exact scope coordinates."
         />
       </div>
-      <OrbitalFrame image-src="/assets/images/index-orbit.webp" />
+      <div class="index-observation__art" aria-hidden="true">
+        <img
+          class="index-observation__image"
+          src="/assets/images/index-observation-field.webp"
+          alt=""
+          aria-hidden="true"
+        />
+      </div>
     </header>
 
     <section
@@ -49,9 +56,52 @@ onMounted(async () => {
       <h2 class="scope-register__title">Observing available scopes…</h2>
     </section>
 
-    <div v-else class="scope-registers">
-      <ScopeRegister :scopes="index.sessions" prefix="sessions" title="Sessions" />
-      <ScopeRegister :scopes="index.changes" prefix="changes" title="Changes" />
-    </div>
+    <template v-else>
+      <div class="index-workbench" aria-labelledby="changes-title">
+        <ScopeRegister
+          :scopes="index.changes"
+          prefix="changes"
+          title="Change register"
+          presentation="primary"
+        />
+        <ScopeRegister
+          :scopes="index.sessions"
+          prefix="sessions"
+          title="Sessions"
+          presentation="secondary"
+        />
+      </div>
+
+      <aside class="index-plates" aria-label="Observation posture">
+        <div class="index-plate index-plate--sun" aria-hidden="true">
+          <img
+            class="index-plate__image"
+            src="/assets/images/index-plate-sun.webp"
+            alt=""
+            aria-hidden="true"
+          />
+        </div>
+        <div class="index-plate index-plate--face" aria-hidden="true">
+          <img
+            class="index-plate__image"
+            src="/assets/images/index-plate-face.webp"
+            alt=""
+            aria-hidden="true"
+          />
+        </div>
+        <div class="index-plate index-plate--star-system" aria-hidden="true">
+          <img
+            class="index-plate__image"
+            src="/assets/images/index-plate-star-system.webp"
+            alt=""
+            aria-hidden="true"
+          />
+        </div>
+        <div class="index-plates__posture">
+          <p>Observe / plan / execute / verify</p>
+          <p>The agent follows the spec. You guide the direction.</p>
+        </div>
+      </aside>
+    </template>
   </main>
 </template>

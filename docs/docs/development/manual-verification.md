@@ -184,11 +184,11 @@ curl -s -X POST "http://127.0.0.1:8791/api/changes/add-widget/comments" \
   -H 'content-type: application/json' \
   --data '{"kind":"unanchored","body":"Comment made while stream was open."}' >/dev/null
 
-until grep -q 'data: changed' /tmp/sse.log; do :; done
+until grep -q 'artifactsChanged' /tmp/sse.log; do :; done
 echo pushed; kill $SSE
 ```
 
-Client refetches whole scope detail after event. Artifacts remain current-page snapshot until `add-live-artifact-updates` lands.
+Client refetches scope detail after event. Review-state events reconcile immediately; artifact events replace rendered blocks when no composer is dirty and defer with a visible notice while unsent text exists.
 
 ## 5. Embedded browser check
 

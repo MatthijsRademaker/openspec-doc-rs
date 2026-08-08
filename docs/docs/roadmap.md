@@ -68,10 +68,9 @@ declared done. What follows is post-MVP.
 3. **`add-setup-diagnostics`** — the only item that blocks anyone *else* using this, and the failure it
    catches has already happened here once. Do it before the first time you try to install this elsewhere,
    not after.
-4. **`add-live-artifact-updates` next.** Vue scope cutover, rendered block anchoring, thread actions, and
-   embedded desktop/390px gates have landed. Artifacts still remain at their page-load snapshot while review
-   state refetches over SSE; live artifact reconciliation is now the remaining frontend-replacement step and
-   should not sit behind unrelated dashboard work.
+4. **`add-live-artifact-updates`** — 21 tasks, now implemented in the Vue workbench and SSE watcher. Artifact
+   events replace rendered blocks when clean, preserve scroll position, and defer behind unsent composer text;
+   review-state events remain immediate. Finish its live browser verification before archiving.
 5. `add-dashboard-lifecycle` overlaps the "is this thing on?" scope with `add-setup-diagnostics`; reconcile
    before starting either.
 6. `add-change-approval-gate` last, if ever. It changes what the tool is.

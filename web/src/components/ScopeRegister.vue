@@ -7,11 +7,15 @@ import { Badge } from '@/components/ui/badge'
 import { age } from '@/lib/age'
 import type { Scope } from '@/lib/scopes'
 
-const props = defineProps<{
-  scopes: Scope[]
-  prefix: 'sessions' | 'changes'
-  title: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    scopes: Scope[]
+    prefix: 'sessions' | 'changes'
+    title: string
+    presentation?: 'primary' | 'secondary'
+  }>(),
+  { presentation: 'primary' },
+)
 
 const headingId = computed(() => `${props.prefix}-register-title`)
 const scopeCount = computed(
@@ -21,7 +25,10 @@ const emptyLabel = computed(() => `No ${props.prefix} discovered.`)
 </script>
 
 <template>
-  <RuledRegister :labelled-by="headingId">
+  <RuledRegister
+    :labelled-by="headingId"
+    :class="`scope-register scope-register--${props.presentation}`"
+  >
     <header class="scope-register__header">
       <DocumentHeading
         :id="headingId"
@@ -40,7 +47,13 @@ const emptyLabel = computed(() => `No ${props.prefix} discovered.`)
           <div class="scope-entry__identity">
             <div class="scope-entry__title-line">
               <!-- Identity owns navigation. Title is mutable display text only. -->
-              <a class="scope-entry__link" :href="`/${props.prefix}/${scope.key}`">
+              <a
+                :class="[
+                  'scope-entry__link',
+                  { 'scope-entry__link--identifier': !scope.title },
+                ]"
+                :href="`/${props.prefix}/${scope.key}`"
+              >
                 {{ scope.title ?? scope.key }}
               </a>
               <Badge v-if="scope.mostRecentlyActive" variant="instrument" class="scope-entry__recent">
@@ -48,7 +61,7 @@ const emptyLabel = computed(() => `No ${props.prefix} discovered.`)
                 most recently active
               </Badge>
             </div>
-            <code class="scope-entry__key">{{ scope.key }}</code>
+            <code v-if="scope.title" class="scope-entry__key">{{ scope.key }}</code>
           </div>
 
           <dl class="scope-entry__metadata">

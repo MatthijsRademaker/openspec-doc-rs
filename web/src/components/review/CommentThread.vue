@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import StatusMark from '@/components/StatusMark.vue'
 import { Button } from '@/components/ui/button'
 import { age } from '@/lib/age'
@@ -17,10 +17,19 @@ const props = withDefaults(
 const emit = defineEmits<{
   reply: [commentId: string, body: string]
   status: [commentId: string, status: 'open' | 'resolved']
+  composer: [dirty: boolean]
 }>()
 
 const replying = ref(false)
 const replyBody = ref('')
+const replyComposerDirty = computed(() => replying.value && replyBody.value.length > 0)
+
+watch(replyComposerDirty, (dirty) => emit('composer', dirty), { immediate: true })
+
+function cancelReply() {
+  replying.value = false
+  replyBody.value = ''
+}
 
 function submitReply() {
   const body = replyBody.value.trim()
@@ -82,7 +91,7 @@ function submitReply() {
       />
       <div class="comment-thread__actions">
         <Button type="submit" size="sm" :disabled="busy || !replyBody.trim()">Record reply</Button>
-        <Button type="button" variant="ghost" size="sm" :disabled="busy" @click="replying = false">
+        <Button type="button" variant="ghost" size="sm" :disabled="busy" @click="cancelReply">
           Cancel
         </Button>
       </div>

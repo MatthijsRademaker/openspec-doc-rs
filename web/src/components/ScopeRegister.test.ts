@@ -35,21 +35,24 @@ describe('ScopeRegister', () => {
     expect(screen.getByText('0 scopes')).toBeTruthy()
   })
 
-  it('links by exact identifier while displaying a mutable title', () => {
-    const item = scope({ title: 'Observatory design system' })
+  it('keeps titled and promoted identities separate from exact keys', () => {
+    const item = scope({ title: 'Promoted observatory change' })
     render(ScopeRegister, { props: { scopes: [item], prefix: 'changes', title: 'Changes' } })
 
-    const link = screen.getByRole('link', { name: 'Observatory design system' })
+    const link = screen.getByRole('link', { name: 'Promoted observatory change' })
     expect(link.getAttribute('href')).toBe(`/changes/${item.key}`)
     expect(screen.getByText(item.key)).toBeTruthy()
+    expect(link.classList.contains('scope-entry__link--identifier')).toBe(false)
   })
 
-  it('falls back to exact identifier without changing identifier-keyed navigation', () => {
+  it('renders one operational identity for an untitled session', () => {
     const item = scope()
     render(ScopeRegister, { props: { scopes: [item], prefix: 'sessions', title: 'Sessions' } })
 
-    const links = screen.getAllByRole('link', { name: item.key })
-    expect(links[0]?.getAttribute('href')).toBe(`/sessions/${item.key}`)
+    const link = screen.getByRole('link', { name: item.key })
+    expect(link.getAttribute('href')).toBe(`/sessions/${item.key}`)
+    expect(link.classList).toContain('scope-entry__link--identifier')
+    expect(screen.getAllByText(item.key)).toHaveLength(1)
   })
 
   it('keeps modified time, comment count, verdict, and recent marker visible', () => {

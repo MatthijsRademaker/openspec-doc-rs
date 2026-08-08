@@ -11,6 +11,20 @@ const port = 8792
 const baseURL = `http://127.0.0.1:${port}`
 const fixtureChange = 'implement-observatory-design-system-with-a-realistically-long-identifier'
 const fixtureSession = '0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d74'
+const additionalChanges = [
+  ['align-observation-field', 'Align observation field'],
+  ['preserve-offline-observation-assets', 'Preserve offline observation assets'],
+] as const
+const additionalSessions = [
+  ['0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d75', 'Crop study / solar aperture'],
+  ['0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d76', 'Session rail pressure study'],
+  ['0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d77', null],
+  ['0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d78', 'Offline asset verification'],
+  ['0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d79', 'Narrow flow observation'],
+  ['0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d7a', 'Keyboard traversal notes'],
+  ['0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d7b', 'Reduced motion inspection'],
+  ['0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d7c', 'Final composition review'],
+] as const
 const bun = process.execPath
 const binary = join(repoRoot, 'target', 'debug', 'openspec-doc')
 
@@ -164,6 +178,20 @@ async function createFixture(): Promise<string> {
     [`.openspec-doc/verdicts/${fixtureChange}.jsonl`]:
       '{"id":"e2e-verdict","verdict":"comment-resolution","notes":"","createdAt":"2026-01-01T00:00:01Z"}\n',
   }
+  for (const [key, title] of additionalChanges) {
+    files[`openspec/changes/${key}/.openspec.yaml`] = 'schema: spec-driven\ncreated: 2026-01-01\n'
+    files[`openspec/changes/${key}/proposal.md`] = `# ${title}\n\nDeterministic index fixture.\n`
+    files[`openspec/changes/${key}/tasks.md`] = '- [ ] Verify composition\n'
+    files[`openspec/changes/${key}/specs/index/spec.md`] = '# Index fixture\n'
+  }
+  for (const [session, title] of additionalSessions) {
+    files[`.openspec-doc/directives/_session/${session}.json`] =
+      '{"pending":false,"reason":"none","createdAt":"2026-01-01T00:00:00Z","consumedAt":null}\n'
+    files[`.openspec-doc/scratch/_session/${session}.md`] = title
+      ? `# ${title}\n\nDeterministic session inventory pressure.\n`
+      : 'Deterministic untitled session inventory pressure.\n'
+  }
+
   const fixedTime = new Date('2026-01-01T00:00:00Z')
   for (const [relative, contents] of Object.entries(files)) {
     const path = join(root, relative)

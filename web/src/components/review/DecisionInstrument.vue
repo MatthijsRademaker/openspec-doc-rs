@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import CommentThread from '@/components/review/CommentThread.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import { Button } from '@/components/ui/button'
@@ -18,10 +18,14 @@ const emit = defineEmits<{
   submit: [verdict: Verdict, comment: string]
   reply: [commentId: string, body: string]
   status: [commentId: string, status: 'open' | 'resolved']
+  composer: [id: string, dirty: boolean]
 }>()
 
 const open = ref(false)
 const comment = ref('')
+const composerDirty = computed(() => open.value && comment.value.length > 0)
+
+watch(composerDirty, (dirty) => emit('composer', 'decision-comment', dirty), { immediate: true })
 
 const looseThreads = computed(() => props.scope.comments.filter((thread) => !thread.blockId))
 const composerVerdict = computed<Verdict>(() =>
@@ -34,6 +38,20 @@ function forwardReply(commentId: string, body: string) {
 
 function forwardStatus(commentId: string, status: 'open' | 'resolved') {
   emit('status', commentId, status)
+}
+
+function forwardComposer(commentId: string, dirty: boolean) {
+  emit('composer', `decision-reply:${commentId}`, dirty)
+}
+
+function closeComposer() {
+  open.value = false
+  comment.value = ''
+}
+
+function toggleComposer() {
+  if (open.value) closeComposer()
+  else open.value = true
 }
 
 function submitComposer() {
@@ -56,7 +74,7 @@ function submitComposer() {
           <InstrumentLabel>Comments without block / {{ looseThreads.length }}</InstrumentLabel>
           <h2 id="scope-comment-panel-title">Scope transmission</h2>
         </div>
-        <Button type="button" variant="ghost" size="icon-sm" aria-label="Close composer" @click="open = false">
+        <Button type="button" variant="ghost" size="icon-sm" aria-label="Close composer" @click="closeComposer">
           ×
         </Button>
       </header>
@@ -70,6 +88,7 @@ function submitComposer() {
           :show-anchor-loss="thread.anchorState === 'orphaned' || thread.anchorState === 'missing'"
           @reply="forwardReply"
           @status="forwardStatus"
+          @composer="(dirty) => forwardComposer(thread.comment.id, dirty)"
         />
       </div>
       <p v-else class="decision-instrument__empty">No unanchored or lost comments.</p>
@@ -97,7 +116,7 @@ function submitComposer() {
         :aria-expanded="open"
         aria-controls="scope-comment-panel"
         :disabled="busy"
-        @click="open = !open"
+        @click="toggleComposer"
       >
         <span aria-hidden="true">+</span>
         Comment / {{ looseThreads.length }} without block

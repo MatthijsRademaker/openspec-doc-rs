@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import CommentThread from '@/components/review/CommentThread.vue'
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,7 @@ const emit = defineEmits<{
   comment: [comment: NewComment]
   reply: [commentId: string, body: string]
   status: [commentId: string, status: 'open' | 'resolved']
+  composer: [id: string, dirty: boolean]
 }>()
 
 interface CommentTarget {
@@ -30,6 +31,11 @@ interface CommentTarget {
 const expanded = ref<string>()
 const target = ref<CommentTarget>()
 const commentBody = ref('')
+const commentComposerDirty = computed(() => Boolean(target.value && commentBody.value.length > 0))
+
+watch(commentComposerDirty, (dirty) => emit('composer', 'artifact-comment', dirty), {
+  immediate: true,
+})
 
 const commentsByBlock = computed(() => {
   const grouped = new Map<string, Thread[]>()
@@ -85,6 +91,15 @@ function forwardReply(commentId: string, body: string) {
 
 function forwardStatus(commentId: string, status: 'open' | 'resolved') {
   emit('status', commentId, status)
+}
+
+function forwardComposer(commentId: string, dirty: boolean) {
+  emit('composer', `artifact-reply:${commentId}`, dirty)
+}
+
+function cancelComment() {
+  target.value = undefined
+  commentBody.value = ''
 }
 
 function submitComment() {
@@ -180,6 +195,7 @@ function submitComment() {
               :busy="busy"
               @reply="forwardReply"
               @status="forwardStatus"
+              @composer="(dirty) => forwardComposer(thread.comment.id, dirty)"
             />
           </div>
 
@@ -209,7 +225,7 @@ function submitComment() {
                 variant="ghost"
                 size="sm"
                 :disabled="busy"
-                @click="target = undefined"
+                @click="cancelComment"
               >
                 Cancel
               </Button>

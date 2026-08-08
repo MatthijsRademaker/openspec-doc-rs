@@ -4,6 +4,8 @@ const fixtureChange = 'implement-observatory-design-system-with-a-realistically-
 const fixtureTitle = 'Observatory Design System Fixture'
 const fixtureSession = '0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d74'
 const fixtureSessionTitle = 'Agent-guided observatory exploration session'
+const untitledFixtureSession = '0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d77'
+const fixtureScopeCount = { changes: 3, sessions: 9 }
 
 function parseUrl(raw: string, context: string): URL {
   try {
@@ -61,7 +63,8 @@ test('renders realistic scope data through complete instrument registers', async
   const health = observeBrowserHealth(page)
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { name: 'openspec-doc' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Changes', level: 1 })).toBeVisible()
+  await expect(page.getByText('openspec-doc', { exact: false }).first()).toBeVisible()
   await expect(page.getByRole('link', { name: fixtureTitle })).toHaveAttribute(
     'href',
     `/changes/${fixtureChange}`,
@@ -103,7 +106,7 @@ test('keeps index and scope navigation owned by Router', async ({ page }) => {
   await page.goto('/?router-check=1')
 
   await expect(page).toHaveURL(/\/?router-check=1$/)
-  await expect(page.getByRole('heading', { name: 'openspec-doc' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Changes', level: 1 })).toBeVisible()
   await page.getByRole('link', { name: fixtureTitle }).click()
   await expect(page).toHaveURL(`/changes/${fixtureChange}`)
   await expect(page.locator('.scope-header h1')).toHaveText(fixtureTitle)
@@ -111,12 +114,17 @@ test('keeps index and scope navigation owned by Router', async ({ page }) => {
   await expect(page.locator('.scope-header h1')).toHaveText(fixtureTitle)
 })
 
-test('keeps identifiers, metadata, states, and links in narrow flow', async ({ page }) => {
+test('keeps identifiers, metadata, states, and links in narrow flow', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'narrow', '390px contract')
   await page.goto('/')
   await expect(page.getByRole('link', { name: fixtureTitle })).toBeVisible()
 
   for (const value of [
     fixtureChange,
+    fixtureSession,
+    untitledFixtureSession,
     '1 open',
     'comment-resolution',
     'most recently active',
@@ -127,17 +135,39 @@ test('keeps identifiers, metadata, states, and links in narrow flow', async ({ p
     await expect(page.getByText(value).first()).toBeVisible()
   }
 
-  const layout = await page.evaluate(() => ({
-    viewport: window.innerWidth,
-    documentWidth: document.documentElement.scrollWidth,
-    main: document.querySelector('main')?.getBoundingClientRect().toJSON(),
-  }))
+  await expect(page.locator('.index-workbench a')).toHaveCount(
+    fixtureScopeCount.changes + fixtureScopeCount.sessions,
+  )
+  const layout = await page.evaluate(() => {
+    const changes = document.querySelector('#changes-title')?.getBoundingClientRect()
+    const sessions = document.querySelector('#sessions-register-title')?.getBoundingClientRect()
+    const sessionList = document.querySelector('.scope-register--secondary .scope-register__list')
+    const sessionStyle = sessionList ? getComputedStyle(sessionList) : null
+    const plates = document.querySelector('.index-plates')
+    const art = document.querySelector('.index-observation__art')?.getBoundingClientRect()
+    return {
+      viewport: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      main: document.querySelector('main')?.getBoundingClientRect().toJSON(),
+      changesTop: changes?.top,
+      sessionsTop: sessions?.top,
+      sessionMaxHeight: sessionStyle?.maxHeight,
+      sessionOverflow: sessionStyle?.overflowY,
+      platesDisplay: plates ? getComputedStyle(plates).display : null,
+      artHeight: art?.height,
+    }
+  })
   expect(layout.documentWidth, 'page must not overflow horizontally').toBeLessThanOrEqual(
     layout.viewport,
   )
   expect(layout.main).not.toBeNull()
   expect(layout.main?.left).toBeGreaterThanOrEqual(0)
   expect(layout.main?.right).toBeLessThanOrEqual(layout.viewport)
+  expect(layout.changesTop).toBeLessThan(layout.sessionsTop ?? 0)
+  expect(layout.sessionMaxHeight).toBe('none')
+  expect(layout.sessionOverflow).toBe('visible')
+  expect(layout.platesDisplay).toBe('none')
+  expect(layout.artHeight).toBeLessThanOrEqual(176)
 })
 
 test('shows keyboard focus and makes reduced-motion state changes immediate', async ({ page }) => {
@@ -145,7 +175,7 @@ test('shows keyboard focus and makes reduced-motion state changes immediate', as
   await page.goto('/')
 
   await page.keyboard.press('Tab')
-  const link = page.getByRole('link', { name: fixtureSessionTitle })
+  const link = page.locator('.scope-register--primary a').first()
   await expect(link).toBeFocused()
   const focus = await link.evaluate((element) => {
     const style = getComputedStyle(element)
@@ -163,6 +193,53 @@ test('shows keyboard focus and makes reduced-motion state changes immediate', as
     })
   expect(motion.transform).toBe('none')
   expect(motion.transitionDuration).toBe('0s')
+})
+
+test('keeps Changes initial and every session keyboard-reachable through desktop rail', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop session rail contract')
+  await page.goto('/')
+
+  const changesHeading = page.getByRole('heading', { name: 'Changes', level: 1 })
+  const sessionsHeading = page.getByRole('heading', { name: 'Sessions', level: 2 })
+  await expect(changesHeading).toBeInViewport()
+  await expect(sessionsHeading).toBeVisible()
+  await expect(page.locator('.scope-register--primary a').first()).toBeInViewport()
+  const changesBeforeSessions = await changesHeading.evaluate((node) => {
+    const sessions = document.querySelector('#sessions-register-title')
+    return Boolean(
+      sessions && node.compareDocumentPosition(sessions) & Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+  })
+  expect(changesBeforeSessions).toBe(true)
+
+  const sessionList = page.locator('.scope-register--secondary .scope-register__list')
+  const rail = await sessionList.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return {
+      overflowY: style.overflowY,
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+    }
+  })
+  expect(rail.overflowY).toBe('auto')
+  expect(rail.scrollHeight).toBeGreaterThan(rail.clientHeight)
+
+  const links = page.locator('.index-workbench a')
+  const expectedHrefs = await links.evaluateAll((elements) =>
+    elements.map((element) => (element as HTMLAnchorElement).getAttribute('href')),
+  )
+  for (let index = 0; index < expectedHrefs.length; index += 1) {
+    await page.keyboard.press('Tab')
+    const focusedHref = await page.evaluate(() =>
+      (document.activeElement as HTMLAnchorElement | null)?.getAttribute('href'),
+    )
+    expect(focusedHref).toBe(expectedHrefs[index])
+    if (focusedHref?.startsWith('/sessions/')) {
+      await expect(links.nth(index)).toBeInViewport()
+    }
+  }
 })
 
 test('renders anchored, orphaned, and addressed review state on scope page', async ({ page }) => {
@@ -376,6 +453,9 @@ test('captures embedded observatory index for source-board review', async ({ pag
   await page.goto('/')
   await expect(page.getByRole('link', { name: fixtureTitle })).toBeVisible()
 
-  await page.screenshot({ path: testInfo.outputPath('observatory-index.png'), fullPage: true })
+  await page.screenshot({
+    path: testInfo.outputPath(`observatory-index-${testInfo.project.name}.png`),
+    fullPage: true,
+  })
   expectHealthy(health)
 })

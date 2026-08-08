@@ -2,13 +2,14 @@
 //! filesystem watcher, or by bounded polling when the watcher backend for that
 //! scope fails to initialize.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use serde::Serialize;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 
@@ -30,7 +31,41 @@ const SETTLE: Duration = Duration::from_millis(100);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Target {
     pub watched_dirs: Vec<PathBuf>,
-    pub relevant: Vec<PathBuf>,
+    pub artifacts: Vec<PathBuf>,
+    pub review_state: Vec<PathBuf>,
+}
+
+impl Target {
+    fn relevant(&self) -> Vec<PathBuf> {
+        self.artifacts
+            .iter()
+            .chain(&self.review_state)
+            .cloned()
+            .collect()
+    }
+}
+
+/// What changed in one scope update. Both flags can be true when one logical
+/// operation touches an artifact and its review sidecar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Update {
+    pub artifacts_changed: bool,
+    pub review_state_changed: bool,
+}
+
+impl Update {
+    pub const fn all() -> Self {
+        Self {
+            artifacts_changed: true,
+            review_state_changed: true,
+        }
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.artifacts_changed |= other.artifacts_changed;
+        self.review_state_changed |= other.review_state_changed;
+    }
 }
 
 /// The update channels behind the SSE endpoints, one per watched scope. Two
@@ -41,7 +76,7 @@ pub struct Hub {
 }
 
 struct Watched {
-    updates: broadcast::Sender<()>,
+    updates: broadcast::Sender<Update>,
     /// The scope's update source, kept alive with the entry: a dropped watcher
     /// stops reporting, and a dropped join handle loses the polling task.
     _source: Source,
@@ -55,10 +90,11 @@ enum Source {
 impl Hub {
     /// Receive an update every time `target`'s relevant path changes, starting
     /// the scope's watcher on the first subscription.
-    pub fn subscribe(&self, target: &Target) -> broadcast::Receiver<()> {
+    pub fn subscribe(&self, target: &Target) -> broadcast::Receiver<Update> {
         let mut scopes = self.scopes.lock().expect("hub lock");
+        let relevant = target.relevant();
 
-        if let Some(watched) = scopes.get(&target.relevant) {
+        if let Some(watched) = scopes.get(&relevant) {
             return watched.updates.subscribe();
         }
 
@@ -68,17 +104,17 @@ impl Hub {
             Err(error) => {
                 eprintln!(
                     "warning: no filesystem watcher for {} ({error}); polling every {}s instead",
-                    describe(&target.relevant),
+                    describe(&relevant),
                     POLL_INTERVAL.as_secs()
                 );
                 Source::Polling {
-                    _task: spawn_polling(target.relevant.clone(), updates.clone()),
+                    _task: spawn_polling(target.clone(), updates.clone()),
                 }
             }
         };
 
         scopes.insert(
-            target.relevant.clone(),
+            relevant,
             Watched {
                 updates,
                 _source: source,
@@ -93,10 +129,13 @@ impl Hub {
 /// touch one of the scope's relevant paths.
 fn watcher(
     target: &Target,
-    updates: broadcast::Sender<()>,
+    updates: broadcast::Sender<Update>,
 ) -> Result<RecommendedWatcher, notify::Error> {
     let (signals, bursts) = mpsc::channel(1);
-    let relevant = target.relevant.clone();
+    let target = target.clone();
+    let watched_dirs = target.watched_dirs.clone();
+    let event_target = target.clone();
+    let relevant = target.relevant();
 
     let mut watcher = notify::recommended_watcher(move |event| {
         let event: notify::Event = match event {
@@ -116,18 +155,13 @@ fn watcher(
             return;
         }
 
-        let touched = event.paths.iter().any(|path| {
-            relevant
-                .iter()
-                .any(|watched_path| path.starts_with(watched_path))
-        });
-        if touched {
+        if let Some(update) = classify(&event_target, &event.paths) {
             // A queue that is already full carries this signal just as well.
-            let _ = signals.try_send(());
+            let _ = signals.try_send(update);
         }
     })?;
 
-    for dir in &target.watched_dirs {
+    for dir in &watched_dirs {
         // A sidecar directory is only created when its first record is written,
         // and a directory that does not exist yet cannot be watched — so the
         // scope's own state directory is created rather than watched blind.
@@ -150,25 +184,27 @@ fn describe(relevant: &[PathBuf]) -> String {
 
 /// Collapse the burst of events that one edit produces — a create, then a
 /// write, then more — into the single update a page needs.
-async fn coalesce(mut bursts: mpsc::Receiver<()>, updates: broadcast::Sender<()>) {
+async fn coalesce(mut bursts: mpsc::Receiver<Update>, updates: broadcast::Sender<Update>) {
     // Ends when the scope's watcher is dropped and takes the sender with it.
-    while bursts.recv().await.is_some() {
+    while let Some(mut update) = bursts.recv().await {
         tokio::time::sleep(SETTLE).await;
-        while bursts.try_recv().is_ok() {}
+        while let Ok(next) = bursts.try_recv() {
+            update.merge(next);
+        }
 
         // Fails only when nobody is watching that scope's page right now.
-        let _ = updates.send(());
+        let _ = updates.send(update);
     }
 }
 
-/// Start polling `relevant`, taking the baseline fingerprint before the task is
+/// Start polling `target`, taking the baseline fingerprint before the task is
 /// spawned so a change made right after this call cannot be missed.
-fn spawn_polling(relevant: Vec<PathBuf>, updates: broadcast::Sender<()>) -> JoinHandle<()> {
-    let baseline = fingerprint(&relevant);
-    tokio::spawn(poll(relevant, baseline, updates))
+fn spawn_polling(target: Target, updates: broadcast::Sender<Update>) -> JoinHandle<()> {
+    let baseline = fingerprint(&target.relevant());
+    tokio::spawn(poll(target, baseline, updates))
 }
 
-async fn poll(relevant: Vec<PathBuf>, baseline: Fingerprint, updates: broadcast::Sender<()>) {
+async fn poll(target: Target, baseline: Fingerprint, updates: broadcast::Sender<Update>) {
     let mut previous = baseline;
     let mut ticker = tokio::time::interval(POLL_INTERVAL);
     ticker.tick().await; // The first tick completes immediately.
@@ -176,25 +212,27 @@ async fn poll(relevant: Vec<PathBuf>, baseline: Fingerprint, updates: broadcast:
     loop {
         ticker.tick().await;
 
-        let current = fingerprint(&relevant);
+        let current = fingerprint(&target.relevant());
         if current != previous {
+            let changed = changed_paths(&previous, &current);
             previous = current;
-            let _ = updates.send(());
+            if let Some(update) = classify(&target, &changed) {
+                let _ = updates.send(update);
+            }
         }
     }
 }
 
-type Fingerprint = Vec<(PathBuf, u64, Option<SystemTime>)>;
+type Fingerprint = HashMap<PathBuf, (u64, Option<SystemTime>)>;
 
 /// A stand-in for the content under `paths`: every file's size and modified
 /// time. A file that vanishes mid-walk is simply absent, which is itself the
 /// change the next comparison reports.
 fn fingerprint(paths: &[PathBuf]) -> Fingerprint {
-    let mut files = Vec::new();
+    let mut files = HashMap::new();
     for path in paths {
         collect(path, &mut files);
     }
-    files.sort();
     files
 }
 
@@ -204,7 +242,7 @@ fn collect(path: &Path, files: &mut Fingerprint) {
     };
 
     if !metadata.is_dir() {
-        files.push((path.to_owned(), metadata.len(), metadata.modified().ok()));
+        files.insert(path.to_owned(), (metadata.len(), metadata.modified().ok()));
         return;
     }
 
@@ -216,6 +254,34 @@ fn collect(path: &Path, files: &mut Fingerprint) {
     }
 }
 
+fn changed_paths(previous: &Fingerprint, current: &Fingerprint) -> Vec<PathBuf> {
+    let paths: HashSet<PathBuf> = previous.keys().chain(current.keys()).cloned().collect();
+    paths
+        .into_iter()
+        .filter(|path| previous.get(path) != current.get(path))
+        .collect()
+}
+
+fn classify(target: &Target, paths: &[PathBuf]) -> Option<Update> {
+    let artifacts_changed = paths.iter().any(|path| {
+        target
+            .artifacts
+            .iter()
+            .any(|relevant| path.starts_with(relevant))
+    });
+    let review_state_changed = paths.iter().any(|path| {
+        target
+            .review_state
+            .iter()
+            .any(|relevant| path.starts_with(relevant))
+    });
+
+    (artifacts_changed || review_state_changed).then_some(Update {
+        artifacts_changed,
+        review_state_changed,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,8 +290,98 @@ mod tests {
     fn target_for(dir: &Path) -> Target {
         Target {
             watched_dirs: vec![dir.to_owned()],
-            relevant: vec![dir.to_owned()],
+            artifacts: vec![dir.to_owned()],
+            review_state: Vec::new(),
         }
+    }
+
+    fn classified_target(root: &Path) -> Target {
+        Target {
+            watched_dirs: Vec::new(),
+            artifacts: vec![root.join("artifacts")],
+            review_state: vec![root.join("comments.jsonl")],
+        }
+    }
+
+    #[test]
+    fn an_artifact_write_is_reported_as_an_artifact_change() {
+        let root = Path::new("/project");
+        assert_eq!(
+            classify(
+                &classified_target(root),
+                &[root.join("artifacts/proposal.md")],
+            ),
+            Some(Update {
+                artifacts_changed: true,
+                review_state_changed: false,
+            })
+        );
+    }
+
+    #[test]
+    fn a_comment_write_is_reported_as_review_state_change() {
+        let root = Path::new("/project");
+        assert_eq!(
+            classify(&classified_target(root), &[root.join("comments.jsonl")]),
+            Some(Update {
+                artifacts_changed: false,
+                review_state_changed: true,
+            })
+        );
+    }
+
+    #[test]
+    fn writes_touching_both_are_reported_as_both() {
+        let root = Path::new("/project");
+        assert_eq!(
+            classify(
+                &classified_target(root),
+                &[
+                    root.join("artifacts/proposal.md"),
+                    root.join("comments.jsonl"),
+                ],
+            ),
+            Some(Update::all())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_burst_is_one_merged_update() {
+        let (signals, bursts) = mpsc::channel(2);
+        let (updates, mut receiver) = broadcast::channel(UPDATE_CAPACITY);
+        let task = tokio::spawn(coalesce(bursts, updates));
+
+        signals
+            .send(Update {
+                artifacts_changed: true,
+                review_state_changed: false,
+            })
+            .await
+            .expect("send artifact update");
+        signals
+            .send(Update {
+                artifacts_changed: false,
+                review_state_changed: true,
+            })
+            .await
+            .expect("send review update");
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+                .await
+                .expect("coalescing timed out")
+                .expect("coalescing closed"),
+            Update::all()
+        );
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(SETTLE.as_millis() as u64),
+                receiver.recv()
+            )
+            .await
+            .is_err(),
+            "one burst produced multiple updates"
+        );
+        task.abort();
     }
 
     // macOS follow-up (2026-08-07): `notify::RecommendedWatcher` initializes but
@@ -269,7 +425,7 @@ mod tests {
         fs::write(dir.path().join("a.md"), "one").expect("write file");
         let (updates, mut receiver) = broadcast::channel(UPDATE_CAPACITY);
 
-        let polling = spawn_polling(vec![dir.path().to_owned()], updates);
+        let polling = spawn_polling(target_for(dir.path()), updates);
         fs::write(dir.path().join("a.md"), "one changed").expect("rewrite file");
 
         let update = tokio::time::timeout(Duration::from_secs(10), receiver.recv()).await;
@@ -295,7 +451,8 @@ mod tests {
         for written in [change.join("proposal.md"), sidecars.join("comments.jsonl")] {
             let mut updates = hub.subscribe(&Target {
                 watched_dirs: vec![change.clone(), sidecars.clone()],
-                relevant: vec![change.clone(), sidecars.clone()],
+                artifacts: vec![change.clone()],
+                review_state: vec![sidecars.clone()],
             });
 
             fs::write(&written, "content").expect("write file");
@@ -320,7 +477,8 @@ mod tests {
 
         let mut updates = hub.subscribe(&Target {
             watched_dirs: vec![sidecars.clone()],
-            relevant: vec![sidecars.clone()],
+            artifacts: Vec::new(),
+            review_state: vec![sidecars.clone()],
         });
         fs::write(sidecars.join("session-a.jsonl"), "{}").expect("write sidecar");
 

@@ -35,14 +35,12 @@ describe('observatory visual system', () => {
   })
 
   it('keeps orbital framing decorative and non-interactive', () => {
-    const { container } = render(OrbitalFrame, {
-      props: { imageSrc: '/assets/images/index-orbit.webp' },
-    })
+    const { container } = render(OrbitalFrame)
 
     const frame = container.firstElementChild
     expect(frame?.getAttribute('aria-hidden')).toBe('true')
-    expect(frame?.querySelector('img')?.getAttribute('alt')).toBe('')
-    expect(frame?.querySelector('button, a, input')).toBeNull()
+    expect(frame?.querySelector('svg')).toBeTruthy()
+    expect(frame?.querySelector('img, button, a, input')).toBeNull()
   })
 
   it('separates display heading and instrument metadata roles', () => {

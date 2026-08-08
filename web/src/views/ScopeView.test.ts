@@ -99,19 +99,50 @@ const SCOPE: ScopeDetail = {
   },
 }
 
-function stubScope(scope: ScopeDetail = SCOPE) {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(scope), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
-    ),
-  )
+const SOURCE_ARTIFACT = SCOPE.artifacts[0]
+const SOURCE_BLOCK = SOURCE_ARTIFACT?.blocks[1]
+if (!SOURCE_ARTIFACT || !SOURCE_BLOCK) throw new Error('test fixture must contain source block')
+
+function response(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 
-afterEach(() => vi.unstubAllGlobals())
+function stubScope(scope: ScopeDetail = SCOPE) {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(scope)))
+}
+
+class StubEventSource {
+  static instances: StubEventSource[] = []
+  onmessage: ((event: MessageEvent<string>) => void) | null = null
+  onerror: (() => void) | null = null
+  readonly url: string
+
+  constructor(url: string) {
+    this.url = url
+    StubEventSource.instances.push(this)
+  }
+
+  close() {}
+
+  emit(data: string) {
+    this.onmessage?.({ data } as MessageEvent<string>)
+  }
+}
+
+function stubLiveScope(initial: ScopeDetail = SCOPE) {
+  const fetchMock = vi.fn().mockResolvedValue(response(initial))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubGlobal('EventSource', StubEventSource)
+  return fetchMock
+}
+
+afterEach(() => {
+  StubEventSource.instances = []
+  vi.unstubAllGlobals()
+})
 
 describe('ScopeView', () => {
   it('keeps document primary and expands anchored conversation beside its block', async () => {
@@ -161,5 +192,151 @@ describe('ScopeView', () => {
 
     expect(await screen.findByRole('heading', { name: 'No artifacts written yet' })).toBeTruthy()
     expect(screen.getByText(/Document spine will appear/)).toBeTruthy()
+  })
+
+  it('applies a clean artifact update from its SSE event', async () => {
+    const updated = {
+      ...SCOPE,
+      artifacts: [
+        {
+          ...SOURCE_ARTIFACT,
+          blocks: [{ ...SOURCE_BLOCK, html: '<p>New document text.</p>' }],
+        },
+      ],
+    }
+    const fetchMock = stubLiveScope()
+    render(ScopeView)
+    await screen.findByRole('heading', { name: 'Exploring anchored review' })
+
+    fetchMock.mockResolvedValueOnce(response(updated))
+    StubEventSource.instances[0]?.emit(
+      JSON.stringify({ artifactsChanged: true, reviewStateChanged: false }),
+    )
+
+    expect(await screen.findByText('New document text.')).toBeTruthy()
+    expect(screen.queryByText('Review this exact block.')).toBeNull()
+  })
+
+  it('refreshes review state immediately while an artifact composer is dirty', async () => {
+    const updated = {
+      ...SCOPE,
+      commentCounts: { ...SCOPE.commentCounts, open: 2 },
+    }
+    const fetchMock = stubLiveScope()
+    render(ScopeView)
+    await screen.findByRole('heading', { name: 'Exploring anchored review' })
+    await fireEvent.click(screen.getByRole('button', { name: /Comment on .* block 2/ }))
+    await fireEvent.update(screen.getByLabelText('Comment on block'), 'Keep this sentence.')
+
+    fetchMock.mockResolvedValueOnce(response(updated))
+    StubEventSource.instances[0]?.emit(
+      JSON.stringify({ artifactsChanged: false, reviewStateChanged: true }),
+    )
+
+    expect(await screen.findByText('2 open')).toBeTruthy()
+    expect(screen.getAllByText('Review this exact block.').length).toBeGreaterThan(0)
+    expect(screen.getByLabelText('Comment on block')).toHaveProperty('value', 'Keep this sentence.')
+  })
+
+  it('defers an artifact update while composer is dirty and applies it on dismissal', async () => {
+    const updated = {
+      ...SCOPE,
+      artifacts: [
+        {
+          ...SOURCE_ARTIFACT,
+          blocks: [{ ...SOURCE_BLOCK, html: '<p>New document text.</p>' }],
+        },
+      ],
+    }
+    const fetchMock = stubLiveScope()
+    render(ScopeView)
+    await screen.findByRole('heading', { name: 'Exploring anchored review' })
+    await fireEvent.click(screen.getByRole('button', { name: /Comment on .* block 2/ }))
+    await fireEvent.update(screen.getByLabelText('Comment on block'), 'Keep this sentence.')
+
+    fetchMock.mockResolvedValueOnce(response(updated))
+    StubEventSource.instances[0]?.emit(
+      JSON.stringify({ artifactsChanged: true, reviewStateChanged: false }),
+    )
+
+    expect(await screen.findByText('Artifact changed.')).toBeTruthy()
+    expect(screen.getAllByText('Review this exact block.').length).toBeGreaterThan(0)
+    expect(screen.queryByText('New document text.')).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(await screen.findByText('New document text.')).toBeTruthy()
+    expect(screen.queryByText('Artifact changed.')).toBeNull()
+  })
+
+  it('applies a deferred artifact update when composer is sent', async () => {
+    const updated = {
+      ...SCOPE,
+      artifacts: [
+        {
+          ...SOURCE_ARTIFACT,
+          blocks: [{ ...SOURCE_BLOCK, html: '<p>New document text.</p>' }],
+        },
+      ],
+    }
+    const fetchMock = stubLiveScope()
+    render(ScopeView)
+    await screen.findByRole('heading', { name: 'Exploring anchored review' })
+    await fireEvent.click(screen.getByRole('button', { name: /Comment on .* block 2/ }))
+    await fireEvent.update(screen.getByLabelText('Comment on block'), 'Keep this sentence.')
+
+    fetchMock.mockResolvedValueOnce(response(updated))
+    StubEventSource.instances[0]?.emit(
+      JSON.stringify({ artifactsChanged: true, reviewStateChanged: false }),
+    )
+    expect(await screen.findByText('Artifact changed.')).toBeTruthy()
+
+    fetchMock
+      .mockResolvedValueOnce(response({ id: 'new-comment', body: 'Keep this sentence.' }, 201))
+      .mockResolvedValueOnce(response(SCOPE))
+    await fireEvent.click(screen.getByRole('button', { name: 'Record comment' }))
+
+    expect(await screen.findByText('New document text.')).toBeTruthy()
+    expect(screen.queryByText('Artifact changed.')).toBeNull()
+  })
+
+  it('keeps only latest deferred artifact update', async () => {
+    const first = {
+      ...SCOPE,
+      artifacts: [
+        {
+          ...SOURCE_ARTIFACT,
+          blocks: [{ ...SOURCE_BLOCK, html: '<p>First rewrite.</p>' }],
+        },
+      ],
+    }
+    const second = {
+      ...SCOPE,
+      artifacts: [
+        {
+          ...SOURCE_ARTIFACT,
+          blocks: [{ ...SOURCE_BLOCK, html: '<p>Latest rewrite.</p>' }],
+        },
+      ],
+    }
+    const fetchMock = stubLiveScope()
+    render(ScopeView)
+    await screen.findByRole('heading', { name: 'Exploring anchored review' })
+    await fireEvent.click(screen.getByRole('button', { name: /Comment on .* block 2/ }))
+    await fireEvent.update(screen.getByLabelText('Comment on block'), 'Keep this sentence.')
+
+    fetchMock.mockResolvedValueOnce(response(first)).mockResolvedValueOnce(response(second))
+    const source = StubEventSource.instances[0]
+    source?.emit(JSON.stringify({ artifactsChanged: true, reviewStateChanged: false }))
+    source?.emit(JSON.stringify({ artifactsChanged: true, reviewStateChanged: false }))
+
+    expect(await screen.findByText('Artifact changed.')).toBeTruthy()
+    expect(screen.queryByText('First rewrite.')).toBeNull()
+    expect(screen.queryByText('Latest rewrite.')).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(await screen.findByText('Latest rewrite.')).toBeTruthy()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 })
