@@ -18,7 +18,12 @@ export const MOCK_CHANGE_KEY =
   'implement-observatory-design-system-with-a-realistically-long-identifier'
 export const MOCK_SESSION_ID = '0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d74'
 
-const CHANGE_ARTIFACT_PATH = `openspec/changes/${MOCK_CHANGE_KEY}/proposal.md`
+const CHANGE_ROOT = `openspec/changes/${MOCK_CHANGE_KEY}`
+const CHANGE_ARTIFACT_PATH = `${CHANGE_ROOT}/proposal.md`
+const CHANGE_DESIGN_PATH = `${CHANGE_ROOT}/design.md`
+const CHANGE_TASKS_PATH = `${CHANGE_ROOT}/tasks.md`
+const CHANGE_HTML_SPEC_PATH = `${CHANGE_ROOT}/specs/dashboard-html-views/spec.md`
+const CHANGE_VISUAL_SPEC_PATH = `${CHANGE_ROOT}/specs/dashboard-visual-system/spec.md`
 const SESSION_ARTIFACT_PATH = `.openspec-doc/scratch/_session/${MOCK_SESSION_ID}.md`
 
 interface MockState {
@@ -111,6 +116,26 @@ const changeBlocks = makeBlocks('change', [
   },
 ])
 const changeTarget = requireBlock(changeBlocks, 'change-block-4')
+const designBlocks = makeBlocks('design', [
+  { html: '<h1>Fixture design</h1>', source: '# Fixture design' },
+  {
+    html: '<p>Conversation follows exact selected artifact.</p>',
+    source: 'Conversation follows exact selected artifact.',
+  },
+])
+const designTarget = requireBlock(designBlocks, 'design-block-1')
+const taskBlocks = makeBlocks('tasks', [
+  { html: '<h1>Fixture tasks</h1>', source: '# Fixture tasks' },
+  { html: '<ul><li>Render selected artifact</li></ul>', source: '- Render selected artifact' },
+])
+const htmlSpecBlocks = makeBlocks('html-spec', [
+  { html: '<h1>HTML view fixture</h1>', source: '# HTML view fixture' },
+  { html: '<p>Nested paths remain exact.</p>', source: 'Nested paths remain exact.' },
+])
+const visualSpecBlocks = makeBlocks('visual-spec', [
+  { html: '<h1>Visual system fixture</h1>', source: '# Visual system fixture' },
+  { html: '<p>Artwork yields before prose.</p>', source: 'Artwork yields before prose.' },
+])
 
 const sessionBlocks = makeBlocks('session', [
   {
@@ -128,7 +153,13 @@ const changeScope: ScopeDetail = {
   kind: 'change',
   key: MOCK_CHANGE_KEY,
   title: 'Observatory Design System Fixture',
-  artifacts: [makeArtifact(CHANGE_ARTIFACT_PATH, changeBlocks)],
+  artifacts: [
+    makeArtifact(CHANGE_ARTIFACT_PATH, changeBlocks),
+    makeArtifact(CHANGE_DESIGN_PATH, designBlocks),
+    makeArtifact(CHANGE_TASKS_PATH, taskBlocks),
+    makeArtifact(CHANGE_HTML_SPEC_PATH, htmlSpecBlocks),
+    makeArtifact(CHANGE_VISUAL_SPEC_PATH, visualSpecBlocks),
+  ],
   comments: [
     makeThread(
       makeComment(
@@ -152,6 +183,17 @@ const changeScope: ScopeDetail = {
     ),
     makeThread(
       makeComment(
+        'mock-design-addressed',
+        'Keep design conversation artifact-scoped.',
+        '2026-08-07T10:01:30Z',
+        makeAnchor(CHANGE_DESIGN_PATH, designTarget.source, designTarget.range.start),
+      ),
+      'addressed',
+      'exact',
+      designTarget.id,
+    ),
+    makeThread(
+      makeComment(
         'mock-change-orphaned',
         'Lost anchors must stay reachable.',
         '2026-08-07T10:02:00Z',
@@ -168,7 +210,7 @@ const changeScope: ScopeDetail = {
       null,
     ),
   ],
-  commentCounts: { open: 1, addressed: 1, resolved: 1 },
+  commentCounts: { open: 1, addressed: 2, resolved: 1 },
   verdicts: [makeVerdict('mock-change-verdict', 'comment-resolution', '2026-08-07T10:04:00Z')],
   standingVerdict: {
     id: 'mock-change-verdict',

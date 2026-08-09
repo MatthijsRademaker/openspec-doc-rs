@@ -15,12 +15,22 @@ const sourceReferences = new Set([
   'main-panel-background.png',
 ])
 const allowlist = new Set([
+  'assets/images/observatory-field.webp',
+  'assets/images/observatory-plate-face.webp',
+  'assets/images/observatory-plate-star-system.webp',
+  'assets/images/observatory-plate-sun.webp',
+])
+const supersededRasters = new Set([
   'assets/images/index-observation-field.webp',
+  'assets/images/index-orbit.webp',
   'assets/images/index-plate-face.webp',
   'assets/images/index-plate-star-system.webp',
   'assets/images/index-plate-sun.webp',
+  'assets/images/scope-observation-field.webp',
+  'assets/images/scope-plate-face.webp',
+  'assets/images/scope-plate-star-system.webp',
+  'assets/images/scope-plate-sun.webp',
 ])
-const supersededRasters = new Set(['assets/images/index-orbit.webp'])
 const maxRuntimeRasterBytes = 6 * 1024 * 1024
 
 async function filesBelow(root) {

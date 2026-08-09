@@ -98,6 +98,24 @@ describe('observatory visual system', () => {
     expect(source).not.toContain('.dark')
   })
 
+  it('places scope field in selected-document arrival without obsolete gallery or fake state', () => {
+    const source = (suffix: string) =>
+      Object.entries(sourceModules).find(([path]) => path.endsWith(suffix))?.[1]
+    const scopeView = source('/views/ScopeView.vue')
+    const artifactDocument = source('/review/ArtifactDocument.vue')
+    if (!scopeView || !artifactDocument) throw new Error('scope visual sources must be indexed')
+
+    expect(artifactDocument).toContain('artifact-document__arrival-art')
+    expect(artifactDocument).toContain('/assets/images/observatory-field.webp')
+    expect(artifactDocument).toContain('alt=""')
+    expect(artifactDocument).toContain('aria-hidden="true"')
+    expect(scopeView).not.toContain('scope-observation-band')
+    expect(scopeView).not.toContain('observatory-plate-')
+    expect(`${scopeView}\n${artifactDocument}`).not.toMatch(
+      /repository|activity feed|validation result|agent online/i,
+    )
+  })
+
   it('keeps raw state colors out of component-local styles', () => {
     const rawColor = /(?:#[\da-f]{3,8}\b|oklch\()/i
 

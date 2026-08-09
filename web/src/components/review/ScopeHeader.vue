@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import DocumentHeading from '@/components/DocumentHeading.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
-import OrbitalFrame from '@/components/OrbitalFrame.vue'
 import StatusMark from '@/components/StatusMark.vue'
 import { age } from '@/lib/age'
 import type { ScopeDetail } from '@/lib/scope-review'
@@ -16,7 +15,7 @@ defineProps<{ scope: ScopeDetail }>()
         :level="1"
         :kicker="`${scope.kind} / review scope`"
         :title="scope.title ?? scope.key"
-        description="Observe document blocks, judge agent responses, then transmit next phase decision."
+        compact
       />
       <code class="scope-header__key">{{ scope.key }}</code>
     </div>
@@ -56,6 +55,5 @@ defineProps<{ scope: ScopeDetail }>()
       </details>
     </div>
 
-    <OrbitalFrame />
   </header>
 </template>

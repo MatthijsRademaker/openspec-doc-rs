@@ -57,17 +57,27 @@ component-local raw state colors.
 
 ## Composition
 
-Every scope view follows one spine:
+Every scope route uses one selected-artifact workbench:
 
 ```text
-instrument header / route state
-utility rail | document spine | anchored conversation rail
-persistent decision instrument
+compact route identity + standing review state
+scope/artifact rail | complete selected document | artifact conversation
+                    | browser window scrolls     | loose comments + decisions
 ```
 
-Document content owns reading measure. Anchored comments sit beside their block only when
-space permits, then immediately follow that block in narrow flow. Unanchored/orphaned
-comments remain reachable. Persistent decisions never cover content.
+Change routes expose every server-supplied artifact through exact-path navigation. Exact
+`Artifact.path` owns `?artifact=`; first load canonicalizes missing selection with Router
+replace, deliberate selection pushes history, and invalid or removed coordinates stay
+visible as unavailable state. Session routes select sole scratch artifact without fake tabs,
+folders, or destinations.
+
+Selected artifact renders completely in source order. Browser window remains sole primary
+scroll owner; document stage never gains fixed-height primary scroller. Resolved exact and
+fuzzy threads appear only in selected-artifact conversation. Marker and thread activation
+lock same source block visibly and navigate in both directions. Missing, orphaned, and
+unanchored threads remain in decision instrument. At narrow width DOM order is route state,
+artifact identity/navigation, complete document, artifact conversation, loose comments,
+then decisions—without duplicate interactive thread markup.
 
 Index uses same language at lower density: instrument masthead, separate ruled session and
 change registers, exact identifiers, complete metadata, explicit recent activity, and
@@ -81,20 +91,20 @@ rail thumbnails, and empty instruments. They are `aria-hidden`, non-interactive,
 sit behind prose, controls, focus rings, or state labels. At narrow width atmosphere shrinks
 or disappears before content.
 
-Only named runtime slots may use raster derivatives. Index allowlist:
+Only named runtime slots may use raster derivatives. Shared observatory allowlist:
 
-| Runtime slot | Source and crop | Output | Rendered role and responsive behavior |
+| Runtime slot | Source and crop | Output | Index and scope roles |
 | --- | --- | --- | --- |
-| `web/public/assets/images/index-observation-field.webp` | `main-panel-background.png`; crop `x=128, y=75, w=1408, h=845` excludes far-left pseudo-control rail while retaining black safe space and right-side face/orbit field | 1200×720 WebP, quality 84, 95,710 bytes | Decorative asymmetric masthead field. Empty alt and `aria-hidden`; desktop artwork enters from right beside protected text plane. Remains as bounded crop at 390px. |
-| `web/public/assets/images/index-plate-sun.webp` | `abstract-sun.png`; crop `x=196, y=120, w=1280, h=640` centers dark solar aperture and radiating line field | 640×320 WebP, quality 82, 65,168 bytes | Decorative first plate in hard-edged lower strip. May disappear at intermediate width; hidden at 390px. |
-| `web/public/assets/images/index-plate-face.webp` | `abstract-face.png`; crop `x=196, y=150, w=1280, h=640` isolates eye and halftone texture rather than repeating masthead face composition | 640×320 WebP, quality 82, 73,302 bytes | Decorative second plate in hard-edged lower strip. May disappear at intermediate width; hidden at 390px. |
-| `web/public/assets/images/index-plate-star-system.webp` | `abstract-star-system.png`; crop `x=168, y=230, w=1280, h=640` places orbital intersections and nodes off center | 640×320 WebP, quality 82, 15,416 bytes | Decorative third plate in hard-edged lower strip. First plate removed at intermediate width; full strip hidden at 390px. |
+| `web/public/assets/images/observatory-field.webp` | `main-panel-background.png`; crop `x=128, y=75, w=1408, h=845` excludes far-left pseudo-control rail while retaining black safe space and right-side face/orbit field | 1200×720 WebP, quality 84, 95,710 bytes | Decorative asymmetric field. Index: right-entering masthead art beside protected text, then bounded crop at 390px. Scope: bounded right-entering selected-document arrival plane beside opaque artifact identity; hidden at 390px before document measure or controls yield. |
+| `web/public/assets/images/observatory-plate-sun.webp` | `abstract-sun.png`; crop `x=196, y=120, w=1280, h=640` centers dark solar aperture and radiating line field | 640×320 WebP, quality 82, 65,168 bytes | Decorative first hard-edged plate in index lower strip. Scope has no pre-document gallery; any future scope use is limited to subordinate peripheral chassis cells. |
+| `web/public/assets/images/observatory-plate-face.webp` | `abstract-face.png`; crop `x=196, y=150, w=1280, h=640` isolates eye and halftone texture rather than repeating masthead face composition | 640×320 WebP, quality 82, 73,302 bytes | Decorative second hard-edged plate in index lower strip. Scope has no pre-document gallery; any future scope use is limited to subordinate peripheral chassis cells. |
+| `web/public/assets/images/observatory-plate-star-system.webp` | `abstract-star-system.png`; crop `x=168, y=230, w=1280, h=640` places orbital intersections and nodes off center | 640×320 WebP, quality 82, 15,416 bytes | Decorative third hard-edged plate in index lower strip. Scope has no pre-document gallery; any future scope use is limited to subordinate peripheral chassis cells. |
 
-These four slots replace `index-orbit.webp`; retaining that file would create competing index
-art systems. Plate groups and every image remain non-interactive, use empty alt text, and are
-absent from accessibility tree. Original source boards remain in
-`designs/visual-language/`. Runtime raster payload is checked after every production build
-and must stay at or below 6 MiB.
+These four shared slots replace `index-orbit.webp` and every index- or scope-prefixed alias;
+retaining aliases would create competing art systems and duplicate payload. Every image and
+plate group remains non-interactive, uses empty alt text, is `aria-hidden`, and stays outside
+text and focus planes. Original source boards remain in `designs/visual-language/`. Runtime
+raster payload is checked after every production build and must stay at or below 6 MiB.
 
 ## Geometry, responsiveness, and motion
 
@@ -102,10 +112,15 @@ Use 8px rhythm, with 4px only for tight icon/text alignment. Prefer square or 2�
 hairline rules, and stepped surfaces. Pills belong only to compact state/control shapes.
 Focus is visibly offset from borders.
 
-- **Desktop, 1280px+:** primary content gets useful width; rails and atmosphere consume
-  remaining space, not document measure.
-- **Narrow, 390px:** one logical flow, no page-level horizontal overflow. Metadata, exact
-  identifiers, state text, comments, and controls stay visible and reachable.
+- **Desktop, 1280px+:** full-bleed hairline chassis reserves roughly 14–18rem for scope and
+  artifact instrumentation, flexible readable document measure, and 20–26rem for selected
+  artifact conversation plus decisions. Route chrome stays compact enough for artifact
+  identity and first meaningful source block to enter 1536×1024 initial viewport.
+- **Intermediate:** instrumentation enters flow first, then conversation follows document;
+  artwork and peripheral cells yield before paths, prose, state, comments, or controls.
+- **Narrow, 390px:** one logical flow, no page-level horizontal overflow. Exact paths wrap,
+  complete document precedes conversation, comment actions stay visible without hover, and
+  final content clears decision controls and safe-area inset.
 
 Motion explains entry or state change with opacity or slight lateral movement in 100–200ms
 using `cubic-bezier(0.2, 0, 0.2, 1)`. No perpetual orbit, parallax, animated ornament, or
@@ -127,6 +142,9 @@ observatory tokens instead of cloning interaction logic. Vue Router owns impleme
 routes. API modules preserve failures. `web/dist/` is generated, gitignored, and embedded by
 Rust, so build it before Cargo.
 
-Current index proves visual system only. Artifact rendering, anchored thread mutations,
-verdict controls, SSE reconciliation, and scope routes remain owned by
-`migrate-dashboard-review-to-vue`.
+`ScopeView` owns route fetches, exact query selection, active thread, mutations, SSE,
+generation guards, and dirty-composer artifact deferral. `ArtifactNavigator` emits exact
+paths only. `ArtifactDocument` owns rendered blocks and source-accurate anchor construction.
+`ArtifactConversation` owns selected-artifact thread presentation without fetching.
+`DecisionInstrument` owns loose/lost comments and verdict actions. No global store, nested
+primary document scroller, duplicate session/change workbench, or compatibility layout.

@@ -5,6 +5,7 @@ const origin = 'http://127.0.0.1'
 
 describe('MSW API handlers', () => {
   it('serves index and scope fixtures through Node integration', async () => {
+    // pi-lens-ignore: typescript.react.security.react-insecure-request.react-insecure-request
     const indexResponse = await fetch(`${origin}/api/index`)
     const index = (await indexResponse.json()) as {
       sessions: Array<{ key: string }>
@@ -25,7 +26,8 @@ describe('MSW API handlers', () => {
     expect(scopeResponse.ok).toBe(true)
     expect(scope.kind).toBe('change')
     expect(scope.artifacts.length).toBeGreaterThan(0)
-    expect(scope.comments.length).toBe(3)
+    expect(scope.artifacts).toHaveLength(5)
+    expect(scope.comments.length).toBe(4)
   })
 
   it('applies comment mutations and exposes updated scope state', async () => {

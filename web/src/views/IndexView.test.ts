@@ -114,10 +114,17 @@ describe('IndexView', () => {
     const { container } = render(IndexView)
     await screen.findByRole('heading', { name: 'Sessions' })
 
-    const images = container.querySelectorAll('.index-observation__image, .index-plate__image')
-    expect(images).toHaveLength(4)
+    const images = container.querySelectorAll<HTMLImageElement>(
+      '.index-observation__image, .index-plate__image',
+    )
+    expect(Array.from(images, (image) => image.getAttribute('src'))).toEqual([
+      '/assets/images/observatory-field.webp',
+      '/assets/images/observatory-plate-sun.webp',
+      '/assets/images/observatory-plate-face.webp',
+      '/assets/images/observatory-plate-star-system.webp',
+    ])
     for (const image of images) {
-      expect(image.getAttribute('alt')).toBe('')
+      expect(image.alt).toBe('')
       expect(image.getAttribute('aria-hidden')).toBe('true')
     }
     expect(screen.queryByRole('img')).toBeNull()

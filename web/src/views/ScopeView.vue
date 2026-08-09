@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import ArtifactConversation from '@/components/review/ArtifactConversation.vue'
 import ArtifactDocument from '@/components/review/ArtifactDocument.vue'
+import ArtifactNavigator from '@/components/review/ArtifactNavigator.vue'
 import DecisionInstrument from '@/components/review/DecisionInstrument.vue'
 import ScopeHeader from '@/components/review/ScopeHeader.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
@@ -10,6 +12,7 @@ import {
   createComment,
   eventPath,
   fetchScope,
+  type CommentCounts,
   type NewComment,
   replyToComment,
   type ScopeDetail,
@@ -19,7 +22,12 @@ import {
 } from '@/lib/scope-review'
 import type { Verdict } from '@/lib/scopes'
 
+interface ArtifactDocumentHandle {
+  focusThread: (threadId: string) => void
+}
+
 const route = useRoute()
+const router = useRouter()
 const scope = ref<ScopeDetail>()
 const failure = ref<string>()
 const actionFailure = ref<string>()
@@ -27,6 +35,8 @@ const busy = ref(false)
 const pendingArtifact = ref<ScopeDetail>()
 const pendingArtifactUpdate = ref(false)
 const dirtyComposers = ref(new Set<string>())
+const activeThreadId = ref<string>()
+const artifactDocument = ref<ArtifactDocumentHandle>()
 let events: EventSource | undefined
 let loadGeneration = 0
 
@@ -34,6 +44,57 @@ const hasDirtyComposer = computed(() => dirtyComposers.value.size > 0)
 
 const kind = computed<ScopeKind>(() => (route.name === 'session' ? 'session' : 'change'))
 const key = computed(() => String(route.params.id ?? route.params.name ?? ''))
+const hasExplicitArtifactSelection = computed(
+  () => kind.value === 'change' && 'artifact' in route.query,
+)
+const requestedArtifactPath = computed(() => {
+  if (kind.value === 'session') return scope.value?.artifacts[0]?.path
+  const query = route.query.artifact
+  return typeof query === 'string' ? query : undefined
+})
+const selectedArtifact = computed(() => {
+  if (!scope.value) return undefined
+  if (kind.value === 'session') return scope.value.artifacts[0]
+  if (!hasExplicitArtifactSelection.value) return scope.value.artifacts[0]
+  return scope.value.artifacts.find((artifact) => artifact.path === requestedArtifactPath.value)
+})
+const selectionUnavailable = computed(
+  () =>
+    kind.value === 'change' &&
+    hasExplicitArtifactSelection.value &&
+    selectedArtifact.value === undefined,
+)
+const selectedThreads = computed(() => {
+  if (!selectedArtifact.value) return []
+  const blockIds = new Set(selectedArtifact.value.blocks.map((block) => block.id))
+  return (
+    scope.value?.comments.filter(
+      (thread) =>
+        thread.comment.anchor?.artifactPath === selectedArtifact.value?.path &&
+        thread.blockId !== null &&
+        blockIds.has(thread.blockId),
+    ) ?? []
+  )
+})
+const artifactThreadCounts = computed<Record<string, CommentCounts>>(() => {
+  const counts: Record<string, CommentCounts> = {}
+  for (const artifact of scope.value?.artifacts ?? []) {
+    counts[artifact.path] = { open: 0, addressed: 0, resolved: 0 }
+  }
+  for (const thread of scope.value?.comments ?? []) {
+    const path = thread.comment.anchor?.artifactPath
+    if (!path || !thread.blockId || !counts[path]) continue
+    counts[path][thread.status] += 1
+  }
+  return counts
+})
+
+watch(
+  () => selectedArtifact.value?.path,
+  () => {
+    activeThreadId.value = undefined
+  },
+)
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -110,12 +171,28 @@ watch(hasDirtyComposer, (dirty) => {
   }
 })
 
+async function canonicalizeArtifactSelection(detail: ScopeDetail, generation: number) {
+  if (
+    generation !== loadGeneration ||
+    kind.value !== 'change' ||
+    hasExplicitArtifactSelection.value ||
+    !detail.artifacts[0]
+  ) {
+    return
+  }
+
+  await router.replace({
+    query: { ...route.query, artifact: detail.artifacts[0].path },
+  })
+}
+
 async function refresh(generation = loadGeneration) {
   const detail = await fetchScope(kind.value, key.value)
   if (generation === loadGeneration) {
     scope.value = detail
     pendingArtifact.value = undefined
     pendingArtifactUpdate.value = false
+    await canonicalizeArtifactSelection(detail, generation)
   }
 }
 
@@ -181,6 +258,7 @@ watch(
     pendingArtifact.value = undefined
     pendingArtifactUpdate.value = false
     dirtyComposers.value = new Set()
+    activeThreadId.value = undefined
     events?.close()
     try {
       await refresh(generation)
@@ -205,6 +283,42 @@ async function mutate(operation: () => Promise<unknown>) {
   } finally {
     busy.value = false
   }
+}
+
+function navigationBehavior(): ScrollBehavior {
+  return typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? 'auto'
+    : 'smooth'
+}
+
+async function selectArtifact(path: string) {
+  if (kind.value !== 'change') return
+  if (path === requestedArtifactPath.value) {
+    document.getElementById('selected-artifact-title')?.focus()
+    return
+  }
+
+  activeThreadId.value = undefined
+  await router.push({ query: { ...route.query, artifact: path } })
+  await nextTick()
+  const heading = document.getElementById('selected-artifact-title')
+  heading?.focus({ preventScroll: true })
+  heading?.scrollIntoView({ block: 'start', behavior: navigationBehavior() })
+}
+
+async function activateThreadFromMarker(threadId: string) {
+  activeThreadId.value = threadId
+  await nextTick()
+  const thread = document.getElementById(`artifact-thread-${threadId}`)
+  thread?.focus({ preventScroll: true })
+  thread?.scrollIntoView({ block: 'center', behavior: navigationBehavior() })
+}
+
+async function activateThreadFromConversation(threadId: string) {
+  activeThreadId.value = threadId
+  await nextTick()
+  artifactDocument.value?.focusThread(threadId)
 }
 
 function addComment(comment: NewComment) {
@@ -257,43 +371,70 @@ function submit(verdict: Verdict, comment: string) {
 
       <div class="scope-layout">
         <aside class="scope-utility" aria-label="Scope instruments">
-          <section>
-            <InstrumentLabel>Comment state</InstrumentLabel>
+          <section class="scope-utility__route">
+            <InstrumentLabel>Route coordinate</InstrumentLabel>
+            <RouterLink to="/" class="scope-index-link">
+              <span aria-hidden="true">←</span>
+              Observation index
+            </RouterLink>
+          </section>
+          <section class="scope-utility__state">
+            <InstrumentLabel>Comment state / all artifacts</InstrumentLabel>
             <StatusMark kind="open" :label="`${scope.commentCounts.open} open`" />
             <StatusMark kind="addressed" :label="`${scope.commentCounts.addressed} addressed`" />
             <StatusMark kind="resolved" :label="`${scope.commentCounts.resolved} resolved`" />
           </section>
-          <nav aria-label="Artifacts">
-            <InstrumentLabel>Document coordinates</InstrumentLabel>
-            <ol>
-              <li v-for="(artifact, index) in scope.artifacts" :key="artifact.path">
-                <a :href="`#artifact-${index}`">{{ artifact.path }}</a>
-              </li>
-            </ol>
-          </nav>
+          <ArtifactNavigator
+            :paths="scope.artifacts.map((artifact) => artifact.path)"
+            :selected-path="selectedArtifact?.path"
+            :thread-counts="artifactThreadCounts"
+            :interactive="scope.kind === 'change'"
+            @select="selectArtifact"
+          />
         </aside>
 
-        <section class="scope-document" aria-label="Scope artifacts">
+        <section class="scope-document" aria-label="Selected artifact">
           <ArtifactDocument
-            :artifacts="scope.artifacts"
-            :comments="scope.comments"
+            ref="artifactDocument"
+            :artifact="selectedArtifact"
+            :comments="selectedThreads"
+            :requested-path="requestedArtifactPath"
+            :unavailable="selectionUnavailable"
+            :active-thread-id="activeThreadId"
             :busy="busy"
             @comment="addComment"
+            @activate-thread="activateThreadFromMarker"
+            @composer="(id, dirty) => setComposerDirty(id, dirty)"
+          />
+        </section>
+
+        <aside class="scope-conversation" aria-label="Artifact conversation and decisions">
+          <ArtifactConversation
+            v-if="selectedArtifact"
+            :artifact="selectedArtifact"
+            :threads="selectedThreads"
+            :active-thread-id="activeThreadId"
+            :busy="busy"
+            @activate="activateThreadFromConversation"
             @reply="reply"
             @status="setStatus"
             @composer="(id, dirty) => setComposerDirty(id, dirty)"
           />
-        </section>
-      </div>
+          <section v-else class="artifact-conversation artifact-conversation--idle">
+            <InstrumentLabel>Artifact conversation / idle</InstrumentLabel>
+            <p>Select an available artifact coordinate to inspect its resolved threads.</p>
+          </section>
 
-      <DecisionInstrument
-        :scope="scope"
-        :busy="busy"
-        @submit="submit"
-        @reply="reply"
-        @status="setStatus"
-        @composer="(id, dirty) => setComposerDirty(id, dirty)"
-      />
+          <DecisionInstrument
+            :scope="scope"
+            :busy="busy"
+            @submit="submit"
+            @reply="reply"
+            @status="setStatus"
+            @composer="(id, dirty) => setComposerDirty(id, dirty)"
+          />
+        </aside>
+      </div>
     </template>
   </main>
 </template>

@@ -1,23 +1,31 @@
 <script setup lang="ts">
+import type { ComponentPublicInstance } from 'vue'
 import { computed, ref, watch } from 'vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
-import CommentThread from '@/components/review/CommentThread.vue'
 import { Button } from '@/components/ui/button'
 import type { Artifact, Block, NewComment, Thread } from '@/lib/scope-review'
 
 const props = withDefaults(
   defineProps<{
-    artifacts: Artifact[]
+    artifact?: Artifact
     comments: Thread[]
+    requestedPath?: string
+    unavailable?: boolean
+    activeThreadId?: string
     busy?: boolean
   }>(),
-  { busy: false },
+  {
+    artifact: undefined,
+    requestedPath: undefined,
+    unavailable: false,
+    activeThreadId: undefined,
+    busy: false,
+  },
 )
 
 const emit = defineEmits<{
   comment: [comment: NewComment]
-  reply: [commentId: string, body: string]
-  status: [commentId: string, status: 'open' | 'resolved']
+  activateThread: [threadId: string]
   composer: [id: string, dirty: boolean]
 }>()
 
@@ -28,9 +36,9 @@ interface CommentTarget {
   selected: boolean
 }
 
-const expanded = ref<string>()
 const target = ref<CommentTarget>()
 const commentBody = ref('')
+const blockElements = new Map<string, HTMLElement>()
 const commentComposerDirty = computed(() => Boolean(target.value && commentBody.value.length > 0))
 
 watch(commentComposerDirty, (dirty) => emit('composer', 'artifact-comment', dirty), {
@@ -39,33 +47,60 @@ watch(commentComposerDirty, (dirty) => emit('composer', 'artifact-comment', dirt
 
 const commentsByBlock = computed(() => {
   const grouped = new Map<string, Thread[]>()
+  if (!props.artifact) return grouped
+
   for (const thread of props.comments) {
-    if (!thread.blockId) continue
-    const artifactPath = thread.comment.anchor?.artifactPath
-    if (!artifactPath) continue
-    const key = `${artifactPath}\u0000${thread.blockId}`
-    const current = grouped.get(key) ?? []
+    if (!thread.blockId || thread.comment.anchor?.artifactPath !== props.artifact.path) continue
+    const current = grouped.get(thread.blockId) ?? []
     current.push(thread)
-    grouped.set(key, current)
+    grouped.set(thread.blockId, current)
   }
   return grouped
 })
 
 function artifactLabel(path: string): string {
-  if (path.includes('/specs/')) {
-    const capability = path.split('/specs/')[1]?.split('/')[0]
-    return capability ? `${capability} / spec delta` : path
+  if (path.startsWith('.openspec-doc/scratch/')) return 'Exploration scratch'
+  const marker = '/changes/'
+  const markerIndex = path.indexOf(marker)
+  if (markerIndex >= 0) {
+    const tail = path.slice(markerIndex + marker.length)
+    const separator = tail.indexOf('/')
+    if (separator >= 0) return tail.slice(separator + 1)
   }
-  return path.split('/').slice(-1)[0]?.replace(/\.md$/, '') ?? path
+  return path
 }
 
-function blockThreads(artifactPath: string, blockId: string): Thread[] {
-  return commentsByBlock.value.get(`${artifactPath}\u0000${blockId}`) ?? []
+function blockThreads(blockId: string): Thread[] {
+  return commentsByBlock.value.get(blockId) ?? []
 }
 
-function startBlockComment(artifactPath: string, block: Block) {
+function setBlockElement(blockId: string, element: Element | ComponentPublicInstance | null): void {
+  if (element instanceof HTMLElement) blockElements.set(blockId, element)
+  else blockElements.delete(blockId)
+}
+
+function navigationBehavior(): ScrollBehavior {
+  return typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? 'auto'
+    : 'smooth'
+}
+
+function focusThread(threadId: string): void {
+  const thread = props.comments.find((candidate) => candidate.comment.id === threadId)
+  if (!thread?.blockId) return
+  const block = blockElements.get(thread.blockId)
+  if (!block) return
+  block.focus({ preventScroll: true })
+  block.scrollIntoView({ block: 'center', behavior: navigationBehavior() })
+}
+
+defineExpose({ focusThread })
+
+function startBlockComment(block: Block) {
+  if (!props.artifact) return
   target.value = {
-    artifactPath,
+    artifactPath: props.artifact.path,
     block,
     selectedText: block.source,
     selected: false,
@@ -73,7 +108,8 @@ function startBlockComment(artifactPath: string, block: Block) {
   commentBody.value = ''
 }
 
-function startSelectionComment(event: MouseEvent, artifactPath: string, block: Block) {
+function startSelectionComment(event: MouseEvent, block: Block) {
+  if (!props.artifact) return
   const container = event.currentTarget
   if (!(container instanceof HTMLElement)) return
   const selection = window.getSelection()
@@ -81,20 +117,8 @@ function startSelectionComment(event: MouseEvent, artifactPath: string, block: B
   if (!selection || selection.isCollapsed || !selectedText) return
   if (!container.contains(selection.anchorNode) || !container.contains(selection.focusNode)) return
 
-  target.value = { artifactPath, block, selectedText, selected: true }
+  target.value = { artifactPath: props.artifact.path, block, selectedText, selected: true }
   commentBody.value = ''
-}
-
-function forwardReply(commentId: string, body: string) {
-  emit('reply', commentId, body)
-}
-
-function forwardStatus(commentId: string, status: 'open' | 'resolved') {
-  emit('status', commentId, status)
-}
-
-function forwardComposer(commentId: string, dirty: boolean) {
-  emit('composer', `artifact-reply:${commentId}`, dirty)
 }
 
 function cancelComment() {
@@ -118,127 +142,120 @@ function submitComment() {
 </script>
 
 <template>
-  <div v-if="artifacts.length" class="artifact-stack">
-    <section
-      v-for="(artifact, artifactIndex) in artifacts"
-      :key="artifact.path"
-      class="artifact-document"
-      :aria-labelledby="`artifact-${artifactIndex}`"
-    >
-      <header class="artifact-document__header">
-        <InstrumentLabel>Artifact {{ String(artifactIndex + 1).padStart(2, '0') }}</InstrumentLabel>
-        <h2 :id="`artifact-${artifactIndex}`">{{ artifactLabel(artifact.path) }}</h2>
+  <section v-if="artifact" class="artifact-document" aria-labelledby="selected-artifact-title">
+    <header class="artifact-document__header">
+      <div class="artifact-document__identity">
+        <InstrumentLabel>Selected artifact</InstrumentLabel>
+        <h2 id="selected-artifact-title" tabindex="-1">{{ artifactLabel(artifact.path) }}</h2>
         <code>{{ artifact.path }}</code>
-      </header>
-
-      <div class="artifact-document__blocks">
-        <div v-for="(block, blockIndex) in artifact.blocks" :key="block.id" class="review-block-row">
-          <div
-            class="review-block"
-            :class="{ 'review-block--commented': blockThreads(artifact.path, block.id).length > 0 }"
-            :data-block-id="block.id"
-            @mouseup="startSelectionComment($event, artifact.path, block)"
-          >
-            <div class="review-block__content">
-              <!-- Rust sanitizes raw HTML before this rendered markdown reaches client. -->
-              <table v-if="block.html.startsWith('<tr>')" class="review-block__table">
-                <!-- pi-lens-ignore: javascript.vue.security.audit.xss.templates.avoid-v-html.avoid-v-html -->
-                <tbody v-html="block.html" />
-              </table>
-              <!-- pi-lens-ignore: javascript.vue.security.audit.xss.templates.avoid-v-html.avoid-v-html -->
-              <div v-else v-html="block.html" />
-            </div>
-
-            <Button
-              type="button"
-              variant="instrument"
-              size="icon-sm"
-              class="review-block__comment-action"
-              :aria-label="`Comment on ${artifact.path}, block ${blockIndex + 1}`"
-              :disabled="busy"
-              @click="startBlockComment(artifact.path, block)"
-            >
-              +
-            </Button>
-
-            <div
-              v-if="blockThreads(artifact.path, block.id).length"
-              class="review-block__markers"
-              aria-label="Comments"
-            >
-              <button
-                v-for="(thread, threadIndex) in blockThreads(artifact.path, block.id)"
-                :key="thread.comment.id"
-                type="button"
-                class="review-block__marker"
-                :class="`review-block__marker--${thread.status}`"
-                :aria-expanded="expanded === thread.comment.id"
-                :aria-controls="`thread-${thread.comment.id}`"
-                @click="expanded = expanded === thread.comment.id ? undefined : thread.comment.id"
-              >
-                {{ threadIndex + 1 }}
-                <span class="sr-only">{{ thread.status }} comment</span>
-              </button>
-            </div>
-          </div>
-
-          <div
-            v-for="thread in blockThreads(artifact.path, block.id).filter(
-              (candidate) => candidate.comment.id === expanded,
-            )"
-            :id="`thread-${thread.comment.id}`"
-            :key="thread.comment.id"
-            class="review-block-row__conversation"
-          >
-            <CommentThread
-              :thread="thread"
-              :busy="busy"
-              @reply="forwardReply"
-              @status="forwardStatus"
-              @composer="(dirty) => forwardComposer(thread.comment.id, dirty)"
-            />
-          </div>
-
-          <form
-            v-if="target?.block.id === block.id"
-            class="review-block-row__composer"
-            @submit.prevent="submitComment"
-          >
-            <label :for="`comment-${block.id}`">
-              {{ target.selected ? 'Comment on selected text' : 'Comment on block' }}
-            </label>
-            <blockquote>{{ target.selectedText }}</blockquote>
-            <textarea
-              :id="`comment-${block.id}`"
-              v-model="commentBody"
-              rows="4"
-              required
-              autofocus
-              :disabled="busy"
-            />
-            <div class="comment-thread__actions">
-              <Button type="submit" size="sm" :disabled="busy || !commentBody.trim()">
-                Record comment
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                :disabled="busy"
-                @click="cancelComment"
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </div>
       </div>
-    </section>
-  </div>
+      <div class="artifact-document__arrival-art" aria-hidden="true">
+        <img
+          src="/assets/images/observatory-field.webp"
+          alt=""
+          aria-hidden="true"
+          class="artifact-document__arrival-image"
+        />
+      </div>
+    </header>
+
+    <div class="artifact-document__blocks">
+      <div v-for="(block, blockIndex) in artifact.blocks" :key="block.id" class="review-block-row">
+        <div
+          :ref="(element) => setBlockElement(block.id, element)"
+          class="review-block"
+          :class="{
+            'review-block--commented': blockThreads(block.id).length > 0,
+            'review-block--active': blockThreads(block.id).some(
+              (thread) => thread.comment.id === activeThreadId,
+            ),
+          }"
+          :data-block-id="block.id"
+          tabindex="-1"
+          @mouseup="startSelectionComment($event, block)"
+        >
+          <div class="review-block__content">
+            <!-- Rust sanitizes raw HTML before this rendered markdown reaches client. -->
+            <table v-if="block.html.startsWith('<tr>')" class="review-block__table">
+              <!-- pi-lens-ignore: javascript.vue.security.audit.xss.templates.avoid-v-html.avoid-v-html -->
+              <tbody v-html="block.html" />
+            </table>
+            <!-- pi-lens-ignore: javascript.vue.security.audit.xss.templates.avoid-v-html.avoid-v-html -->
+            <div v-else v-html="block.html" />
+          </div>
+
+          <Button
+            type="button"
+            variant="instrument"
+            size="icon-sm"
+            class="review-block__comment-action"
+            :aria-label="`Comment on ${artifact.path}, block ${blockIndex + 1}`"
+            :disabled="busy"
+            @click="startBlockComment(block)"
+          >
+            +
+          </Button>
+
+          <div v-if="blockThreads(block.id).length" class="review-block__markers" aria-label="Comments">
+            <button
+              v-for="(thread, threadIndex) in blockThreads(block.id)"
+              :key="thread.comment.id"
+              type="button"
+              class="review-block__marker"
+              :class="[
+                `review-block__marker--${thread.status}`,
+                { 'review-block__marker--active': thread.comment.id === activeThreadId },
+              ]"
+              :aria-current="thread.comment.id === activeThreadId ? 'true' : undefined"
+              :aria-controls="`artifact-thread-${thread.comment.id}`"
+              @click="emit('activateThread', thread.comment.id)"
+            >
+              {{ threadIndex + 1 }}
+              <span class="sr-only">{{ thread.status }} comment</span>
+            </button>
+          </div>
+        </div>
+
+        <form
+          v-if="target?.block.id === block.id"
+          class="review-block-row__composer"
+          @submit.prevent="submitComment"
+        >
+          <label :for="`comment-${block.id}`">
+            {{ target.selected ? 'Comment on selected text' : 'Comment on block' }}
+          </label>
+          <blockquote>{{ target.selectedText }}</blockquote>
+          <textarea
+            :id="`comment-${block.id}`"
+            v-model="commentBody"
+            rows="4"
+            required
+            autofocus
+            :disabled="busy"
+          />
+          <div class="comment-thread__actions">
+            <Button type="submit" size="sm" :disabled="busy || !commentBody.trim()">
+              Record comment
+            </Button>
+            <Button type="button" variant="ghost" size="sm" :disabled="busy" @click="cancelComment">
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <section v-else-if="unavailable" class="scope-empty scope-empty--unavailable" aria-labelledby="artifact-unavailable-title">
+    <InstrumentLabel>Document signal / unavailable</InstrumentLabel>
+    <h2 id="artifact-unavailable-title">Selected artifact unavailable</h2>
+    <code>{{ requestedPath }}</code>
+    <p>Requested exact coordinate does not exist in current scope snapshot.</p>
+  </section>
 
   <section v-else class="scope-empty" aria-labelledby="scope-empty-title">
     <InstrumentLabel>Document signal / waiting</InstrumentLabel>
     <h2 id="scope-empty-title">No artifacts written yet</h2>
-    <p>Scope exists. Document spine will appear when agent writes first artifact.</p>
+    <p>Scope exists. Document stage will appear when agent writes first artifact.</p>
   </section>
 </template>

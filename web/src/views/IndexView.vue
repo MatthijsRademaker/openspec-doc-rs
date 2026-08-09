@@ -33,7 +33,7 @@ onMounted(async () => {
       <div class="index-observation__art" aria-hidden="true">
         <img
           class="index-observation__image"
-          src="/assets/images/index-observation-field.webp"
+          src="/assets/images/observatory-field.webp"
           alt=""
           aria-hidden="true"
         />
@@ -76,7 +76,7 @@ onMounted(async () => {
         <div class="index-plate index-plate--sun" aria-hidden="true">
           <img
             class="index-plate__image"
-            src="/assets/images/index-plate-sun.webp"
+            src="/assets/images/observatory-plate-sun.webp"
             alt=""
             aria-hidden="true"
           />
@@ -84,7 +84,7 @@ onMounted(async () => {
         <div class="index-plate index-plate--face" aria-hidden="true">
           <img
             class="index-plate__image"
-            src="/assets/images/index-plate-face.webp"
+            src="/assets/images/observatory-plate-face.webp"
             alt=""
             aria-hidden="true"
           />
@@ -92,7 +92,7 @@ onMounted(async () => {
         <div class="index-plate index-plate--star-system" aria-hidden="true">
           <img
             class="index-plate__image"
-            src="/assets/images/index-plate-star-system.webp"
+            src="/assets/images/observatory-plate-star-system.webp"
             alt=""
             aria-hidden="true"
           />

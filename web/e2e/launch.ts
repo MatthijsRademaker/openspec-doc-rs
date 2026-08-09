@@ -77,18 +77,23 @@ async function createFixture(): Promise<string> {
   await mkdir(scratchRoot, { recursive: true })
 
   const repeatedBlock = 'Repeated review target.'
+  const proposalPath = `openspec/changes/${fixtureChange}/proposal.md`
+  const designPath = `openspec/changes/${fixtureChange}/design.md`
   const proposal =
     '# Observatory Design System Fixture\n\nBrowser lane must see this proposal.\n\n' +
     `${repeatedBlock}\n\nA bridge between repeated blocks.\n\n${repeatedBlock}\n\n` +
     'Selection with **inline markup** crosses source.\n'
+  const designTarget = 'Conversation follows exact selected artifact.'
+  const design = `# Fixture design\n\nA deterministic embedded-app fixture.\n\n${designTarget}\n`
   const secondRepeatedOffset = proposal.lastIndexOf(repeatedBlock)
+  const designTargetOffset = design.indexOf(designTarget)
   const comments = [
     {
       type: 'comment',
       comment: {
         id: 'e2e-open-comment',
         anchor: {
-          artifactPath: `openspec/changes/${fixtureChange}/proposal.md`,
+          artifactPath: proposalPath,
           selectedText: repeatedBlock,
           headingPath: ['Observatory Design System Fixture'],
           beforeText: '',
@@ -113,9 +118,35 @@ async function createFixture(): Promise<string> {
     {
       type: 'comment',
       comment: {
+        id: 'e2e-design-comment',
+        anchor: {
+          artifactPath: designPath,
+          selectedText: designTarget,
+          headingPath: ['Fixture design'],
+          beforeText: '',
+          afterText: '',
+          startOffset: designTargetOffset,
+          endOffset: designTargetOffset + designTarget.length,
+        },
+        body: 'Keep design conversation artifact-scoped.',
+        createdAt: '2026-01-01T00:01:30Z',
+      },
+    },
+    {
+      type: 'status',
+      status: {
+        id: 'e2e-design-addressed',
+        commentId: 'e2e-design-comment',
+        status: 'addressed',
+        createdAt: '2026-01-01T00:01:31Z',
+      },
+    },
+    {
+      type: 'comment',
+      comment: {
         id: 'e2e-orphaned-comment',
         anchor: {
-          artifactPath: `openspec/changes/${fixtureChange}/proposal.md`,
+          artifactPath: proposalPath,
           selectedText: 'Original text rewritten away.',
           headingPath: [],
           beforeText: '',
@@ -163,11 +194,12 @@ async function createFixture(): Promise<string> {
     [`openspec/changes/${fixtureChange}/.openspec.yaml`]:
       'schema: spec-driven\ncreated: 2026-01-01\n',
     [`openspec/changes/${fixtureChange}/proposal.md`]: proposal,
-    [`openspec/changes/${fixtureChange}/design.md`]:
-      '# Fixture design\n\nA deterministic embedded-app fixture.\n',
+    [`openspec/changes/${fixtureChange}/design.md`]: design,
     [`openspec/changes/${fixtureChange}/tasks.md`]: '# Fixture tasks\n\n- [x] Render index data\n',
-    [`openspec/changes/${fixtureChange}/specs/index/spec.md`]:
-      '# Index fixture\n\nThe fixture has one active change.\n',
+    [`openspec/changes/${fixtureChange}/specs/dashboard-html-views/spec.md`]:
+      '# HTML view fixture\n\nNested paths remain exact.\n',
+    [`openspec/changes/${fixtureChange}/specs/dashboard-visual-system/spec.md`]:
+      '# Visual system fixture\n\nArtwork yields before prose.\n',
     [`.openspec-doc/scratch/${fixtureChange}.md`]:
       '# Observatory Design System Fixture\n\nThis title exercises a real ruled register.\n',
     [`.openspec-doc/directives/_session/${fixtureSession}.json`]:
@@ -209,7 +241,8 @@ async function waitForServer(server: ChildProcess, output: string[]): Promise<vo
       throw new Error(`openspec-doc exited before readiness:\n${output.join('')}`)
     }
     try {
-      // pi-lens-ignore: typescript.react.security.react-insecure-request.react-insecure-request
+      // Local embedded-server readiness probe; TLS is neither exposed nor expected.
+      // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
       const response = await fetch(`${baseURL}/api/index`)
       if (response.ok) {
         return
@@ -243,6 +276,7 @@ async function main(): Promise<void> {
     server.stdout?.on('data', (chunk: Buffer) => output.push(chunk.toString()))
     server.stderr?.on('data', (chunk: Buffer) => output.push(chunk.toString()))
     await waitForServer(server, output)
+    process.env.E2E_FIXTURE_ROOT = fixture
 
     await run(
       bun,
@@ -263,6 +297,7 @@ async function main(): Promise<void> {
     if (fixture) {
       await rm(fixture, { recursive: true, force: true })
     }
+    delete process.env.E2E_FIXTURE_ROOT
   }
   if (failure) {
     throw failure
