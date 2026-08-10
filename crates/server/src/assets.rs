@@ -1,14 +1,21 @@
 //! The built frontend, embedded in the binary.
 //!
-//! `web/dist/` is committed and compiled in, so the binary needs no asset
-//! directory, no checked-out repository and no Node toolchain — neither to run
-//! nor to `cargo install`. What makes that safe is the CI check that rebuilds
-//! the frontend from a clean checkout and fails if the committed output differs;
-//! without it a stale `dist/` would ship an interface that does not match its
-//! source, silently.
+//! `web/dist/` is a gitignored build artifact compiled in from whatever the
+//! local build produced, so the binary needs no asset directory, no checked-out
+//! repository and no Node toolchain — neither to run nor to `cargo install`.
+//! The cost is that Cargo depends on a build step outside Cargo: build the
+//! frontend first (`make build`), because a fresh clone has no `dist/`.
 //!
-//! A missing or empty `web/dist/` is a compile error rather than a server that
-//! starts and serves nothing.
+//! An absent `web/dist/` is a compile error rather than a server that starts
+//! and serves nothing. A `web/dist/` that exists but is empty is *not* caught
+//! here: rust-embed compiles zero files happily and `shell` then panics on the
+//! first request. Catching that would take a compile-time assertion that
+//! `index.html` is embedded.
+//!
+//! Nothing compares the embedded bytes against a committed baseline, because
+//! there is no committed baseline. What CI proves instead is that a clean
+//! checkout can install, check, build, embed and serve the frontend in a real
+//! browser; see `.github/workflows/frontend-assets.yml`.
 
 use axum::http::header;
 use axum::response::{IntoResponse, Response};

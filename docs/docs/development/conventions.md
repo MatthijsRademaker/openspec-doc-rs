@@ -64,7 +64,14 @@ light token set exists. `designs/dashboard-review-workbench.md` owns implementat
 boards live under `designs/visual-language/`. Those original PNGs are design inputs, never runtime payload.
 `web/public/assets/images/` contains only named, optimized derivatives used by frontend code. Production
 build runs `bun run check:assets`, which rejects unlisted rasters, source-board copies, and payload above the
-6 MiB budget.
+6 MiB budget, and `bun run check:mocks`, which rejects any mock handler, fixture, or worker script that
+reached `dist/`.
+
+Motion explains navigation, a state change, or the arrival of content the reviewer did not cause; nothing
+else. Transitions finish inside 100–200ms. A mark reporting an arrival may dwell longer than that, provided
+it withholds nothing and decays on its own. Under `prefers-reduced-motion: reduce` suppression is global, so
+an effect added later is inert without being listed anywhere, decorative displacement derives from
+`--motion-nudge`, and an effect that must survive it opts out with `data-motion="required"`.
 
 ## Working rules
 

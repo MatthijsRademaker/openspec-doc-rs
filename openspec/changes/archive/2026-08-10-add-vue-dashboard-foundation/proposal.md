@@ -1,3 +1,12 @@
+## Status at archive: two of its decisions were later reversed
+
+This change shipped and its 24 tasks are done. Two of the decisions recorded below were overturned by later work, so this file is history, not current state. It is annotated rather than rewritten: the tasks record verified work that genuinely happened, and pretending the reversed decisions were never made would make the annotations below unreadable.
+
+- **The committed `web/dist/` and the CI check that compared its bytes are gone.** Commit `b2e120a` gitignored the build artifact; the server crate now embeds whatever the local build produced at compile time, and an absent `web/dist/` is a compile error. CI proves a clean checkout can install, build, embed and serve, instead of comparing bytes against a committed baseline. Build-artifact discipline is owned by `dashboard-development-harness`.
+- **The light theme and the theme toggle are gone.** `implement-observatory-design-system` replaced both with one dark observatory identity, and `dashboard-visual-system` now requires that no theme-selection control exists. The `dashboard-html-views` delta this change carried held only the light/dark theme requirement, so it was removed rather than archived into a spec that contradicts it.
+
+What survives into the specs is what is still true: the interface is served from assets embedded in the binary, and the index's data is available as JSON. Neither was in a baseline spec before this archive.
+
 ## Why
 
 The dashboard's interface has to be replaced — comments render hundreds of lines from the text they annotate, artifacts never live-update, there is no dark mode — and the owner has chosen Vue with shadcn-vue to replace it. Before any of that is worth writing, four questions have to have answers that can be checked rather than assumed:
@@ -14,8 +23,8 @@ Answering those inside the review-surface migration means finding out at the end
 ## What Changes
 
 - **`web/` is added**: Vite, Vue, Tailwind and shadcn-vue, with the light and dark themes coming from shadcn's theming rather than hand-written media queries.
-- **The built assets are committed and embedded** with `rust-embed`, so `cargo install` needs no Node toolchain.
-- **A CI check rebuilds the frontend and fails if the committed assets differ.** Committing a build artifact is only safe with this; without it the decision is not the one being made here.
+- **The built assets are committed and embedded** with `rust-embed`, so `cargo install` needs no Node toolchain. *(Superseded: the assets are no longer committed; only the embedding survives.)*
+- **A CI check rebuilds the frontend and fails if the committed assets differ.** Committing a build artifact is only safe with this; without it the decision is not the one being made here. *(Superseded with the decision it guarded.)*
 - **`/` serves the built application**, and a JSON endpoint serves the index's data — every discovered session and change with the fields the index already shows.
 - **`crates/server/src/page/index.rs` is deleted** and its rendering replaced. The title derivation in `crates/core/src/scratch/title.rs` is reused unchanged; only the rendering moves.
 - **The scope pages are untouched.** `/sessions/<id>` and `/changes/<name>` keep serving server-rendered HTML until `migrate-dashboard-review-to-vue` replaces them.
@@ -28,13 +37,13 @@ None.
 
 ### Modified Capabilities
 
-- `dashboard-server`: gains the requirement that the interface is a built application served from assets embedded in the binary, that those assets are verifiably current, and that the index's data is available as JSON.
-- `dashboard-html-views`: gains a theming requirement. Its index-content requirement is **not** modified — every field it names survives verbatim, which is the point of doing the index first.
+- `dashboard-server`: gains the requirement that the interface is a built application served from assets embedded in the binary, and that the index's data is available as JSON. It was also to gain a requirement that those assets are verifiably current against a committed baseline; that baseline no longer exists, and what replaced it lives in `dashboard-development-harness`.
+- `dashboard-html-views`: its Purpose sentence is edited, and its index-content requirement is **not** modified — every field it names survives verbatim, which is the point of doing the index first. It was also to gain a theming requirement; `dashboard-visual-system` now forbids what that requirement asked for, so the delta was dropped.
 
 ## Impact
 
 - A new `web/` directory: the Vue application, `package.json`, Vite configuration.
-- A committed `web/dist/` and `rust-embed` as a new dependency.
+- A committed `web/dist/` and `rust-embed` as a new dependency. *(The commit half was later reversed; `rust-embed` stayed.)*
 - `crates/server/src/page/index.rs` — deleted.
 - `crates/server/src/routes.rs` — `/` and the index data endpoint; the scope routes untouched.
 - CI configuration — the `dist/` freshness check.

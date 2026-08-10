@@ -79,6 +79,22 @@ unanchored threads remain in decision instrument. At narrow width DOM order is r
 artifact identity/navigation, complete document, artifact conversation, loose comments,
 then decisions—without duplicate interactive thread markup.
 
+The decision instrument is one trigger and one drawer, positioned separately. At desktop the
+trigger is laid out at the foot of the conversation rail, which tracks the viewport so the
+trigger stays reachable from any scroll position in a document taller than the rail; with the
+rail collapsed the trigger keeps its glyph and drops its label to fit the collapsed column. At
+narrow width the layout is one column and the rail is last in the flow, so the trigger is
+instead docked fixed above the safe-area inset and the flow reserves clearance below itself.
+The drawer is modal in both: teleported out of the layout, backdropped, focus-trapped, and
+overlaying the page only while a reviewer holds it open.
+
+The selected document holds a fixed readable measure rather than filling its column, so
+collapsing the conversation rail turns freed width into margin instead of re-wrapping prose.
+The collapse control therefore buys the reviewer quiet — the threads go away and the chassis
+breathes — and no longer buys a wider document. That is a smaller benefit than it used to
+advertise; if it turns out not to be worth a control, remove the control rather than restore
+the reflow.
+
 Index uses same language at lower density: instrument masthead, separate ruled session and
 change registers, exact identifiers, complete metadata, explicit recent activity, and
 distinct loading, empty, and failure instruments. It must not invent scope routes,
@@ -88,8 +104,11 @@ repository names, activity events, or review controls unsupported by current dat
 
 Orbital maps, crosshairs, scan lines, nodes, and stipple may frame headings, unused margins,
 rail thumbnails, and empty instruments. They are `aria-hidden`, non-interactive, and never
-sit behind prose, controls, focus rings, or state labels. At narrow width atmosphere shrinks
-or disappears before content.
+sit behind prose, controls, focus rings, or state labels at legible strength. Rail artwork
+occupies the space its rail's content leaves free and may rise a declared `--art-bleed` behind
+the foot of that content, inside a fade three times as long — so the region behind a path or a
+thread is always a trace, and artwork with no free space below it never resolves at all. At
+narrow width atmosphere shrinks or disappears before content.
 
 Only named runtime slots may use raster derivatives. Shared observatory allowlist:
 
@@ -122,10 +141,14 @@ Focus is visibly offset from borders.
   complete document precedes conversation, comment actions stay visible without hover, and
   final content clears decision controls and safe-area inset.
 
-Motion explains entry or state change with opacity or slight lateral movement in 100–200ms
-using `cubic-bezier(0.2, 0, 0.2, 1)`. No perpetual orbit, parallax, animated ornament, or
-spectacle loader. `prefers-reduced-motion: reduce` removes transforms and makes transitions
-immediate.
+Motion explains entry, state change, or the arrival of content the reviewer did not cause, with
+opacity or slight lateral movement in 100–200ms using `cubic-bezier(0.2, 0, 0.2, 1)`. That bound
+is how long a transition takes to *finish*; a mark reporting an arrival may dwell longer than
+that, provided it withholds nothing, intercepts nothing, and decays on its own instead of
+becoming a state something has to clear. No perpetual orbit, parallax, animated ornament, or
+spectacle loader. `prefers-reduced-motion: reduce` removes decorative displacement and makes
+transitions immediate; suppression is global, so an effect added later is inert without being
+listed, and an effect that must survive it opts out explicitly.
 
 ## Interaction and accessibility
 

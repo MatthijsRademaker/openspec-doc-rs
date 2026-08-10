@@ -1,6 +1,8 @@
 import { expect, type Page, test } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { proposalSource } from './fixture-source'
+import { expectClearOfAll, expectContained, expectNoOverlap } from './geometry'
 
 const fixtureChange = 'implement-observatory-design-system-with-a-realistically-long-identifier'
 const fixtureTitle = 'Observatory Design System Fixture'
@@ -15,11 +17,7 @@ const tasksPath = `${changeRoot}/tasks.md`
 const htmlSpecPath = `${changeRoot}/specs/dashboard-html-views/spec.md`
 const visualSpecPath = `${changeRoot}/specs/dashboard-visual-system/spec.md`
 const fixturePaths = [proposalPath, designPath, tasksPath, htmlSpecPath, visualSpecPath]
-const repeatedBlock = 'Repeated review target.'
-const proposalSource =
-  '# Observatory Design System Fixture\n\nBrowser lane must see this proposal.\n\n' +
-  `${repeatedBlock}\n\nA bridge between repeated blocks.\n\n${repeatedBlock}\n\n` +
-  'Selection with **inline markup** crosses source.\n'
+const desktopObstructionViewport = { width: 1280, height: 800 }
 
 function parseUrl(raw: string, context: string): URL {
   try {
@@ -82,6 +80,23 @@ async function expectArtifactQuery(page: Page, path: string): Promise<void> {
 async function gotoArtifact(page: Page, path: string): Promise<void> {
   await page.goto(`/changes/${fixtureChange}?${new URLSearchParams({ artifact: path })}`)
   await expectArtifactQuery(page, path)
+}
+
+/**
+ * `html` carries `scroll-behavior: smooth`, so a plain `scrollTo` returns before the page has
+ * arrived and every geometry read after it measures a moving target. Scroll past the end and
+ * let the browser clamp, then confirm the position has stopped moving.
+ */
+async function scrollToDocumentFoot(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const before = window.scrollY
+        window.scrollTo({ top: 1e7, behavior: 'instant' })
+        return Math.round(window.scrollY - before)
+      }),
+    )
+    .toBe(0)
 }
 
 test('renders realistic scope data through complete instrument registers', async ({ page }) => {
@@ -237,11 +252,163 @@ test('composes full-bleed selected-document chassis without obsolete gallery or 
   })
   expect(geometry.utility?.right).toBeLessThanOrEqual(geometry.documentStage?.left ?? 0)
   expect(geometry.documentStage?.right).toBeLessThanOrEqual(geometry.conversation?.left ?? 0)
-  expect(geometry.decision?.left).toBeGreaterThanOrEqual(geometry.documentStage?.left ?? 0)
-  expect(geometry.decision?.right).toBeLessThanOrEqual(geometry.conversation?.left ?? 0)
+  expect(geometry.decision?.left).toBeGreaterThanOrEqual(geometry.conversation?.left ?? 0)
+  expect(geometry.decision?.right).toBeLessThanOrEqual(geometry.conversation?.right ?? 0)
   expect(geometry.documentOverflow).not.toBe('scroll')
   expect(geometry.documentOverflow).not.toBe('auto')
   expectHealthy(health)
+})
+
+test('keeps the decision trigger clear of document prose and inline composers', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop obstruction contract')
+  await page.setViewportSize(desktopObstructionViewport)
+  await gotoArtifact(page, proposalPath)
+
+  const trigger = page.locator('#scope-comment-trigger')
+  await expect(trigger).toBeVisible()
+  expect(
+    await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight),
+    'fixture document must be taller than the desktop viewport',
+  ).toBe(true)
+  await scrollToDocumentFoot(page)
+  await expect(
+    page.getByText('Final proposal sentence must stay fully legible at the document foot.'),
+  ).toBeInViewport()
+  await expectClearOfAll(trigger, 'decision trigger', page.locator('.review-block'), 'review block')
+
+  const lastBlock = page.locator('.review-block').last()
+  await lastBlock.getByRole('button', { name: /Comment on .* block/ }).click()
+  const composer = page.locator('.review-block-row__composer')
+  await expectNoOverlap(
+    trigger,
+    'decision trigger',
+    composer.getByLabel('Comment on block'),
+    'inline composer textarea',
+  )
+  await expectNoOverlap(
+    trigger,
+    'decision trigger',
+    composer.getByRole('button', { name: 'Record comment' }),
+    'inline composer submit',
+  )
+  await expect(trigger).toBeVisible()
+
+  await page.getByRole('button', { name: 'Collapse anchored threads' }).click()
+  await expect(page.locator('#scope-conversation-body')).toBeHidden()
+  await expect(trigger).toBeVisible()
+})
+
+test('opens the scope feedback drawer at its own beginning', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop drawer focus contract')
+  await page.setViewportSize(desktopObstructionViewport)
+  await gotoArtifact(page, proposalPath)
+
+  await page.getByRole('button', { name: 'Open scope feedback, 2 unplaced notes' }).click()
+  const panel = page.locator('#scope-comment-panel')
+  await expect(panel).toBeVisible()
+  expect(
+    await panel.evaluate((element) => ({
+      scrollTop: element.scrollTop,
+      scrollable: element.scrollHeight > element.clientHeight,
+    })),
+  ).toEqual({ scrollTop: 0, scrollable: true })
+  await expect(panel).toBeFocused()
+  await expectContained(
+    page.locator('#scope-comment-panel-title'),
+    'drawer title',
+    panel,
+    'drawer panel',
+  )
+
+  const trail: string[] = []
+  for (let step = 0; step < 12; step += 1) {
+    await page.keyboard.press('Tab')
+    trail.push(
+      await page.evaluate(() => {
+        const active = document.activeElement
+        if (!active) return ''
+        return (
+          active.getAttribute('aria-label') ||
+          active.id ||
+          active.textContent?.replace(/\s+/g, ' ').trim() ||
+          ''
+        )
+      }),
+    )
+  }
+  const closeStep = trail.indexOf('Close scope feedback')
+  const threadStep = trail.findIndex((entry) =>
+    /^(Reply|Resolve|Reopen|Accept as resolved)$/.test(entry),
+  )
+  const composerStep = trail.indexOf('scope-comment')
+  expect(closeStep, `close control missing from focus trail: ${trail.join(' → ')}`).toBeGreaterThan(
+    -1,
+  )
+  expect(threadStep, `loose thread missing from focus trail: ${trail.join(' → ')}`).toBeGreaterThan(
+    closeStep,
+  )
+  expect(composerStep, `composer missing from focus trail: ${trail.join(' → ')}`).toBeGreaterThan(
+    threadStep,
+  )
+
+  await page.keyboard.press('Escape')
+  await expect(panel).toHaveCount(0)
+  await expect(page.locator('#scope-comment-trigger')).toBeFocused()
+})
+
+test('keeps document line breaks identical across conversation rail collapse', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop measure contract')
+  await page.setViewportSize(desktopObstructionViewport)
+  await gotoArtifact(page, proposalPath)
+
+  const lineBoxes = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('.review-block__content')].slice(0, 3).map((block) => {
+        const range = document.createRange()
+        range.selectNodeContents(block)
+        return [...range.getClientRects()].map((rect) => Math.round(rect.width)).join(' | ')
+      }),
+    )
+
+  const expanded = await lineBoxes()
+  await page.getByRole('button', { name: 'Collapse anchored threads' }).click()
+  await expect(page.locator('#scope-conversation-body')).toBeHidden()
+  expect(await lineBoxes(), 'collapsing the rail re-wrapped the document').toEqual(expanded)
+})
+
+test('keeps instrumentation rail artwork clear of artifact paths', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop artwork containment contract')
+  await page.setViewportSize(desktopObstructionViewport)
+  await gotoArtifact(page, proposalPath)
+
+  await expect(page.locator('.artifact-navigator__path')).toHaveCount(6)
+  const bleed = await page.locator('.scope-utility__art').evaluate((element) => {
+    const declared = getComputedStyle(element).getPropertyValue('--art-bleed')
+    const root = Number.parseFloat(getComputedStyle(document.documentElement).fontSize)
+    return Number.parseFloat(declared) * root
+  })
+  expect(
+    bleed,
+    'artwork must declare its bleed for the legible region to be measurable',
+  ).toBeGreaterThan(0)
+  await expectClearOfAll(
+    page.locator('.scope-utility__art'),
+    'instrumentation rail artwork below its fade',
+    page.locator('.artifact-navigator__path'),
+    'artifact path',
+    { insetTop: bleed },
+  )
+  await expectClearOfAll(
+    page.locator('.scope-conversation__art'),
+    'conversation rail artwork below its fade',
+    page.locator('.artifact-conversation__thread'),
+    'conversation thread',
+    { insetTop: bleed },
+  )
 })
 
 test('links persistent conversation to exact repeated source occurrence', async ({ page }) => {
@@ -423,13 +590,145 @@ test('keeps dirty composer while review state updates and applies latest deferre
   await expect(page.getByText('Browser lane must see this proposal.')).toBeVisible()
 })
 
+test('locks both panes from either direction of activation', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'two-pane geometry is a desktop claim')
+  await gotoArtifact(page, proposalPath)
+  const railThread = page.locator('#artifact-thread-e2e-open-comment')
+  const sourceBlocks = page.locator('.review-block').filter({ hasText: 'Repeated review target.' })
+  const anchoredBlock = sourceBlocks.nth(1)
+  await expect(railThread).not.toHaveClass(/artifact-conversation__thread--active/)
+
+  // Marker click: the pane that must change is the one the reviewer did not click, and the change
+  // there used to be a second border on a surface that already had one.
+  await anchoredBlock.locator('.review-block__marker').click()
+  await expect(railThread).toHaveClass(/artifact-conversation__thread--active/)
+  await expect(railThread.locator('.artifact-conversation__crosshair-lock')).toHaveCSS(
+    'opacity',
+    '1',
+  )
+  expect(
+    await railThread.evaluate((element) => getComputedStyle(element, '::before').transform),
+  ).toBe('matrix(1, 0, 0, 1, 0, 0)')
+
+  // Thread click has to read the same way in the other direction.
+  await page.reload()
+  await expect(anchoredBlock).not.toHaveClass(/review-block--active/)
+  await page.getByRole('button', { name: 'Locate source for comment e2e-open-comment' }).click()
+  await expect(anchoredBlock).toHaveClass(/review-block--active/)
+  expect(
+    await anchoredBlock.evaluate((element) => getComputedStyle(element, '::before').transform),
+  ).toBe('matrix(1, 0, 0, 1, 0, 0)')
+  await expect(sourceBlocks.nth(0)).not.toHaveClass(/review-block--active/)
+})
+
+test('reports an arriving rewrite at the document and clears it unaided', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'filesystem arrival contract runs once')
+  const fixtureRoot = process.env.E2E_FIXTURE_ROOT
+  if (!fixtureRoot) throw new Error('E2E_FIXTURE_ROOT is required for live artifact verification')
+  const proposalFile = join(fixtureRoot, proposalPath)
+  await gotoArtifact(page, proposalPath)
+  await scrollToDocumentFoot(page)
+  const readingPosition = await page.evaluate(() => window.scrollY)
+
+  const stage = page.locator('.artifact-document')
+  await expect(stage).not.toHaveClass(/artifact-document--replaced/)
+
+  await writeFile(
+    proposalFile,
+    proposalSource.replace('Browser lane must see this proposal.', 'Arrival lane rewrite.'),
+  )
+  await expect(page.getByText('Document content replaced')).toBeVisible()
+  await expect(stage).toHaveClass(/artifact-document--replaced/)
+  await expect(page.getByText('Arrival lane rewrite.')).toBeAttached()
+  expect(await page.evaluate(() => window.scrollY)).toBe(readingPosition)
+
+  // The report is an event, not a state: it goes on its own and leaves no control behind.
+  await expect(page.getByText('Document content replaced')).toHaveCount(0)
+  await expect(stage).not.toHaveClass(/artifact-document--replaced/)
+
+  await writeFile(proposalFile, proposalSource)
+  await page.reload()
+  await expect(page.getByText('Browser lane must see this proposal.')).toBeVisible()
+})
+
+test('keeps every added effect inert under reduced motion', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'motion suppression inspected once')
+  const fixtureRoot = process.env.E2E_FIXTURE_ROOT
+  if (!fixtureRoot) throw new Error('E2E_FIXTURE_ROOT is required for live artifact verification')
+  const proposalFile = join(fixtureRoot, proposalPath)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await gotoArtifact(page, proposalPath)
+
+  expect(
+    await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--motion-nudge').trim(),
+    ),
+    'decorative displacement is zeroed centrally, so no effect has to be listed by hand',
+  ).toBe('0px')
+
+  await page.locator('.review-block__marker').first().click()
+  const commentedBlock = page.locator('.review-block--active')
+  await commentedBlock.getByRole('button', { name: /Comment on .* block/ }).click()
+  await page.getByRole('button', { name: /Open scope feedback/ }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+
+  const measured = await page.evaluate(() => {
+    const read = (selector: string, pseudo?: string) => {
+      const element = document.querySelector(selector)
+      if (!element) throw new Error(`reduced-motion inspection is missing ${selector}`)
+      const style = getComputedStyle(element, pseudo)
+      return `${style.transitionDuration}, ${style.animationDuration}`
+    }
+    return {
+      layout: read('.scope-layout'),
+      stageEdge: read('.artifact-document', '::after'),
+      blockTick: read('.review-block--active', '::before'),
+      thread: read('.artifact-conversation__thread--active'),
+      crosshair: read(
+        '.artifact-conversation__thread--active .artifact-conversation__crosshair-lock',
+      ),
+      crosshairHairline: read(
+        '.artifact-conversation__thread--active .artifact-conversation__crosshair-lock',
+        '::before',
+      ),
+      commentThread: read('.comment-thread'),
+      composerSlot: read('.review-block-row__composer-slot'),
+      drawer: read('.decision-instrument__drawer'),
+      backdrop: read('.decision-instrument__backdrop'),
+    }
+  })
+  for (const [surface, durations] of Object.entries(measured)) {
+    expect(
+      durations.split(',').every((entry) => entry.trim() === '0s'),
+      `${surface} durations: ${durations}`,
+    ).toBe(true)
+  }
+
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Cancel' }).click()
+
+  // Suppressing the motion must not suppress the report the motion carries.
+  await writeFile(
+    proposalFile,
+    proposalSource.replace('Browser lane must see this proposal.', 'Still-legible rewrite.'),
+  )
+  await expect(page.getByText('Document content replaced')).toBeVisible()
+  await expect(page.getByText('Still-legible rewrite.')).toBeVisible()
+
+  await writeFile(proposalFile, proposalSource)
+  await page.reload()
+  await expect(page.getByText('Browser lane must see this proposal.')).toBeVisible()
+})
+
 test('keeps orphaned and addressed loose comments plus verdict actions', async ({ page }) => {
   await gotoArtifact(page, proposalPath)
   await expect(page.getByText('Not yet delivered')).toBeVisible()
   await page.getByRole('button', { name: 'Open scope feedback, 2 unplaced notes' }).click()
   await expect(page.getByRole('dialog', { name: 'Review the whole change' })).toBeVisible()
-  await expect(page.getByLabel('New whole-change note')).toBeFocused()
-  await expect(page.locator('.decision-instrument')).toHaveCSS('position', 'fixed')
+  await expect(page.locator('#scope-comment-panel')).toBeFocused()
+  await expect(page.getByLabel('New whole-change note')).toBeVisible()
   await expect(page.getByText('Lost anchors must stay reachable.')).toBeVisible()
   await expect(page.getByText('Anchor lost')).toBeVisible()
   await expect(page.getByText('Original text rewritten away.')).toBeVisible()
@@ -496,7 +795,7 @@ test('keeps selected-artifact workbench in one complete narrow flow', async ({
   await page.getByRole('button', { name: 'Locate source for comment e2e-open-comment' }).click()
   await expect(repeatedBlock).toBeFocused()
 
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  await scrollToDocumentFoot(page)
   const clearance = await page.evaluate(() => ({
     viewportBottom: window.innerHeight,
     lastContentBottom: document.querySelector('.scope-conversation')?.getBoundingClientRect()

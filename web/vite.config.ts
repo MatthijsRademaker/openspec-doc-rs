@@ -1,13 +1,33 @@
+import { createReadStream } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 
 import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
-import { defineConfig } from 'vitest/config'
+import { defineConfig, type Plugin } from 'vitest/config'
 
 import { resolveApiProxyTarget } from './src/lib/api-proxy-target'
 
+/**
+ * The MSW worker script has to be reachable at the origin root to claim a root scope, but a file
+ * in `public/` is copied verbatim into `dist/` and from there embedded into the binary. Serving it
+ * from `src/mocks/` through a development-only middleware keeps the whole mock lane behind the
+ * mode gate instead of shipping a mock handler to every installation.
+ */
+const mockServiceWorker: Plugin = {
+  name: 'openspec-doc:mock-service-worker',
+  apply: 'serve',
+  configureServer(server) {
+    const script = fileURLToPath(new URL('./src/mocks/mockServiceWorker.js', import.meta.url))
+    server.middlewares.use('/mockServiceWorker.js', (_request, response) => {
+      response.setHeader('content-type', 'text/javascript')
+      response.setHeader('service-worker-allowed', '/')
+      createReadStream(script).pipe(response)
+    })
+  },
+}
+
 export default defineConfig({
-  plugins: [vue(), tailwindcss()],
+  plugins: [vue(), tailwindcss(), mockServiceWorker],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

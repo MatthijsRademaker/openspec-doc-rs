@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { proposalSource, repeatedBlock } from './fixture-source'
 
 const moduleRoot = fileURLToPath(new URL('.', import.meta.url))
 const repoRoot = resolve(moduleRoot, '../..')
@@ -76,13 +77,9 @@ async function createFixture(): Promise<string> {
   await mkdir(changeRoot, { recursive: true })
   await mkdir(scratchRoot, { recursive: true })
 
-  const repeatedBlock = 'Repeated review target.'
   const proposalPath = `openspec/changes/${fixtureChange}/proposal.md`
   const designPath = `openspec/changes/${fixtureChange}/design.md`
-  const proposal =
-    '# Observatory Design System Fixture\n\nBrowser lane must see this proposal.\n\n' +
-    `${repeatedBlock}\n\nA bridge between repeated blocks.\n\n${repeatedBlock}\n\n` +
-    'Selection with **inline markup** crosses source.\n'
+  const proposal = proposalSource
   const designTarget = 'Conversation follows exact selected artifact.'
   const design = `# Fixture design\n\nA deterministic embedded-app fixture.\n\n${designTarget}\n`
   const secondRepeatedOffset = proposal.lastIndexOf(repeatedBlock)

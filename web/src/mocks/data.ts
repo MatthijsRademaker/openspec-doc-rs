@@ -899,6 +899,32 @@ export function submitMockVerdict(kind: ScopeKind, key: string, verdict: Verdict
   return record
 }
 
+/**
+ * Replaces one block's content and keeps every block id: the mock lane has no anchor resolver,
+ * so a fresh id would silently detach the threads anchored to that block and the conversation
+ * would empty out instead of showing a rewritten passage under its own comment. Block 1 is the
+ * first prose block of every fixture artifact and the one the anchored fixtures point at.
+ */
+export function rewriteMockArtifact(
+  kind: ScopeKind,
+  key: string,
+  path?: string,
+): Artifact | undefined {
+  const scope = requireMockScope(kind, key)
+  const artifact = path
+    ? scope.artifacts.find((candidate) => candidate.path === path)
+    : scope.artifacts[0]
+  const block = artifact?.blocks[1] ?? artifact?.blocks[0]
+  if (!artifact || !block) return undefined
+
+  const source = `Agent rewrote this passage in the mock lane (revision ${++sequence}).`
+  block.source = source
+  block.html = `<p>${source}</p>`
+  block.range = { start: block.range.start, end: block.range.start + source.length }
+  touchSummary(kind, key, new Date().toISOString())
+  return artifact
+}
+
 export function resetMockState(): void {
   state = structuredClone(initialState)
   sequence = 0

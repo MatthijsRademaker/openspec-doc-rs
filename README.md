@@ -109,8 +109,11 @@ Vite proxies same-origin `/api` to `http://127.0.0.1:8791`; set
 embedded Rust application on its own fixed test port, so a Vite-only check is not enough.
 
 For frontend-only work, run `bun run dev:mock`. This starts the MSW browser worker with deterministic
-index, scope, comment, reply, status, verdict, and SSE handlers; no Rust server is needed. Handlers and
-fixture data live under `web/src/mocks/`. Vitest uses the same handlers through `setupServer`.
+index, scope, comment, reply, status, verdict, and SSE handlers; no Rust server is needed. Handlers,
+fixture data, the worker script, and a "rewrite artifact" trigger for simulating an agent editing the
+open artifact all live under `web/src/mocks/`, which the `import.meta.env.DEV` gate keeps out of the
+production bundle — `bun run check:mocks` fails the build if any of it reaches `dist/`. Vitest uses
+the same handlers through `setupServer`.
 
 No network needed, but `scratch::promote`'s validation tests shell out to `openspec validate`, so that
 binary must be on `PATH`. See `docs/docs/development/testing.md`.

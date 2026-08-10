@@ -9,6 +9,7 @@ import ScopeHeader from '@/components/review/ScopeHeader.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import StatusMark from '@/components/StatusMark.vue'
 import { Button } from '@/components/ui/button'
+import { createArrivalMark } from '@/lib/arrival-mark'
 import {
   createComment,
   eventPath,
@@ -27,6 +28,8 @@ interface ArtifactDocumentHandle {
   focusThread: (threadId: string) => void
 }
 
+const DOCUMENT_ARRIVAL = 'artifact-content'
+
 const route = useRoute()
 const router = useRouter()
 const scope = ref<ScopeDetail>()
@@ -39,10 +42,16 @@ const dirtyComposers = ref(new Set<string>())
 const activeThreadId = ref<string>()
 const artifactDocument = ref<ArtifactDocumentHandle>()
 const conversationCollapsed = ref(false)
+// Two marks, because the two arrivals land in different places: content the reviewer did not cause
+// arrives at the document stage, and the reviewer's own submission arrives at one thread.
+const documentArrival = createArrivalMark()
+const threadArrival = createArrivalMark()
 let events: EventSource | undefined
 let loadGeneration = 0
 
 const hasDirtyComposer = computed(() => dirtyComposers.value.size > 0)
+const documentReplaced = computed(() => documentArrival.target.value === DOCUMENT_ARRIVAL)
+const recordedThreadId = computed(() => threadArrival.target.value)
 
 const kind = computed<ScopeKind>(() => (route.name === 'session' ? 'session' : 'change'))
 const key = computed(() => String(route.params.id ?? route.params.name ?? ''))
@@ -147,6 +156,9 @@ async function replaceLiveState(
   await nextTick()
 
   if (scrollTop || scrollLeft) window.scrollTo(scrollLeft, scrollTop)
+  // Marked here rather than where the event arrived, so a deferred update reports at the moment
+  // the reviewer's document actually changes.
+  if (artifactsChanged) documentArrival.mark(DOCUMENT_ARRIVAL)
 }
 
 async function applyPendingArtifactUpdate() {
@@ -261,6 +273,8 @@ watch(
     pendingArtifactUpdate.value = false
     dirtyComposers.value = new Set()
     activeThreadId.value = undefined
+    documentArrival.clear()
+    threadArrival.clear()
     events?.close()
     try {
       await refresh(generation)
@@ -274,12 +288,14 @@ watch(
 
 onBeforeUnmount(() => events?.close())
 
-async function mutate(operation: () => Promise<unknown>) {
+/** An operation returns the thread its submission created or extended, or nothing to mark. */
+async function mutate(operation: () => Promise<string | undefined>) {
   busy.value = true
   actionFailure.value = undefined
   try {
-    await operation()
+    const threadId = await operation()
     await refreshReviewState()
+    if (threadId) threadArrival.mark(threadId)
   } catch (error) {
     actionFailure.value = describe(error)
   } finally {
@@ -324,23 +340,31 @@ async function activateThreadFromConversation(threadId: string) {
 }
 
 function addComment(comment: NewComment) {
-  return mutate(() => createComment(kind.value, key.value, comment))
+  return mutate(async () => (await createComment(kind.value, key.value, comment)).id)
 }
 
 function reply(commentId: string, body: string) {
-  return mutate(() => replyToComment(kind.value, key.value, commentId, body))
+  return mutate(async () => {
+    await replyToComment(kind.value, key.value, commentId, body)
+    return commentId
+  })
 }
 
 function setStatus(commentId: string, status: 'open' | 'resolved') {
-  return mutate(() => setCommentStatus(kind.value, key.value, commentId, status))
+  return mutate(async () => {
+    await setCommentStatus(kind.value, key.value, commentId, status)
+    return undefined
+  })
 }
 
+// The drawer closes on submit, so the note it records has no thread on screen to mark.
 function submit(verdict: Verdict, comment: string) {
   return mutate(async () => {
     if (comment) {
       await createComment(kind.value, key.value, { kind: 'unanchored', body: comment })
     }
     await submitVerdict(kind.value, key.value, verdict)
+    return undefined
   })
 }
 </script>
@@ -409,6 +433,7 @@ function submit(verdict: Verdict, comment: string) {
             :requested-path="requestedArtifactPath"
             :unavailable="selectionUnavailable"
             :active-thread-id="activeThreadId"
+            :replaced="documentReplaced"
             :busy="busy"
             @comment="addComment"
             @activate-thread="activateThreadFromMarker"
@@ -435,38 +460,42 @@ function submit(verdict: Verdict, comment: string) {
             <span class="scope-conversation__toggle-label">Threads</span>
           </Button>
 
-          <div v-show="!conversationCollapsed" id="scope-conversation-body" class="scope-conversation__body">
-            <ArtifactConversation
-              v-if="selectedArtifact"
-              :artifact="selectedArtifact"
-              :threads="selectedThreads"
-              :active-thread-id="activeThreadId"
+          <div class="scope-conversation__frame">
+            <div v-show="!conversationCollapsed" id="scope-conversation-body" class="scope-conversation__body">
+              <ArtifactConversation
+                v-if="selectedArtifact"
+                :artifact="selectedArtifact"
+                :threads="selectedThreads"
+                :active-thread-id="activeThreadId"
+                :recorded-thread-id="recordedThreadId"
+                :busy="busy"
+                @activate="activateThreadFromConversation"
+                @reply="reply"
+                @status="setStatus"
+                @composer="(id, dirty) => setComposerDirty(id, dirty)"
+              />
+              <section v-else class="artifact-conversation artifact-conversation--idle">
+                <InstrumentLabel>Artifact conversation / idle</InstrumentLabel>
+                <p>Select an available artifact coordinate to inspect its resolved threads.</p>
+              </section>
+
+              <div class="scope-conversation__art" aria-hidden="true">
+                <img src="/assets/images/observatory-comment-updated.webp" alt="" />
+              </div>
+            </div>
+
+            <DecisionInstrument
+              :scope="scope"
+              :recorded-thread-id="recordedThreadId"
               :busy="busy"
-              @activate="activateThreadFromConversation"
+              @submit="submit"
               @reply="reply"
               @status="setStatus"
               @composer="(id, dirty) => setComposerDirty(id, dirty)"
             />
-            <section v-else class="artifact-conversation artifact-conversation--idle">
-              <InstrumentLabel>Artifact conversation / idle</InstrumentLabel>
-              <p>Select an available artifact coordinate to inspect its resolved threads.</p>
-            </section>
-
-            <div class="scope-conversation__art" aria-hidden="true">
-              <img src="/assets/images/observatory-comment-updated.webp" alt="" />
-            </div>
           </div>
         </aside>
       </div>
-
-      <DecisionInstrument
-        :scope="scope"
-        :busy="busy"
-        @submit="submit"
-        @reply="reply"
-        @status="setStatus"
-        @composer="(id, dirty) => setComposerDirty(id, dirty)"
-      />
     </template>
   </main>
 </template>

@@ -1,6 +1,6 @@
 ---
 name: openspec-doc-dashboard
-description: Implement dashboard work against openspec-doc's Vue Router, API modules, Rust boundary, committed embedded dist, Bun gates, and review-workbench constraints.
+description: Implement dashboard work against openspec-doc's Vue Router, API modules, Rust boundary, compile-time embedded dist, Bun gates, and review-workbench constraints.
 license: MIT
 compatibility: Requires this repository, Cargo, and its Bun-managed web workspace.
 metadata:
@@ -20,7 +20,7 @@ Use this skill for any feature or bug under `web/` or at the Rust dashboard boun
 - Keep API handling in focused `web/src/lib` modules. Preserve non-2xx, malformed JSON, and
   network failures as failures; never turn them into fake empty or successful data.
 - The Rust server is the runtime boundary. `cargo install --path crates/cli --locked` must
-  serve the complete dashboard from committed `web/dist/` with no Node, Bun, checkout, or
+  serve the complete dashboard from the embedded `web/dist/` with no Node, Bun, checkout, or
   external asset request.
 - `web/dist/` is generated and gitignored. Rust embeds it at compile time. A frontend
   source, CSS, font, favicon, or route change requires a fresh Bun build before Cargo.

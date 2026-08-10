@@ -9,9 +9,10 @@ import type { Verdict } from '@/lib/scopes'
 const props = withDefaults(
   defineProps<{
     scope: ScopeDetail
+    recordedThreadId?: string
     busy?: boolean
   }>(),
-  { busy: false },
+  { recordedThreadId: undefined, busy: false },
 )
 
 const emit = defineEmits<{
@@ -23,7 +24,6 @@ const emit = defineEmits<{
 
 const open = ref(false)
 const comment = ref('')
-const commentInput = ref<HTMLTextAreaElement>()
 const commentPanel = ref<HTMLElement>()
 const composerDirty = computed(() => open.value && comment.value.length > 0)
 
@@ -67,7 +67,11 @@ async function toggleComposer() {
   else {
     open.value = true
     await nextTick()
-    commentInput.value?.focus()
+    // The panel, not the composer. Focusing the textarea scrolls this panel to its own foot,
+    // hiding the heading the dialog is named by. `preventScroll` or a scroll-back-to-top would
+    // only split keyboard focus from the visible region, so the first Tab reads as a jump
+    // backwards through content the reviewer has not seen.
+    commentPanel.value?.focus()
   }
 }
 
@@ -97,19 +101,49 @@ function trapFocus(event: KeyboardEvent) {
 </script>
 
 <template>
+  <aside class="decision-instrument" aria-label="Review decisions">
+    <div class="decision-instrument__bar">
+      <Button
+        id="scope-comment-trigger"
+        type="button"
+        variant="instrument"
+        size="lg"
+        :aria-expanded="open"
+        :aria-label="triggerLabel"
+        aria-controls="scope-comment-panel"
+        :disabled="busy"
+        @click="toggleComposer"
+      >
+        <span aria-hidden="true">{{ open ? '×' : '+' }}</span>
+        <span class="decision-instrument__label">
+          {{ open ? 'Close scope feedback' : `Scope feedback · ${looseThreads.length}` }}
+        </span>
+      </Button>
+      <Button
+        v-if="scope.kind === 'session'"
+        type="button"
+        size="lg"
+        aria-label="Move to proposal"
+        :disabled="busy"
+        @click="emit('submit', 'move-to-proposal', '')"
+      >
+        <span aria-hidden="true">→</span>
+        <span class="decision-instrument__label">Move to proposal</span>
+      </Button>
+    </div>
+  </aside>
+
   <Teleport to="body">
-    <aside
-      class="decision-instrument"
-      :class="{ 'decision-instrument--open': open }"
-      aria-label="Review decisions"
-    >
+    <Transition name="drawer-backdrop">
       <div
         v-if="open"
         class="decision-instrument__backdrop"
         aria-hidden="true"
         @click="closeComposer"
       />
+    </Transition>
 
+    <Transition name="drawer">
       <section
         v-if="open"
         id="scope-comment-panel"
@@ -118,6 +152,7 @@ function trapFocus(event: KeyboardEvent) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="scope-comment-panel-title"
+        tabindex="-1"
         @keydown="trapFocus"
         @keydown.esc.stop.prevent="closeComposer"
       >
@@ -145,6 +180,7 @@ function trapFocus(event: KeyboardEvent) {
           <CommentThread
             v-for="thread in looseThreads"
             :key="thread.comment.id"
+            :class="{ 'comment-thread--recorded': thread.comment.id === recordedThreadId }"
             :thread="thread"
             :busy="busy"
             :show-anchor-loss="thread.anchorState === 'orphaned' || thread.anchorState === 'missing'"
@@ -159,7 +195,6 @@ function trapFocus(event: KeyboardEvent) {
           <label for="scope-comment">New whole-{{ scopeNoun }} note</label>
           <textarea
             id="scope-comment"
-            ref="commentInput"
             v-model="comment"
             rows="4"
             :disabled="busy"
@@ -170,32 +205,6 @@ function trapFocus(event: KeyboardEvent) {
           </Button>
         </form>
       </section>
-
-      <div class="decision-instrument__bar">
-        <Button
-          id="scope-comment-trigger"
-          type="button"
-          variant="instrument"
-          size="lg"
-          :aria-expanded="open"
-          :aria-label="triggerLabel"
-          aria-controls="scope-comment-panel"
-          :disabled="busy"
-          @click="toggleComposer"
-        >
-          <span aria-hidden="true">{{ open ? '×' : '+' }}</span>
-          {{ open ? 'Close scope feedback' : `Scope feedback · ${looseThreads.length}` }}
-        </Button>
-        <Button
-          v-if="scope.kind === 'session'"
-          type="button"
-          size="lg"
-          :disabled="busy"
-          @click="emit('submit', 'move-to-proposal', '')"
-        >
-          Move to proposal
-        </Button>
-      </div>
-    </aside>
+    </Transition>
   </Teleport>
 </template>

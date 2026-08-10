@@ -11,9 +11,10 @@ const props = withDefaults(
     artifact: Artifact
     threads: Thread[]
     activeThreadId?: string
+    recordedThreadId?: string
     busy?: boolean
   }>(),
-  { activeThreadId: undefined, busy: false },
+  { activeThreadId: undefined, recordedThreadId: undefined, busy: false },
 )
 
 const emit = defineEmits<{
@@ -61,10 +62,14 @@ const orderedThreads = computed(() => {
         :id="`artifact-thread-${thread.comment.id}`"
         :key="thread.comment.id"
         class="artifact-conversation__thread"
-        :class="{ 'artifact-conversation__thread--active': thread.comment.id === activeThreadId }"
+        :class="{
+          'artifact-conversation__thread--active': thread.comment.id === activeThreadId,
+          'artifact-conversation__thread--recorded': thread.comment.id === recordedThreadId,
+        }"
         :data-thread-id="thread.comment.id"
         tabindex="-1"
       >
+        <span class="artifact-conversation__crosshair-lock" aria-hidden="true" />
         <Button
           type="button"
           variant="ghost"

@@ -4,7 +4,6 @@
 @import "@fontsource/ibm-plex-mono/latin-400.css";
 @import "@fontsource/ibm-plex-mono/latin-500.css";
 @import "tailwindcss" source(none);
-@import "tw-animate-css";
 @import "shadcn-vue/tailwind.css";
 
 /* Latin subsets only. Every generated font byte is embedded in the binary. */
@@ -162,6 +161,9 @@
   --hairline: 1px;
   --motion-duration: 160ms;
   --motion-easing: cubic-bezier(0.2, 0, 0.2, 1);
+  /* Every decorative displacement is a multiple of this, so reduced motion zeroes all of them
+     from one place instead of from a list of selectors that goes stale. */
+  --motion-nudge: 2px;
 }
 
 @layer base {
@@ -591,7 +593,7 @@
 
 .scope-entry:has(.scope-entry__link:hover) {
   background: var(--raised);
-  transform: translateX(2px);
+  transform: translateX(var(--motion-nudge));
 }
 
 .scope-entry__identity {
@@ -985,6 +987,10 @@
   color: var(--focus-ink);
 }
 
+/* The collapsed rail is written as `minmax(3.25rem, 3.25rem)` rather than `3.25rem` so both track
+   lists have the same shape and `grid-template-columns` interpolates. A bare length against a
+   `minmax()` makes the property discrete, and the collapse then jumps — which is the point at which
+   someone reaches for a JavaScript height animation instead. */
 .scope-layout {
   display: grid;
   grid-template-columns: clamp(14rem, 17vw, 18rem) minmax(32rem, 1fr) minmax(20rem, 26rem);
@@ -994,10 +1000,11 @@
   border: var(--hairline) solid var(--border-ink);
   background: var(--border-ink);
   gap: var(--hairline);
+  transition: grid-template-columns var(--motion-duration) var(--motion-easing);
 }
 
 .scope-layout--conversation-collapsed {
-  grid-template-columns: clamp(14rem, 17vw, 18rem) minmax(32rem, 1fr) 3.25rem;
+  grid-template-columns: clamp(14rem, 17vw, 18rem) minmax(32rem, 1fr) minmax(3.25rem, 3.25rem);
 }
 
 .scope-utility,
@@ -1007,11 +1014,16 @@
   background: var(--canvas);
 }
 
+/* Route, state, navigator, then artwork: the artwork row is what the three content rows
+   leave free, so a growing artifact list squeezes it out instead of printing over it. The
+   artwork bleeds `--art-bleed` up behind the content above it, but the mask reaches full
+   opacity only `--art-fade` down — three times the bleed — so the part behind content is
+   always a trace, and artwork that has no free space below never becomes legible at all. */
 .scope-utility {
   position: sticky;
   top: 0;
   display: grid;
-  align-content: start;
+  grid-template-rows: repeat(3, auto) minmax(0, 1fr);
   gap: var(--space-3);
   min-height: calc(100vh - var(--space-3));
   padding: var(--space-2);
@@ -1019,16 +1031,23 @@
 
 .scope-utility__art,
 .scope-conversation__art {
-  position: absolute;
+  --art-bleed: 10rem;
+  --art-fade: 30rem;
+
+  position: relative;
   z-index: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: min(46vh, 28rem);
+  min-height: 0;
+  margin-top: calc(-1 * var(--art-bleed));
   overflow: hidden;
-  mask-image: linear-gradient(to bottom, transparent, black 36%);
+  mask-image: linear-gradient(to bottom, transparent 0, black var(--art-fade));
   opacity: 0.32;
   pointer-events: none;
+}
+
+.scope-utility__art {
+  margin-right: calc(-1 * var(--space-2));
+  margin-bottom: calc(-1 * var(--space-2));
+  margin-left: calc(-1 * var(--space-2));
 }
 
 .scope-utility__art img,
@@ -1044,7 +1063,6 @@
 }
 
 .scope-conversation__art {
-  height: min(52vh, 34rem);
   opacity: 0.27;
 }
 
@@ -1199,6 +1217,52 @@
   align-self: stretch;
 }
 
+/* An arrival is reported at the edge of the stage the content landed on. `.scope-artifact-update`
+   is not promoted into an always-on banner for this: it sits at the top of the page and the
+   reviewer is generally not at the top of the page. */
+/* An overlay rather than an inset shadow: the header paints its own background over the stage and
+   would cover it. The stage is taller than the viewport, so what the reviewer actually sees is its
+   two vertical edges — legible from any scroll position, and it intercepts nothing. */
+.artifact-document {
+  position: relative;
+}
+
+.artifact-document::after {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  border: 2px solid var(--delivery);
+  content: "";
+  opacity: 0;
+  transition: opacity var(--motion-duration) var(--motion-easing);
+  pointer-events: none;
+}
+
+.artifact-document--replaced::after {
+  opacity: 1;
+}
+
+.artifact-document__replacement {
+  min-height: 1.55em;
+  margin: 0;
+  color: var(--delivery);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  line-height: 1.55;
+  text-transform: uppercase;
+}
+
+.arrival-enter-active,
+.arrival-leave-active {
+  transition: opacity var(--motion-duration) var(--motion-easing);
+}
+
+.arrival-enter-from,
+.arrival-leave-to {
+  opacity: 0;
+}
+
 .artifact-document__header {
   position: relative;
   isolation: isolate;
@@ -1305,26 +1369,44 @@
     var(--canvas);
 }
 
-.review-block--active::before,
-.review-block--active::after {
+/* The ticks are always present so activation can grow them from zero width rather than print them
+   at full width. Their origin is the border they start from, which is the same verb the
+   conversation crosshair uses across the gap. */
+.review-block::before,
+.review-block::after {
   position: absolute;
   left: 0;
   width: 1.1rem;
   height: var(--hairline);
   background: var(--focus-ink);
   content: "";
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition:
+    opacity var(--motion-duration) var(--motion-easing),
+    transform var(--motion-duration) var(--motion-easing);
 }
 
-.review-block--active::before {
+.review-block::before {
   top: 0;
 }
 
-.review-block--active::after {
+.review-block::after {
   bottom: 0;
 }
 
+.review-block--active::before,
+.review-block--active::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+/* The measure must stay below the narrowest document column any desktop layout produces
+   (~487px at the 58rem breakpoint with the conversation rail expanded). Above that, collapsing
+   the rail crosses the boundary between `100%` and the measure and re-wraps every paragraph. */
 .review-block__content {
-  width: min(100%, 72ch);
+  width: min(100%, 48ch);
   min-width: 0;
   color: var(--bone);
   font-size: 0.98rem;
@@ -1426,7 +1508,7 @@
 .review-block__comment-action {
   flex: none;
   opacity: 0;
-  transform: translateY(4px);
+  transform: translateY(calc(2 * var(--motion-nudge)));
 }
 
 .review-block:hover .review-block__comment-action,
@@ -1470,6 +1552,26 @@
   box-shadow:
     0 0 0 2px var(--canvas),
     0 0 0 3px var(--focus-ink);
+}
+
+.review-block-row__composer-slot {
+  display: grid;
+  grid-template-rows: 1fr;
+  min-width: 0;
+  transition:
+    grid-template-rows var(--motion-duration) var(--motion-easing),
+    opacity var(--motion-duration) var(--motion-easing);
+}
+
+.review-block-row__composer-slot > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.composer-enter-from,
+.composer-leave-to {
+  grid-template-rows: 0fr;
+  opacity: 0;
 }
 
 .review-block-row__composer {
@@ -1522,9 +1624,8 @@ textarea::placeholder {
 
 .scope-conversation {
   position: relative;
-  display: grid;
+  display: block;
   align-self: stretch;
-  align-content: start;
   min-height: calc(100vh - var(--space-3));
   background:
     linear-gradient(var(--border-ink), var(--border-ink)) 50% 0 / var(--hairline) 100% no-repeat,
@@ -1536,12 +1637,24 @@ textarea::placeholder {
     var(--surface);
 }
 
+/* The rail tracks the viewport so the decision instrument it carries stays reachable from any
+   scroll position in a document that is far taller than the rail's own content. */
+.scope-conversation__frame {
+  position: sticky;
+  top: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  height: calc(100vh - var(--space-3));
+}
+
 .scope-conversation__body {
   position: relative;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
-  align-content: start;
-  min-height: inherit;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .scope-conversation__toggle {
@@ -1600,6 +1713,7 @@ textarea::placeholder {
 }
 
 .artifact-conversation__thread {
+  position: relative;
   display: grid;
   min-width: 0;
   gap: var(--space-1);
@@ -1607,15 +1721,108 @@ textarea::placeholder {
   border: var(--hairline) solid var(--border-ink);
   border-top: 2px solid var(--accent-ink);
   background: var(--canvas);
+  transition:
+    border-color var(--motion-duration) var(--motion-easing),
+    box-shadow var(--motion-duration) var(--motion-easing);
 }
 
+/* An idle thread already carries an accent top border, so the active one has to differ by more
+   than a second border: every edge turns to `--focus-ink` and it grows the same corner ticks the
+   active block grows in the other pane. */
 .artifact-conversation__thread--active {
+  border-color: var(--focus-ink);
   border-left: 4px double var(--focus-ink);
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--focus-ink) 7%, transparent),
-    var(--canvas) 56%
+    color-mix(in srgb, var(--focus-ink) 14%, transparent),
+    var(--canvas) 62%
   );
+}
+
+.artifact-conversation__thread::before,
+.artifact-conversation__thread::after {
+  position: absolute;
+  left: 0;
+  width: 1.1rem;
+  height: var(--hairline);
+  background: var(--focus-ink);
+  content: "";
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition:
+    opacity var(--motion-duration) var(--motion-easing),
+    transform var(--motion-duration) var(--motion-easing);
+}
+
+.artifact-conversation__thread::before {
+  top: 0;
+}
+
+.artifact-conversation__thread::after {
+  bottom: 0;
+}
+
+.artifact-conversation__thread--active::before,
+.artifact-conversation__thread--active::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.artifact-conversation__thread--recorded,
+.comment-thread--recorded {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--delivery) 76%, transparent);
+}
+
+/* The crosshair is this product's own idiom for "target acquired". Both hairlines scale from their
+   intersection, so activation draws the cross outward from the point it locks onto. */
+.artifact-conversation__crosshair-lock {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  width: 1.5rem;
+  height: 1.5rem;
+  border: var(--hairline) solid var(--focus-ink);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity var(--motion-duration) var(--motion-easing);
+  pointer-events: none;
+}
+
+.artifact-conversation__crosshair-lock::before,
+.artifact-conversation__crosshair-lock::after {
+  position: absolute;
+  background: var(--focus-ink);
+  content: "";
+  transition: transform var(--motion-duration) var(--motion-easing);
+}
+
+.artifact-conversation__crosshair-lock::before {
+  top: 50%;
+  left: -0.45rem;
+  width: 2.4rem;
+  height: var(--hairline);
+  transform: scaleX(0);
+}
+
+.artifact-conversation__crosshair-lock::after {
+  top: -0.45rem;
+  left: 50%;
+  width: var(--hairline);
+  height: 2.4rem;
+  transform: scaleY(0);
+}
+
+.artifact-conversation__thread--active .artifact-conversation__crosshair-lock {
+  opacity: 1;
+}
+
+.artifact-conversation__thread--active .artifact-conversation__crosshair-lock::before {
+  transform: scaleX(1);
+}
+
+.artifact-conversation__thread--active .artifact-conversation__crosshair-lock::after {
+  transform: scaleY(1);
 }
 
 .artifact-conversation__anchor-action {
@@ -1675,6 +1882,7 @@ textarea::placeholder {
   display: grid;
   min-width: 0;
   gap: var(--space-2);
+  transition: box-shadow var(--motion-duration) var(--motion-easing);
 }
 
 .comment-thread__header,
@@ -1760,68 +1968,95 @@ textarea::placeholder {
   color: var(--muted-ink);
 }
 
+/* The trigger sits in the conversation rail; only the modal drawer keeps an overlay. */
 .decision-instrument {
-  position: fixed;
-  z-index: 30;
-  bottom: max(var(--space-2), env(safe-area-inset-bottom, 0px));
-  left: 50%;
   display: grid;
-  width: min(42rem, calc(100vw - var(--space-4)));
+  align-self: end;
   min-width: 0;
-  gap: var(--space-1);
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-
-.decision-instrument--open {
-  width: min(48rem, calc(100vw - var(--space-4)));
-}
-
-.decision-instrument__backdrop {
-  position: fixed;
-  z-index: 0;
-  inset: 0;
-  background: color-mix(in srgb, var(--canvas) 58%, transparent);
-  pointer-events: auto;
-}
-
-.decision-instrument__bar,
-.decision-instrument__drawer {
-  position: relative;
-  z-index: 1;
-  pointer-events: auto;
-  border: var(--hairline) solid var(--border-ink);
-  background: color-mix(in srgb, var(--surface) 97%, transparent);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 1rem 3rem color-mix(in srgb, black 42%, transparent);
+  padding: var(--space-1);
+  border-top: 2px solid var(--accent-ink);
+  background: var(--surface);
 }
 
 .decision-instrument__bar {
   display: flex;
-  width: max-content;
-  max-width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
   align-items: stretch;
-  justify-self: center;
   gap: var(--space-1);
-  padding: var(--space-1);
-  border-top: 2px solid var(--accent-ink);
 }
 
 .decision-instrument__bar [data-slot="button"] {
   min-width: 0;
+  flex: 1 1 auto;
   height: auto;
   white-space: normal;
   overflow-wrap: anywhere;
 }
 
+.scope-conversation--collapsed .decision-instrument {
+  padding: var(--space-half);
+}
+
+.scope-conversation--collapsed .decision-instrument__bar {
+  flex-direction: column;
+}
+
+.scope-conversation--collapsed .decision-instrument__bar [data-slot="button"] {
+  padding-inline: 0;
+}
+
+.scope-conversation--collapsed .decision-instrument__label {
+  display: none;
+}
+
+.decision-instrument__backdrop {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  background: color-mix(in srgb, var(--canvas) 58%, transparent);
+}
+
+.drawer-backdrop-enter-active,
+.drawer-backdrop-leave-active,
+.drawer-enter-active,
+.drawer-leave-active {
+  transition:
+    opacity var(--motion-duration) var(--motion-easing),
+    transform var(--motion-duration) var(--motion-easing);
+}
+
+.drawer-backdrop-enter-from,
+.drawer-backdrop-leave-to {
+  opacity: 0;
+}
+
 .decision-instrument__drawer {
+  position: fixed;
+  z-index: 31;
+  bottom: max(var(--space-2), env(safe-area-inset-bottom, 0px));
+  left: 50%;
   display: grid;
-  width: 100%;
+  width: min(48rem, calc(100vw - var(--space-4)));
   max-height: min(72vh, 42rem);
   overflow-y: auto;
   gap: var(--space-2);
   padding: var(--space-2);
+  border: var(--hairline) solid var(--border-ink);
   border-top: 2px solid var(--accent-ink);
+  background: color-mix(in srgb, var(--surface) 97%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 1rem 3rem color-mix(in srgb, black 42%, transparent);
+  transform: translateX(-50%);
+}
+
+/* After the drawer's own rule, not before it: these carry the same specificity, so an earlier
+   `transform` here would lose to the centring translate and the rise would never happen. The rise
+   composes with that translate, which is why it is written out in full. */
+.drawer-enter-from,
+.drawer-leave-to {
+  opacity: 0;
+  transform: translate(-50%, calc(4 * var(--motion-nudge)));
 }
 
 .decision-instrument__drawer-header {
@@ -1869,12 +2104,13 @@ textarea::placeholder {
   }
 
   .scope-layout--conversation-collapsed {
-    grid-template-columns: minmax(30rem, 1fr) 3.25rem;
+    grid-template-columns: minmax(30rem, 1fr) minmax(3.25rem, 3.25rem);
   }
 
   .scope-utility {
     position: static;
     grid-column: 1 / -1;
+    grid-template-rows: auto;
     grid-template-columns: minmax(10rem, 0.5fr) minmax(11rem, 0.55fr) minmax(20rem, 1.5fr);
     min-height: 0;
   }
@@ -1924,12 +2160,55 @@ textarea::placeholder {
     grid-column: 1;
   }
 
+  /* The dock is fixed over the foot of a single-column flow, so the flow has to end above it
+     or the last block, thread action, and collapse control sit underneath it. */
+  .scope-workbench {
+    padding-bottom: 7rem;
+  }
+
   .scope-conversation {
     min-height: 0;
   }
 
+  .scope-conversation__frame {
+    position: static;
+    height: auto;
+  }
+
+  .scope-conversation__body {
+    overflow-y: visible;
+  }
+
+  /* One column puts the rail at the end of the flow, so an in-rail trigger would cost a
+     full-page scroll to reach. Narrow keeps the dock the desktop layout no longer needs. */
+  .decision-instrument {
+    position: fixed;
+    z-index: 30;
+    bottom: max(var(--space-2), env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    width: min(42rem, calc(100vw - var(--space-4)));
+    border: var(--hairline) solid var(--border-ink);
+    border-top: 2px solid var(--accent-ink);
+    background: color-mix(in srgb, var(--surface) 97%, transparent);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 1rem 3rem color-mix(in srgb, black 42%, transparent);
+    transform: translateX(-50%);
+  }
+
   .scope-conversation--collapsed {
     min-height: 3.25rem;
+  }
+
+  .scope-conversation--collapsed .decision-instrument {
+    padding: var(--space-1);
+  }
+
+  .scope-conversation--collapsed .decision-instrument__bar {
+    flex-direction: row;
+  }
+
+  .scope-conversation--collapsed .decision-instrument__label {
+    display: inline;
   }
 
   .scope-conversation--collapsed .scope-conversation__toggle {
@@ -1948,6 +2227,7 @@ textarea::placeholder {
 @media (max-width: 37.5rem) {
   .scope-workbench {
     padding: var(--space-1);
+    padding-bottom: 7rem;
   }
 
   .scope-header__identity,
@@ -2027,10 +2307,6 @@ textarea::placeholder {
     padding: var(--space-1);
   }
 
-  .decision-instrument__bar {
-    flex-wrap: wrap;
-  }
-
   .decision-instrument__bar [data-slot="button"] {
     flex: 1 1 12rem;
   }
@@ -2041,29 +2317,30 @@ textarea::placeholder {
   outline-offset: 3px;
 }
 
+/* Suppression is global, not a list of selectors: an effect added later is inert here without
+   anyone remembering to add it, and an effect that must survive reduced motion has to say so with
+   `data-motion="required"`. Durations are zeroed rather than `animation: none`, so a Vue
+   `<Transition>` still fires its `transitionend` and still removes its element. */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-duration: 0ms;
+    --motion-nudge: 0px;
   }
 
   html {
     scroll-behavior: auto;
   }
 
-  button,
-  a,
-  [data-slot="badge"],
-  .scope-entry,
-  .scope-entry:has(.scope-entry__link:hover),
-  .review-block,
-  .review-block__comment-action {
-    animation: none;
-    transition: none;
+  /* biome-ignore-start lint/complexity/noImportantStyles: a one-class rule added later would
+     otherwise outrank this suppression, which is the failure the inversion exists to prevent. */
+  *:not([data-motion="required"]),
+  *:not([data-motion="required"])::before,
+  *:not([data-motion="required"])::after {
+    animation-delay: 0ms !important;
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-delay: 0ms !important;
+    transition-duration: 0ms !important;
   }
-
-  .scope-entry,
-  .scope-entry:has(.scope-entry__link:hover),
-  .review-block__comment-action {
-    transform: none;
-  }
+  /* biome-ignore-end lint/complexity/noImportantStyles: see above */
 }

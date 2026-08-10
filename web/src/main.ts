@@ -8,8 +8,12 @@ async function enableMocking(): Promise<void> {
   if (!import.meta.env.DEV) return
   if (import.meta.env.MODE !== 'mock' && import.meta.env.VITE_API_MOCKS !== 'true') return
 
-  const { worker } = await import('./mocks/browser')
+  const [{ worker }, { mountMockLaneControls }] = await Promise.all([
+    import('./mocks/browser'),
+    import('./mocks/controls'),
+  ])
   await worker.start({ onUnhandledRequest: 'error' })
+  mountMockLaneControls()
 }
 
 await enableMocking()

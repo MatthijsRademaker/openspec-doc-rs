@@ -1,7 +1,15 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.7/schema.json",
   "files": {
-    "includes": ["src/**/*", "e2e/**/*.ts", "*.json", "*.ts", "*.html", "!dist"]
+    "includes": [
+      "src/**/*",
+      "e2e/**/*.ts",
+      "*.json",
+      "*.ts",
+      "*.html",
+      "!dist",
+      "!src/mocks/mockServiceWorker.js"
+    ]
   },
   "formatter": {
     "enabled": true,

@@ -6,12 +6,22 @@ import {
   addMockReply,
   getMockScope,
   getMockState,
+  rewriteMockArtifact,
   scopeAddress,
   setMockCommentStatus,
   submitMockVerdict,
 } from './data'
 
 const verdicts: readonly Verdict[] = ['keep-exploring', 'move-to-proposal', 'comment-resolution']
+
+/** The Rust server's event payload. A bare marker would fail the client's payload parse. */
+interface LiveUpdate {
+  artifactsChanged: boolean
+  reviewStateChanged: boolean
+}
+
+const REVIEW_STATE_CHANGED: LiveUpdate = { artifactsChanged: false, reviewStateChanged: true }
+const ARTIFACTS_CHANGED: LiveUpdate = { artifactsChanged: true, reviewStateChanged: false }
 
 type EventController = ReadableStreamDefaultController<Uint8Array>
 
@@ -80,10 +90,10 @@ function eventResponse(address: string): Response {
   })
 }
 
-function broadcast(address: string): void {
+function broadcast(address: string, update: LiveUpdate): void {
   const streams = eventStreams.get(address)
   if (!streams) return
-  const payload = encoder.encode('data: changed\n\n')
+  const payload = encoder.encode(`data: ${JSON.stringify(update)}\n\n`)
 
   for (const controller of streams) {
     if (controller.desiredSize === null) {
@@ -128,7 +138,7 @@ function createScopeHandlers(
       const body = (await request.json()) as unknown
       if (!isNewComment(body)) return errorResponse(400, 'Invalid mock comment body')
       const comment = addMockComment(kind, key, body)
-      broadcast(address)
+      broadcast(address, REVIEW_STATE_CHANGED)
       return HttpResponse.json(comment, { status: 201 })
     }),
     http.post(`${basePath}/comments/:commentId/replies`, async ({ params, request }) => {
@@ -140,7 +150,7 @@ function createScopeHandlers(
       }
       const reply = addMockReply(kind, key, pathParam(params.commentId), body.body)
       if (!reply) return errorResponse(404, `Unknown mock comment: ${pathParam(params.commentId)}`)
-      broadcast(address)
+      broadcast(address, REVIEW_STATE_CHANGED)
       return HttpResponse.json(reply, { status: 201 })
     }),
     http.post(`${basePath}/comments/:commentId/status`, async ({ params, request }) => {
@@ -152,7 +162,7 @@ function createScopeHandlers(
       }
       const update = setMockCommentStatus(kind, key, pathParam(params.commentId), body.status)
       if (!update) return errorResponse(404, `Unknown mock comment: ${pathParam(params.commentId)}`)
-      broadcast(address)
+      broadcast(address, REVIEW_STATE_CHANGED)
       return HttpResponse.json(update)
     }),
     http.post(`${basePath}/verdict`, async ({ params, request }) => {
@@ -163,8 +173,21 @@ function createScopeHandlers(
         return errorResponse(400, 'Invalid mock verdict')
       }
       const record = submitMockVerdict(kind, key, body.verdict)
-      broadcast(address)
+      broadcast(address, REVIEW_STATE_CHANGED)
       return HttpResponse.json(record, { status: 201 })
+    }),
+    // The one live-update path no reviewer mutation reaches: an agent rewriting an artifact on
+    // disk while the reviewer reads it.
+    http.post(`${basePath}/mock/artifact-rewrite`, async ({ params, request }) => {
+      const { address, key } = readScope(params)
+      if (!getMockScope(kind, key)) return errorResponse(404, `Unknown mock ${kind} scope: ${key}`)
+      const body = (await request.json()) as unknown
+      const path =
+        isRecord(body) && typeof body.artifactPath === 'string' ? body.artifactPath : undefined
+      const artifact = rewriteMockArtifact(kind, key, path)
+      if (!artifact) return errorResponse(404, `Unknown mock artifact: ${path ?? '<first>'}`)
+      broadcast(address, ARTIFACTS_CHANGED)
+      return HttpResponse.json(artifact)
     }),
   ]
 }

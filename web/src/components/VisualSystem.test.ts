@@ -92,7 +92,11 @@ describe('observatory visual system', () => {
     expect(style).toContain('--font-mono: "IBM Plex Mono"')
     expect(style).toContain('@media (prefers-reduced-motion: reduce)')
     expect(style).toContain('--motion-duration: 0ms')
-    expect(style).toContain('transition: none')
+    // Suppression is global, so an effect added later needs no entry of its own here.
+    expect(style).toContain('*:not([data-motion="required"])')
+    expect(style).toContain('animation-duration: 0ms !important')
+    expect(style).toContain('transition-duration: 0ms !important')
+    expect(style).toContain('--motion-nudge: 0px')
     expect(source).not.toMatch(/https?:\/\/(?:fonts\.|[^\s"']+\.(?:woff2?|ttf))/)
     expect(source).not.toContain('openspec-doc-theme')
     expect(source).not.toContain('.dark')

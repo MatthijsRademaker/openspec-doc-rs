@@ -13,6 +13,7 @@ const props = withDefaults(
     requestedPath?: string
     unavailable?: boolean
     activeThreadId?: string
+    replaced?: boolean
     busy?: boolean
   }>(),
   {
@@ -20,6 +21,7 @@ const props = withDefaults(
     requestedPath: undefined,
     unavailable: false,
     activeThreadId: undefined,
+    replaced: false,
     busy: false,
   },
 )
@@ -136,12 +138,27 @@ function submitComment() {
 </script>
 
 <template>
-  <section v-if="artifact" class="artifact-document" aria-labelledby="selected-artifact-title">
+  <section
+    v-if="artifact"
+    class="artifact-document"
+    :class="{ 'artifact-document--replaced': replaced }"
+    aria-labelledby="selected-artifact-title"
+  >
     <header class="artifact-document__header">
       <div class="artifact-document__identity">
         <InstrumentLabel>Selected artifact</InstrumentLabel>
         <h2 id="selected-artifact-title" tabindex="-1">{{ artifactLabel(artifact.path) }}</h2>
         <code :title="artifact.path">{{ scopeRelativeArtifactPath(artifact.path) }}</code>
+        <!-- The report is text as well as an edge, so reduced motion still reports the arrival. It
+             names the replacement and nothing about which blocks differ: block identity across a
+             rewrite belongs to the anchor resolver. The region is always present — a live region
+             created together with its text is not announced — and reserves its line, so the report
+             appearing moves no prose. -->
+        <p class="artifact-document__replacement" role="status">
+          <Transition name="arrival">
+            <span v-if="replaced">Document content replaced</span>
+          </Transition>
+        </p>
       </div>
       <div class="artifact-document__arrival-art" aria-hidden="true">
         <img
@@ -212,32 +229,41 @@ function submitComment() {
           </div>
         </div>
 
-        <form
-          v-if="target?.block.id === block.id"
-          class="review-block-row__composer"
-          @submit.prevent="submitComment"
-        >
-          <label :for="`comment-${block.id}`">
-            {{ target.selected ? 'Comment on selected text' : 'Comment on block' }}
-          </label>
-          <blockquote>{{ target.selectedText }}</blockquote>
-          <textarea
-            :id="`comment-${block.id}`"
-            v-model="commentBody"
-            rows="4"
-            required
-            autofocus
-            :disabled="busy"
-          />
-          <div class="comment-thread__actions">
-            <Button type="submit" size="sm" :disabled="busy || !commentBody.trim()">
-              Record comment
-            </Button>
-            <Button type="button" variant="ghost" size="sm" :disabled="busy" @click="cancelComment">
-              Cancel
-            </Button>
+        <!-- The slot exists so the composer can expand: it displaces the document by its own
+             height, and an interpolated row makes that read as the composer opening rather than as
+             the page jolting. -->
+        <Transition name="composer">
+          <div v-if="target?.block.id === block.id" class="review-block-row__composer-slot">
+            <form class="review-block-row__composer" @submit.prevent="submitComment">
+              <label :for="`comment-${block.id}`">
+                {{ target.selected ? 'Comment on selected text' : 'Comment on block' }}
+              </label>
+              <blockquote>{{ target.selectedText }}</blockquote>
+              <textarea
+                :id="`comment-${block.id}`"
+                v-model="commentBody"
+                rows="4"
+                required
+                autofocus
+                :disabled="busy"
+              />
+              <div class="comment-thread__actions">
+                <Button type="submit" size="sm" :disabled="busy || !commentBody.trim()">
+                  Record comment
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  :disabled="busy"
+                  @click="cancelComment"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
           </div>
-        </form>
+        </Transition>
       </div>
     </div>
   </section>

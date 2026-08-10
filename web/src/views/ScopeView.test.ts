@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ARRIVAL_DWELL_MS } from '@/lib/arrival-mark'
 import type { Artifact, ScopeDetail } from '@/lib/scope-review'
 import ScopeView from '@/views/ScopeView.vue'
 
@@ -264,7 +265,9 @@ class StubEventSource {
 }
 
 function stubLiveScope(initial: ScopeDetail = SESSION_SCOPE) {
-  const fetchMock = vi.fn().mockResolvedValue(response(initial))
+  // A fresh Response per call: a shared one is unusable once its body has been read, and a
+  // mutation followed by a review-state refresh reads twice.
+  const fetchMock = vi.fn(() => Promise.resolve(response(initial)))
   vi.stubGlobal('fetch', fetchMock)
   vi.stubGlobal('EventSource', StubEventSource)
   return fetchMock
@@ -288,6 +291,7 @@ afterEach(() => {
   replace.mockClear()
   push.mockClear()
   StubEventSource.instances = []
+  Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
   vi.unstubAllGlobals()
 })
 
@@ -425,12 +429,34 @@ describe('ScopeView selected-artifact workbench', () => {
     expect(marker).toBeTruthy()
     await fireEvent.click(marker as HTMLButtonElement)
     await waitFor(() => expect(repeated[1]?.classList.contains('review-block--active')).toBe(true))
-    expect(document.querySelector('.artifact-conversation__thread--active')).toBeTruthy()
+    // The pane the reviewer did not click is the one that used to change by almost nothing.
+    const railThread = document.querySelector('.artifact-conversation__thread--active')
+    expect(railThread?.getAttribute('id')).toBe('artifact-thread-proposal-thread')
+    expect(railThread?.querySelector('.artifact-conversation__crosshair-lock')).toBeTruthy()
 
     await fireEvent.click(
       screen.getByRole('button', { name: 'Locate source for comment proposal-thread' }),
     )
     expect(document.activeElement).toBe(repeated[1])
+  })
+
+  it('locks the document block when activation comes from the conversation pane', async () => {
+    useChange({ artifact: PROPOSAL_PATH })
+    stubScope(CHANGE_SCOPE)
+    const { container } = render(ScopeView)
+    await screen.findByText('Proposal thread body.')
+    expect(container.querySelector('.review-block--active')).toBeNull()
+
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Locate source for comment proposal-thread' }),
+    )
+
+    // Activation is symmetric: the pane the reviewer did not click has to change either way.
+    await waitFor(() => expect(container.querySelectorAll('.review-block--active')).toHaveLength(1))
+    expect(container.querySelector('.review-block--active')?.getAttribute('data-block-id')).toBe(
+      'proposal-repeat-2',
+    )
+    expect(document.querySelector('.artifact-conversation__thread--active')).toBeTruthy()
   })
 
   it('keeps orphaned comments, standing verdict, delivery, history, and session actions', async () => {
@@ -446,7 +472,7 @@ describe('ScopeView selected-artifact workbench', () => {
     )
     const dialog = screen.getByRole('dialog', { name: 'Review the whole exploration' })
     expect(dialog.closest('.scope-conversation')).toBeNull()
-    expect(document.activeElement).toBe(screen.getByLabelText('New whole-exploration note'))
+    expect(document.activeElement).toBe(dialog)
     expect(screen.getByText('This concern must remain reachable.')).toBeTruthy()
     expect(screen.getByText('Anchor lost')).toBeTruthy()
     expect(screen.getByText('Text rewritten away.')).toBeTruthy()
@@ -544,6 +570,117 @@ describe('ScopeView selected-artifact workbench', () => {
     expect(screen.queryByRole('heading', { name: 'Latest rewrite' })).toBeNull()
     await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(await screen.findByRole('heading', { name: 'Latest rewrite' })).toBeTruthy()
+  })
+
+  it('reports an arriving artifact replacement at the document without moving the reader', async () => {
+    const updated = {
+      ...SESSION_SCOPE,
+      artifacts: [artifact(SESSION_PATH, 'session-new', 'New document text')],
+    }
+    const scrollTo = vi.fn()
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 420 })
+    const fetchMock = stubLiveScope()
+    vi.stubGlobal('scrollTo', scrollTo)
+    const { container } = render(ScopeView)
+    await screen.findByRole('heading', { name: 'Exploration' })
+    expect(container.querySelector('.artifact-document--replaced')).toBeNull()
+
+    fetchMock.mockResolvedValueOnce(response(updated))
+    StubEventSource.instances[0]?.emit(
+      JSON.stringify({ artifactsChanged: true, reviewStateChanged: false }),
+    )
+
+    await screen.findByRole('heading', { name: 'New document text' })
+    await waitFor(() =>
+      expect(container.querySelector('.artifact-document--replaced')).toBeTruthy(),
+    )
+    expect(screen.getByText('Document content replaced')).toBeTruthy()
+    expect(scrollTo).toHaveBeenCalledWith(0, 420)
+  })
+
+  it('reports a deferred replacement when it applies, not when it was detected', async () => {
+    const updated = {
+      ...SESSION_SCOPE,
+      artifacts: [artifact(SESSION_PATH, 'deferred', 'Deferred rewrite')],
+    }
+    const fetchMock = stubLiveScope()
+    const { container } = render(ScopeView)
+    await screen.findByRole('heading', { name: 'Exploration' })
+    await fireEvent.click(screen.getByRole('button', { name: /Comment on .* block 2/ }))
+    await fireEvent.update(screen.getByLabelText('Comment on block'), 'Keep this sentence.')
+
+    fetchMock.mockResolvedValueOnce(response(updated))
+    StubEventSource.instances[0]?.emit(
+      JSON.stringify({ artifactsChanged: true, reviewStateChanged: false }),
+    )
+
+    expect(await screen.findByText('Artifact changed.')).toBeTruthy()
+    expect(container.querySelector('.artifact-document--replaced')).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(await screen.findByRole('heading', { name: 'Deferred rewrite' })).toBeTruthy()
+    expect(container.querySelector('.artifact-document--replaced')).toBeTruthy()
+  })
+
+  it('confirms the reviewer own reply at the thread it extended', async () => {
+    stubLiveScope()
+    const { container } = render(ScopeView)
+    await screen.findByRole('heading', { name: 'Exploration' })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Reply' }))
+    await fireEvent.update(screen.getByLabelText('Reply to thread'), 'Reviewer follow-up.')
+    await fireEvent.click(screen.getByRole('button', { name: 'Record reply' }))
+    await waitFor(() =>
+      expect(container.querySelector('.artifact-conversation__thread--recorded')).toBeTruthy(),
+    )
+    expect(
+      container.querySelector('.artifact-conversation__thread--recorded')?.getAttribute('id'),
+    ).toBe('artifact-thread-anchored')
+    expect(container.querySelector('.artifact-document--replaced')).toBeNull()
+  })
+
+  it('clears an arrival report on its own with no dismissal control', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const updated = {
+      ...SESSION_SCOPE,
+      artifacts: [artifact(SESSION_PATH, 'decaying', 'Decaying mark')],
+    }
+    const fetchMock = stubLiveScope()
+    const { container } = render(ScopeView)
+    await screen.findByRole('heading', { name: 'Exploration' })
+
+    fetchMock.mockResolvedValueOnce(response(updated))
+    StubEventSource.instances[0]?.emit(
+      JSON.stringify({ artifactsChanged: true, reviewStateChanged: false }),
+    )
+    await screen.findByRole('heading', { name: 'Decaying mark' })
+    await waitFor(() =>
+      expect(container.querySelector('.artifact-document--replaced')).toBeTruthy(),
+    )
+    expect(container.querySelector('[aria-label="Dismiss"]')).toBeNull()
+
+    vi.advanceTimersByTime(ARRIVAL_DWELL_MS + 1)
+    await nextTick()
+    expect(container.querySelector('.artifact-document--replaced')).toBeNull()
+    expect(screen.queryByText('Document content replaced')).toBeNull()
+    vi.useRealTimers()
+  })
+
+  it('reports nothing when a live update carries no artifact change', async () => {
+    const fetchMock = stubLiveScope()
+    const { container } = render(ScopeView)
+    await screen.findByRole('heading', { name: 'Exploration' })
+
+    fetchMock.mockResolvedValueOnce(
+      response({ ...SESSION_SCOPE, commentCounts: { open: 2, addressed: 0, resolved: 1 } }),
+    )
+    StubEventSource.instances[0]?.emit(
+      JSON.stringify({ artifactsChanged: false, reviewStateChanged: true }),
+    )
+
+    expect(await screen.findByText('2 open')).toBeTruthy()
+    expect(container.querySelector('.artifact-document--replaced')).toBeNull()
+    expect(container.querySelector('.artifact-conversation__thread--recorded')).toBeNull()
   })
 
   it('refreshes review state immediately while artifact composer remains dirty', async () => {

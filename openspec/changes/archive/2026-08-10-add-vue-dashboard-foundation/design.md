@@ -1,3 +1,7 @@
+## Status at archive
+
+Two decisions argued for here were later reversed: committing `web/dist/` with a byte-comparison CI check, and shipping a light theme with a reviewer-selectable toggle. See the note at the head of `proposal.md`. The arguments are left standing as written, with the reversals marked where they were made — a design that quietly matched a decision it never argued for would be worse than one that shows its own reversal.
+
 ## Context
 
 The dashboard was built to an explicit MVP constraint: server-rendered HTML, no framework, no build step. That bought a self-contained binary and a page provably incapable of mis-anchoring. It also produced a 395-line, 35KB page per change that renders six documents as unstyled source. The constraint has been paid for and the interface is what was bought.
@@ -10,8 +14,8 @@ This change is the first half. Its output is a working index in a new toolchain 
 
 **Goals:**
 - The binary still installs with `cargo install` and no other toolchain.
-- A stale committed `dist/` fails a build rather than shipping.
-- Dark mode exists, from the component library's theming rather than hand-written CSS.
+- A stale committed `dist/` fails a build rather than shipping. *(Reversed: `dist/` is gitignored, and an absent one fails the compile instead.)*
+- Dark mode exists, from the component library's theming rather than hand-written CSS. *(Reversed: one hand-written dark identity, no light theme, no toggle.)*
 - The index keeps every field it shows today.
 
 **Non-Goals:**
@@ -30,6 +34,8 @@ So the objection does not reach this change, and the split it seemed to forbid i
 The alternative first screen — a stub page proving the build works — was rejected. A scaffold that renders "hello" answers the distribution questions and nothing else, and it cannot answer the theming question honestly, because a theme is only tested by real content: a table, a badge, a muted secondary line, a link.
 
 ### Distribution: commit `dist/`, embed with `rust-embed`
+
+> **Reversed by `b2e120a`.** The comparison below is sound and the conclusion held for the half that mattered — embed with `rust-embed`, so `cargo install` needs no Node. The committing half was dropped: `web/dist/` is gitignored, the crate embeds whatever the local build produced, an absent build directory fails the compile, and CI proves a clean checkout can build and serve rather than comparing bytes. The third option this table does not list is the one that won — *generate it locally, embed it, and never store it* — which costs one build step before Cargo on a fresh clone and buys back the diff noise.
 
 | | `cargo install` needs Node | build output in git |
 |---|---|---|
@@ -59,7 +65,7 @@ So this change edits the Purpose to describe the split state honestly: the inter
 - **The interface is half one thing and half another for one change.** Mitigated by the index having no comment surface, and bounded by the next change being the immediate successor.
 - **Two Node toolchains in one repository.** rspress/React for the docs, Vite/Vue for the dashboard. They share no code. The cost is a second `node_modules` and a second set of dependency updates.
 - **`shadcn-vue` tracks behind the React original.** A component that exists in shadcn and not in shadcn-vue is a component to write by hand. Recorded because the choice is the owner's and was made with this known.
-- **The `dist/` check is only as good as its determinism.** If Vite's output is not byte-reproducible across environments, the check fails on clean builds and gets disabled, at which point the distribution decision has quietly lost its safeguard. Pinning the toolchain version is part of the task, not an optimisation.
+- **The `dist/` check is only as good as its determinism.** If Vite's output is not byte-reproducible across environments, the check fails on clean builds and gets disabled, at which point the distribution decision has quietly lost its safeguard. Pinning the toolchain version is part of the task, not an optimisation. *(This risk is what came true. The check was not disabled quietly — the artifact stopped being committed, which removed the need for byte-reproducibility along with the check. The pinned toolchain stayed, now Bun 1.3.2.)*
 
 ## Migration Plan
 
