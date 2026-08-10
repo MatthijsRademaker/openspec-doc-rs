@@ -16,9 +16,11 @@ const sourceReferences = new Set([
 ])
 const allowlist = new Set([
   'assets/images/observatory-field.webp',
+  'assets/images/observatory-comment-updated.webp',
   'assets/images/observatory-plate-face.webp',
   'assets/images/observatory-plate-star-system.webp',
   'assets/images/observatory-plate-sun.webp',
+  'assets/images/observatory-task-updated.webp',
 ])
 const supersededRasters = new Set([
   'assets/images/index-observation-field.webp',

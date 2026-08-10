@@ -3,6 +3,7 @@ import type { ComponentPublicInstance } from 'vue'
 import { computed, ref, watch } from 'vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import { Button } from '@/components/ui/button'
+import { scopeRelativeArtifactPath } from '@/lib/artifact-path'
 import type { Artifact, Block, NewComment, Thread } from '@/lib/scope-review'
 
 const props = withDefaults(
@@ -60,14 +61,7 @@ const commentsByBlock = computed(() => {
 
 function artifactLabel(path: string): string {
   if (path.startsWith('.openspec-doc/scratch/')) return 'Exploration scratch'
-  const marker = '/changes/'
-  const markerIndex = path.indexOf(marker)
-  if (markerIndex >= 0) {
-    const tail = path.slice(markerIndex + marker.length)
-    const separator = tail.indexOf('/')
-    if (separator >= 0) return tail.slice(separator + 1)
-  }
-  return path
+  return scopeRelativeArtifactPath(path)
 }
 
 function blockThreads(blockId: string): Thread[] {
@@ -147,7 +141,7 @@ function submitComment() {
       <div class="artifact-document__identity">
         <InstrumentLabel>Selected artifact</InstrumentLabel>
         <h2 id="selected-artifact-title" tabindex="-1">{{ artifactLabel(artifact.path) }}</h2>
-        <code>{{ artifact.path }}</code>
+        <code :title="artifact.path">{{ scopeRelativeArtifactPath(artifact.path) }}</code>
       </div>
       <div class="artifact-document__arrival-art" aria-hidden="true">
         <img
@@ -184,35 +178,37 @@ function submitComment() {
             <div v-else v-html="block.html" />
           </div>
 
-          <Button
-            type="button"
-            variant="instrument"
-            size="icon-sm"
-            class="review-block__comment-action"
-            :aria-label="`Comment on ${artifact.path}, block ${blockIndex + 1}`"
-            :disabled="busy"
-            @click="startBlockComment(block)"
-          >
-            +
-          </Button>
+          <div class="review-block__controls">
+            <div v-if="blockThreads(block.id).length" class="review-block__markers" aria-label="Comments">
+              <button
+                v-for="(thread, threadIndex) in blockThreads(block.id)"
+                :key="thread.comment.id"
+                type="button"
+                class="review-block__marker"
+                :class="[
+                  `review-block__marker--${thread.status}`,
+                  { 'review-block__marker--active': thread.comment.id === activeThreadId },
+                ]"
+                :aria-current="thread.comment.id === activeThreadId ? 'true' : undefined"
+                :aria-controls="`artifact-thread-${thread.comment.id}`"
+                @click="emit('activateThread', thread.comment.id)"
+              >
+                {{ threadIndex + 1 }}
+                <span class="sr-only">{{ thread.status }} comment</span>
+              </button>
+            </div>
 
-          <div v-if="blockThreads(block.id).length" class="review-block__markers" aria-label="Comments">
-            <button
-              v-for="(thread, threadIndex) in blockThreads(block.id)"
-              :key="thread.comment.id"
+            <Button
               type="button"
-              class="review-block__marker"
-              :class="[
-                `review-block__marker--${thread.status}`,
-                { 'review-block__marker--active': thread.comment.id === activeThreadId },
-              ]"
-              :aria-current="thread.comment.id === activeThreadId ? 'true' : undefined"
-              :aria-controls="`artifact-thread-${thread.comment.id}`"
-              @click="emit('activateThread', thread.comment.id)"
+              variant="instrument"
+              size="icon-sm"
+              class="review-block__comment-action"
+              :aria-label="`Comment on ${artifact.path}, block ${blockIndex + 1}`"
+              :disabled="busy"
+              @click="startBlockComment(block)"
             >
-              {{ threadIndex + 1 }}
-              <span class="sr-only">{{ thread.status }} comment</span>
-            </button>
+              +
+            </Button>
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
+import { scopeRelativeArtifactPath } from '@/lib/artifact-path'
 import type { CommentCounts } from '@/lib/scope-review'
 
 const props = withDefaults(
@@ -17,7 +18,7 @@ const emit = defineEmits<{ select: [path: string] }>()
 
 const entries = computed(() =>
   props.paths.map((path) => {
-    const localPath = changeLocalPath(path)
+    const localPath = scopeRelativeArtifactPath(path)
     const separator = localPath.lastIndexOf('/')
     return {
       path,
@@ -27,15 +28,6 @@ const entries = computed(() =>
     }
   }),
 )
-
-function changeLocalPath(path: string): string {
-  const marker = '/changes/'
-  const markerIndex = path.indexOf(marker)
-  if (markerIndex < 0) return path
-  const tail = path.slice(markerIndex + marker.length)
-  const separator = tail.indexOf('/')
-  return separator < 0 ? tail : tail.slice(separator + 1)
-}
 
 function threadLabel(counts: CommentCounts): string {
   const total = counts.open + counts.addressed + counts.resolved
@@ -47,7 +39,9 @@ function threadLabel(counts: CommentCounts): string {
 <template>
   <section v-if="!interactive" class="artifact-navigator artifact-navigator--identity">
     <InstrumentLabel>Scratch coordinate</InstrumentLabel>
-    <code v-if="paths[0]" class="artifact-navigator__scratch">{{ paths[0] }}</code>
+    <code v-if="paths[0]" class="artifact-navigator__scratch" :title="paths[0]">
+      {{ scopeRelativeArtifactPath(paths[0]) }}
+    </code>
   </section>
 
   <nav v-else class="artifact-navigator" aria-label="Artifacts">
@@ -70,7 +64,7 @@ function threadLabel(counts: CommentCounts): string {
               {{ entry.directory }}
             </span>
             <strong>{{ entry.filename }}</strong>
-            <code class="artifact-navigator__exact">{{ entry.path }}</code>
+            <code class="artifact-navigator__exact">{{ scopeRelativeArtifactPath(entry.path) }}</code>
           </span>
           <span class="artifact-navigator__threads">{{ threadLabel(entry.counts) }}</span>
         </button>

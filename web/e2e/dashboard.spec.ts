@@ -206,7 +206,13 @@ test('composes full-bleed selected-document chassis without obsolete gallery or 
     'true',
   )
   await expect(page.locator('.scope-observation-band')).toHaveCount(0)
-  expect([...new Set(artworkRequests)]).toEqual(['/assets/images/observatory-field.webp'])
+  expect([...new Set(artworkRequests)].sort()).toEqual(
+    [
+      '/assets/images/observatory-field.webp',
+      '/assets/images/observatory-comment-updated.webp',
+      '/assets/images/observatory-task-updated.webp',
+    ].sort(),
+  )
   await expect(page.getByText('Keep repeated occurrence mapping exact.')).toBeVisible()
   await expect(page.getByText('Keep design conversation artifact-scoped.')).toHaveCount(0)
   await expect(page.locator('body')).not.toContainText(
@@ -231,7 +237,8 @@ test('composes full-bleed selected-document chassis without obsolete gallery or 
   })
   expect(geometry.utility?.right).toBeLessThanOrEqual(geometry.documentStage?.left ?? 0)
   expect(geometry.documentStage?.right).toBeLessThanOrEqual(geometry.conversation?.left ?? 0)
-  expect(geometry.decision?.left).toBeGreaterThanOrEqual(geometry.documentStage?.right ?? 0)
+  expect(geometry.decision?.left).toBeGreaterThanOrEqual(geometry.documentStage?.left ?? 0)
+  expect(geometry.decision?.right).toBeLessThanOrEqual(geometry.conversation?.left ?? 0)
   expect(geometry.documentOverflow).not.toBe('scroll')
   expect(geometry.documentOverflow).not.toBe('auto')
   expectHealthy(health)
@@ -259,6 +266,18 @@ test('links persistent conversation to exact repeated source occurrence', async 
   await expect(page.getByText('Agent', { exact: true }).first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Reply' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Resolve', exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Collapse anchored threads' }).click()
+  await expect(page.locator('#scope-conversation-body')).toBeHidden()
+  const collapsedRail = await page.locator('.scope-conversation').evaluate((element) => ({
+    width: element.clientWidth,
+    height: element.clientHeight,
+    viewport: window.innerWidth,
+  }))
+  if (collapsedRail.viewport > 928) expect(collapsedRail.width).toBeLessThan(60)
+  else expect(collapsedRail.height).toBeLessThan(60)
+  await page.getByRole('button', { name: 'Expand anchored threads' }).click()
+  await expect(page.locator('#scope-conversation-body')).toBeVisible()
 })
 
 test('anchors new comment to second repeated block and refuses inline-markup mismatch', async ({
@@ -407,7 +426,10 @@ test('keeps dirty composer while review state updates and applies latest deferre
 test('keeps orphaned and addressed loose comments plus verdict actions', async ({ page }) => {
   await gotoArtifact(page, proposalPath)
   await expect(page.getByText('Not yet delivered')).toBeVisible()
-  await page.getByRole('button', { name: /Comment \/ 2 without block/ }).click()
+  await page.getByRole('button', { name: 'Open scope feedback, 2 unplaced notes' }).click()
+  await expect(page.getByRole('dialog', { name: 'Review the whole change' })).toBeVisible()
+  await expect(page.getByLabel('New whole-change note')).toBeFocused()
+  await expect(page.locator('.decision-instrument')).toHaveCSS('position', 'fixed')
   await expect(page.getByText('Lost anchors must stay reachable.')).toBeVisible()
   await expect(page.getByText('Anchor lost')).toBeVisible()
   await expect(page.getByText('Original text rewritten away.')).toBeVisible()
@@ -419,8 +441,8 @@ test('keeps orphaned and addressed loose comments plus verdict actions', async (
     const response = await fetch(`/api/sessions/${session}`)
     return ((await response.json()) as { comments: unknown[] }).comments.length
   }, fixtureSession)
-  await page.getByRole('button', { name: /Comment \/ 0 without block/ }).click()
-  await page.getByRole('button', { name: 'Keep exploring' }).click()
+  await page.getByRole('button', { name: 'Open scope feedback, 0 unplaced notes' }).click()
+  await page.getByRole('button', { name: 'Keep exploring with this feedback' }).click()
   const after = await page.evaluate(async (session) => {
     const response = await fetch(`/api/sessions/${session}`)
     return ((await response.json()) as { comments: unknown[] }).comments.length
@@ -528,7 +550,7 @@ test('keeps keyboard focus and reduced-motion navigation immediate', async ({ pa
   expect(focusTrail.some((text) => text.includes('Observation index'))).toBe(true)
   expect(focusTrail.some((text) => text.includes('proposal.md'))).toBe(true)
   expect(focusTrail.some((text) => text.includes('open comment'))).toBe(true)
-  expect(focusTrail.some((text) => text.includes('Comment / 2 without block'))).toBe(true)
+  expect(focusTrail.some((text) => text.includes('Scope feedback · 2'))).toBe(true)
 
   const selectedPath = page.locator('.artifact-navigator__path[aria-current="page"]')
   await selectedPath.focus()

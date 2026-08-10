@@ -13,6 +13,8 @@ describe('MSW API handlers', () => {
     }
 
     expect(indexResponse.ok).toBe(true)
+    expect(index.sessions).toHaveLength(4)
+    expect(index.changes).toHaveLength(6)
     expect(index.sessions[0]?.key).toBe(MOCK_SESSION_ID)
     expect(index.changes[0]?.key).toBe(MOCK_CHANGE_KEY)
 
@@ -25,9 +27,8 @@ describe('MSW API handlers', () => {
 
     expect(scopeResponse.ok).toBe(true)
     expect(scope.kind).toBe('change')
-    expect(scope.artifacts.length).toBeGreaterThan(0)
-    expect(scope.artifacts).toHaveLength(5)
-    expect(scope.comments.length).toBe(4)
+    expect(scope.artifacts).toHaveLength(6)
+    expect(scope.comments).toHaveLength(6)
   })
 
   it('applies comment mutations and exposes updated scope state', async () => {

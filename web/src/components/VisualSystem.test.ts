@@ -98,7 +98,7 @@ describe('observatory visual system', () => {
     expect(source).not.toContain('.dark')
   })
 
-  it('places scope field in selected-document arrival without obsolete gallery or fake state', () => {
+  it('places observatory artwork in the selected document and desktop instrument rails', () => {
     const source = (suffix: string) =>
       Object.entries(sourceModules).find(([path]) => path.endsWith(suffix))?.[1]
     const scopeView = source('/views/ScopeView.vue')
@@ -110,7 +110,10 @@ describe('observatory visual system', () => {
     expect(artifactDocument).toContain('alt=""')
     expect(artifactDocument).toContain('aria-hidden="true"')
     expect(scopeView).not.toContain('scope-observation-band')
-    expect(scopeView).not.toContain('observatory-plate-')
+    expect(scopeView).toContain('/assets/images/observatory-task-updated.webp')
+    expect(scopeView).toContain('/assets/images/observatory-comment-updated.webp')
+    expect(scopeView).toContain('scope-utility__art')
+    expect(scopeView).toContain('scope-conversation__art')
     expect(`${scopeView}\n${artifactDocument}`).not.toMatch(
       /repository|activity feed|validation result|agent online/i,
     )

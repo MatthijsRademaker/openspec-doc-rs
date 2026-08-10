@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import CommentThread from '@/components/review/CommentThread.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import { Button } from '@/components/ui/button'
+import { scopeRelativeArtifactPath } from '@/lib/artifact-path'
 import type { Artifact, Thread } from '@/lib/scope-review'
 
 const props = withDefaults(
@@ -51,7 +52,7 @@ const orderedThreads = computed(() => {
     <header class="artifact-conversation__header">
       <InstrumentLabel>Artifact conversation / {{ orderedThreads.length }}</InstrumentLabel>
       <h2 id="artifact-conversation-title">Anchored threads</h2>
-      <code>{{ artifact.path }}</code>
+      <code :title="artifact.path">{{ scopeRelativeArtifactPath(artifact.path) }}</code>
     </header>
 
     <div v-if="orderedThreads.length" class="artifact-conversation__threads">

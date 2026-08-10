@@ -8,6 +8,7 @@ import DecisionInstrument from '@/components/review/DecisionInstrument.vue'
 import ScopeHeader from '@/components/review/ScopeHeader.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import StatusMark from '@/components/StatusMark.vue'
+import { Button } from '@/components/ui/button'
 import {
   createComment,
   eventPath,
@@ -37,6 +38,7 @@ const pendingArtifactUpdate = ref(false)
 const dirtyComposers = ref(new Set<string>())
 const activeThreadId = ref<string>()
 const artifactDocument = ref<ArtifactDocumentHandle>()
+const conversationCollapsed = ref(false)
 let events: EventSource | undefined
 let loadGeneration = 0
 
@@ -369,7 +371,10 @@ function submit(verdict: Verdict, comment: string) {
         <span>Finish or dismiss composer to refresh document.</span>
       </div>
 
-      <div class="scope-layout">
+      <div
+        class="scope-layout"
+        :class="{ 'scope-layout--conversation-collapsed': conversationCollapsed }"
+      >
         <aside class="scope-utility" aria-label="Scope instruments">
           <section class="scope-utility__route">
             <InstrumentLabel>Route coordinate</InstrumentLabel>
@@ -391,6 +396,9 @@ function submit(verdict: Verdict, comment: string) {
             :interactive="scope.kind === 'change'"
             @select="selectArtifact"
           />
+          <div class="scope-utility__art" aria-hidden="true">
+            <img src="/assets/images/observatory-task-updated.webp" alt="" />
+          </div>
         </aside>
 
         <section class="scope-document" aria-label="Selected artifact">
@@ -408,33 +416,57 @@ function submit(verdict: Verdict, comment: string) {
           />
         </section>
 
-        <aside class="scope-conversation" aria-label="Artifact conversation and decisions">
-          <ArtifactConversation
-            v-if="selectedArtifact"
-            :artifact="selectedArtifact"
-            :threads="selectedThreads"
-            :active-thread-id="activeThreadId"
-            :busy="busy"
-            @activate="activateThreadFromConversation"
-            @reply="reply"
-            @status="setStatus"
-            @composer="(id, dirty) => setComposerDirty(id, dirty)"
-          />
-          <section v-else class="artifact-conversation artifact-conversation--idle">
-            <InstrumentLabel>Artifact conversation / idle</InstrumentLabel>
-            <p>Select an available artifact coordinate to inspect its resolved threads.</p>
-          </section>
+        <aside
+          class="scope-conversation"
+          :class="{ 'scope-conversation--collapsed': conversationCollapsed }"
+          aria-label="Artifact conversation"
+        >
+          <Button
+            type="button"
+            variant="instrument"
+            size="sm"
+            class="scope-conversation__toggle"
+            :aria-expanded="!conversationCollapsed"
+            aria-controls="scope-conversation-body"
+            :aria-label="conversationCollapsed ? 'Expand anchored threads' : 'Collapse anchored threads'"
+            @click="conversationCollapsed = !conversationCollapsed"
+          >
+            <span aria-hidden="true">{{ conversationCollapsed ? '←' : '→' }}</span>
+            <span class="scope-conversation__toggle-label">Threads</span>
+          </Button>
 
-          <DecisionInstrument
-            :scope="scope"
-            :busy="busy"
-            @submit="submit"
-            @reply="reply"
-            @status="setStatus"
-            @composer="(id, dirty) => setComposerDirty(id, dirty)"
-          />
+          <div v-show="!conversationCollapsed" id="scope-conversation-body" class="scope-conversation__body">
+            <ArtifactConversation
+              v-if="selectedArtifact"
+              :artifact="selectedArtifact"
+              :threads="selectedThreads"
+              :active-thread-id="activeThreadId"
+              :busy="busy"
+              @activate="activateThreadFromConversation"
+              @reply="reply"
+              @status="setStatus"
+              @composer="(id, dirty) => setComposerDirty(id, dirty)"
+            />
+            <section v-else class="artifact-conversation artifact-conversation--idle">
+              <InstrumentLabel>Artifact conversation / idle</InstrumentLabel>
+              <p>Select an available artifact coordinate to inspect its resolved threads.</p>
+            </section>
+
+            <div class="scope-conversation__art" aria-hidden="true">
+              <img src="/assets/images/observatory-comment-updated.webp" alt="" />
+            </div>
+          </div>
         </aside>
       </div>
+
+      <DecisionInstrument
+        :scope="scope"
+        :busy="busy"
+        @submit="submit"
+        @reply="reply"
+        @status="setStatus"
+        @composer="(id, dirty) => setComposerDirty(id, dirty)"
+      />
     </template>
   </main>
 </template>

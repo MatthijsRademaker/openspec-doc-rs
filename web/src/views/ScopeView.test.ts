@@ -33,6 +33,7 @@ vi.mock('vue-router', () => ({
 }))
 
 const SESSION_PATH = '.openspec-doc/scratch/_session/session-with-a-long-exact-identifier.md'
+const SESSION_DISPLAY_PATH = 'session-with-a-long-exact-identifier.md'
 const CHANGE_ROOT = 'openspec/changes/change-with-a-long-exact-identifier'
 const PROPOSAL_PATH = `${CHANGE_ROOT}/proposal.md`
 const DESIGN_PATH = `${CHANGE_ROOT}/design.md`
@@ -381,7 +382,7 @@ describe('ScopeView selected-artifact workbench', () => {
     const { container } = render(ScopeView)
 
     expect(await screen.findByRole('heading', { name: 'Exploration' })).toBeTruthy()
-    expect(screen.getAllByText(SESSION_PATH).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(SESSION_DISPLAY_PATH).length).toBeGreaterThan(0)
     expect(container.querySelector('.artifact-navigator--identity')).toBeTruthy()
     expect(screen.queryByRole('navigation', { name: 'Artifacts' })).toBeNull()
     expect(replace).not.toHaveBeenCalled()
@@ -398,6 +399,13 @@ describe('ScopeView selected-artifact workbench', () => {
     expect(screen.getByText('1 open')).toBeTruthy()
     expect(screen.getByText('1 addressed')).toBeTruthy()
     expect(screen.getByText('1 resolved')).toBeTruthy()
+
+    const collapse = screen.getByRole('button', { name: 'Collapse anchored threads' })
+    await fireEvent.click(collapse)
+    expect(screen.getByRole('button', { name: 'Expand anchored threads' })).toBeTruthy()
+    expect(document.getElementById('scope-conversation-body')?.style.display).toBe('none')
+    await fireEvent.click(screen.getByRole('button', { name: 'Expand anchored threads' }))
+    expect(document.getElementById('scope-conversation-body')?.style.display).not.toBe('none')
 
     await fireEvent.click(screen.getByRole('button', { name: /design\.md/ }))
     expect(await screen.findByText('Design thread body.')).toBeTruthy()
@@ -433,11 +441,23 @@ describe('ScopeView selected-artifact workbench', () => {
     expect(screen.getAllByText('keep-exploring').length).toBeGreaterThan(0)
     expect(screen.getByText('Awaiting agent')).toBeTruthy()
     expect(screen.getByText('Verdict history / 1')).toBeTruthy()
-    await fireEvent.click(screen.getByRole('button', { name: /Comment \/ 1 without block/ }))
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Open scope feedback, 1 unplaced note' }),
+    )
+    const dialog = screen.getByRole('dialog', { name: 'Review the whole exploration' })
+    expect(dialog.closest('.scope-conversation')).toBeNull()
+    expect(document.activeElement).toBe(screen.getByLabelText('New whole-exploration note'))
     expect(screen.getByText('This concern must remain reachable.')).toBeTruthy()
     expect(screen.getByText('Anchor lost')).toBeTruthy()
     expect(screen.getByText('Text rewritten away.')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Keep exploring' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Keep exploring with this feedback' })).toBeTruthy()
+    await fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Review the whole exploration' })).toBeNull()
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Open scope feedback, 1 unplaced note' }),
+      ),
+    )
     expect(screen.getByRole('button', { name: 'Move to proposal' })).toBeTruthy()
   })
 

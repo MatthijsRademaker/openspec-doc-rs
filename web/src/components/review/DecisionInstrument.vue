@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import CommentThread from '@/components/review/CommentThread.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import { Button } from '@/components/ui/button'
@@ -23,11 +23,20 @@ const emit = defineEmits<{
 
 const open = ref(false)
 const comment = ref('')
+const commentInput = ref<HTMLTextAreaElement>()
+const commentPanel = ref<HTMLElement>()
 const composerDirty = computed(() => open.value && comment.value.length > 0)
 
 watch(composerDirty, (dirty) => emit('composer', 'decision-comment', dirty), { immediate: true })
 
 const looseThreads = computed(() => props.scope.comments.filter((thread) => !thread.blockId))
+const scopeNoun = computed(() => (props.scope.kind === 'session' ? 'exploration' : 'change'))
+const looseNoteCount = computed(
+  () => `${looseThreads.value.length} unplaced note${looseThreads.value.length === 1 ? '' : 's'}`,
+)
+const triggerLabel = computed(() =>
+  open.value ? 'Close scope feedback' : `Open scope feedback, ${looseNoteCount.value}`,
+)
 const composerVerdict = computed<Verdict>(() =>
   props.scope.kind === 'session' ? 'keep-exploring' : 'comment-resolution',
 )
@@ -45,91 +54,148 @@ function forwardComposer(commentId: string, dirty: boolean) {
 }
 
 function closeComposer() {
+  const restoreFocus = open.value
   open.value = false
   comment.value = ''
+  if (restoreFocus) {
+    void nextTick(() => document.getElementById('scope-comment-trigger')?.focus())
+  }
 }
 
-function toggleComposer() {
+async function toggleComposer() {
   if (open.value) closeComposer()
-  else open.value = true
+  else {
+    open.value = true
+    await nextTick()
+    commentInput.value?.focus()
+  }
 }
 
 function submitComposer() {
   emit('submit', composerVerdict.value, comment.value.trim())
-  comment.value = ''
-  open.value = false
+  closeComposer()
+}
+
+function trapFocus(event: KeyboardEvent) {
+  if (event.key !== 'Tab' || !commentPanel.value) return
+  const focusable = Array.from(
+    commentPanel.value.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+    ),
+  )
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (!first || !last) return
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
 }
 </script>
 
 <template>
-  <aside class="decision-instrument" aria-label="Review decisions">
-    <section
-      v-if="open"
-      id="scope-comment-panel"
-      class="decision-instrument__drawer"
-      aria-labelledby="scope-comment-panel-title"
+  <Teleport to="body">
+    <aside
+      class="decision-instrument"
+      :class="{ 'decision-instrument--open': open }"
+      aria-label="Review decisions"
     >
-      <header class="decision-instrument__drawer-header">
-        <div>
-          <InstrumentLabel>Comments without block / {{ looseThreads.length }}</InstrumentLabel>
-          <h2 id="scope-comment-panel-title">Scope transmission</h2>
+      <div
+        v-if="open"
+        class="decision-instrument__backdrop"
+        aria-hidden="true"
+        @click="closeComposer"
+      />
+
+      <section
+        v-if="open"
+        id="scope-comment-panel"
+        ref="commentPanel"
+        class="decision-instrument__drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="scope-comment-panel-title"
+        @keydown="trapFocus"
+        @keydown.esc.stop.prevent="closeComposer"
+      >
+        <header class="decision-instrument__drawer-header">
+          <div>
+            <InstrumentLabel>Scope feedback / {{ looseNoteCount }}</InstrumentLabel>
+            <h2 id="scope-comment-panel-title">Review the whole {{ scopeNoun }}</h2>
+            <p class="decision-instrument__guidance">
+              Use this sheet for feedback that applies across the {{ scopeNoun }} or has lost its
+              passage anchor.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Close scope feedback"
+            @click="closeComposer"
+          >
+            ×
+          </Button>
+        </header>
+
+        <div v-if="looseThreads.length" class="decision-instrument__loose-comments">
+          <CommentThread
+            v-for="thread in looseThreads"
+            :key="thread.comment.id"
+            :thread="thread"
+            :busy="busy"
+            :show-anchor-loss="thread.anchorState === 'orphaned' || thread.anchorState === 'missing'"
+            @reply="forwardReply"
+            @status="forwardStatus"
+            @composer="(dirty) => forwardComposer(thread.comment.id, dirty)"
+          />
         </div>
-        <Button type="button" variant="ghost" size="icon-sm" aria-label="Close composer" @click="closeComposer">
-          ×
-        </Button>
-      </header>
+        <p v-else class="decision-instrument__empty">No scope-level or displaced feedback yet.</p>
 
-      <div v-if="looseThreads.length" class="decision-instrument__loose-comments">
-        <CommentThread
-          v-for="thread in looseThreads"
-          :key="thread.comment.id"
-          :thread="thread"
-          :busy="busy"
-          :show-anchor-loss="thread.anchorState === 'orphaned' || thread.anchorState === 'missing'"
-          @reply="forwardReply"
-          @status="forwardStatus"
-          @composer="(dirty) => forwardComposer(thread.comment.id, dirty)"
-        />
-      </div>
-      <p v-else class="decision-instrument__empty">No unanchored or lost comments.</p>
+        <form class="decision-instrument__composer" @submit.prevent="submitComposer">
+          <label for="scope-comment">New whole-{{ scopeNoun }} note</label>
+          <textarea
+            id="scope-comment"
+            ref="commentInput"
+            v-model="comment"
+            rows="4"
+            :disabled="busy"
+            :placeholder="`What should the agent reconsider across this ${scopeNoun}?`"
+          />
+          <Button type="submit" :disabled="busy">
+            {{ scope.kind === 'session' ? 'Keep exploring with this feedback' : 'Send review to agent' }}
+          </Button>
+        </form>
+      </section>
 
-      <form class="decision-instrument__composer" @submit.prevent="submitComposer">
-        <label for="scope-comment">Optional scope comment</label>
-        <textarea
-          id="scope-comment"
-          v-model="comment"
-          rows="4"
+      <div class="decision-instrument__bar">
+        <Button
+          id="scope-comment-trigger"
+          type="button"
+          variant="instrument"
+          size="lg"
+          :aria-expanded="open"
+          :aria-label="triggerLabel"
+          aria-controls="scope-comment-panel"
           :disabled="busy"
-          placeholder="Record context beyond anchored comments…"
-        />
-        <Button type="submit" :disabled="busy">
-          {{ scope.kind === 'session' ? 'Keep exploring' : 'Send comments to agent' }}
+          @click="toggleComposer"
+        >
+          <span aria-hidden="true">{{ open ? '×' : '+' }}</span>
+          {{ open ? 'Close scope feedback' : `Scope feedback · ${looseThreads.length}` }}
         </Button>
-      </form>
-    </section>
-
-    <div class="decision-instrument__bar">
-      <Button
-        type="button"
-        variant="instrument"
-        size="lg"
-        :aria-expanded="open"
-        aria-controls="scope-comment-panel"
-        :disabled="busy"
-        @click="toggleComposer"
-      >
-        <span aria-hidden="true">+</span>
-        Comment / {{ looseThreads.length }} without block
-      </Button>
-      <Button
-        v-if="scope.kind === 'session'"
-        type="button"
-        size="lg"
-        :disabled="busy"
-        @click="emit('submit', 'move-to-proposal', '')"
-      >
-        Move to proposal
-      </Button>
-    </div>
-  </aside>
+        <Button
+          v-if="scope.kind === 'session'"
+          type="button"
+          size="lg"
+          :disabled="busy"
+          @click="emit('submit', 'move-to-proposal', '')"
+        >
+          Move to proposal
+        </Button>
+      </div>
+    </aside>
+  </Teleport>
 </template>

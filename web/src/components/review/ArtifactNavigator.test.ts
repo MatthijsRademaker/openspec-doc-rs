@@ -37,7 +37,7 @@ describe('ArtifactNavigator', () => {
     const scratch = '.openspec-doc/scratch/_session/session-with-long-identity.md'
     render(ArtifactNavigator, { props: { paths: [scratch], interactive: false } })
 
-    expect(screen.getByText(scratch)).toBeTruthy()
+    expect(screen.getByText('session-with-long-identity.md')).toBeTruthy()
     expect(screen.queryByRole('navigation')).toBeNull()
     expect(screen.queryByRole('button')).toBeNull()
   })

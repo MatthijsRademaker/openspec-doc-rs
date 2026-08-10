@@ -996,6 +996,10 @@
   gap: var(--hairline);
 }
 
+.scope-layout--conversation-collapsed {
+  grid-template-columns: clamp(14rem, 17vw, 18rem) minmax(32rem, 1fr) 3.25rem;
+}
+
 .scope-utility,
 .scope-document,
 .scope-conversation {
@@ -1013,8 +1017,45 @@
   padding: var(--space-2);
 }
 
+.scope-utility__art,
+.scope-conversation__art {
+  position: absolute;
+  z-index: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: min(46vh, 28rem);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent, black 36%);
+  opacity: 0.32;
+  pointer-events: none;
+}
+
+.scope-utility__art img,
+.scope-conversation__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(0.35) contrast(1.08) saturate(0.72);
+}
+
+.scope-utility__art img {
+  object-position: 52% center;
+}
+
+.scope-conversation__art {
+  height: min(52vh, 34rem);
+  opacity: 0.27;
+}
+
+.scope-conversation__art img {
+  object-position: center;
+}
+
 .scope-utility section,
 .scope-utility nav {
+  position: relative;
+  z-index: 1;
   display: grid;
   min-width: 0;
   justify-items: start;
@@ -1071,7 +1112,7 @@
   grid-template-columns: 1rem minmax(0, 1fr);
   width: 100%;
   min-width: 0;
-  padding: var(--space-1) 0;
+  padding: var(--space-2) var(--space-1);
   border: 0;
   border-left: 2px solid transparent;
   background: transparent;
@@ -1152,6 +1193,10 @@
 .scope-document,
 .artifact-document {
   min-width: 0;
+}
+
+.scope-document {
+  align-self: stretch;
 }
 
 .artifact-document__header {
@@ -1237,8 +1282,11 @@
 
 .review-block {
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.75rem;
+  column-gap: var(--space-1);
   min-width: 0;
-  padding: var(--space-2) var(--space-5) var(--space-2) clamp(var(--space-2), 3vw, var(--space-4));
+  padding: var(--space-2) var(--space-1) var(--space-2) clamp(var(--space-2), 3vw, var(--space-4));
   border-left: 2px solid transparent;
   background: var(--canvas);
   transition:
@@ -1365,12 +1413,20 @@
   text-align: left;
 }
 
+.review-block__controls {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  justify-items: center;
+  gap: var(--space-half);
+  padding-left: var(--space-1);
+  border-left: var(--hairline) solid var(--border-ink);
+}
+
 .review-block__comment-action {
-  position: absolute;
-  top: var(--space-1);
-  right: var(--space-1);
+  flex: none;
   opacity: 0;
-  transform: translateX(4px);
+  transform: translateY(4px);
 }
 
 .review-block:hover .review-block__comment-action,
@@ -1380,11 +1436,8 @@
 }
 
 .review-block__markers {
-  position: absolute;
-  right: var(--space-1);
-  bottom: var(--space-1);
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  justify-items: center;
   gap: var(--space-half);
 }
 
@@ -1470,6 +1523,7 @@ textarea::placeholder {
 .scope-conversation {
   position: relative;
   display: grid;
+  align-self: stretch;
   align-content: start;
   min-height: calc(100vh - var(--space-3));
   background:
@@ -1480,6 +1534,38 @@ textarea::placeholder {
       color-mix(in srgb, var(--border-ink) 56%, transparent) calc(4rem + 1px)
     ),
     var(--surface);
+}
+
+.scope-conversation__body {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  min-height: inherit;
+}
+
+.scope-conversation__toggle {
+  position: absolute;
+  z-index: 5;
+  top: var(--space-2);
+  right: var(--space-2);
+}
+
+.scope-conversation:not(.scope-conversation--collapsed) .scope-conversation__toggle-label {
+  display: none;
+}
+
+.scope-conversation--collapsed {
+  min-height: calc(100vh - var(--space-3));
+}
+
+.scope-conversation--collapsed .scope-conversation__toggle {
+  right: 50%;
+  height: auto;
+  min-height: 7rem;
+  padding: var(--space-1) var(--space-half);
+  transform: translateX(50%);
+  writing-mode: vertical-rl;
 }
 
 .artifact-conversation {
@@ -1498,6 +1584,10 @@ textarea::placeholder {
   gap: var(--space-1);
   padding-bottom: var(--space-2);
   border-bottom: var(--hairline) solid var(--border-ink);
+}
+
+.scope-conversation:not(.scope-conversation--collapsed) .artifact-conversation__header {
+  padding-right: var(--space-5);
 }
 
 .artifact-conversation__header h2 {
@@ -1671,35 +1761,53 @@ textarea::placeholder {
 }
 
 .decision-instrument {
-  position: sticky;
-  z-index: 3;
-  bottom: 0;
+  position: fixed;
+  z-index: 30;
+  bottom: max(var(--space-2), env(safe-area-inset-bottom, 0px));
+  left: 50%;
   display: grid;
+  width: min(42rem, calc(100vw - var(--space-4)));
   min-width: 0;
-  margin-top: var(--space-2);
+  gap: var(--space-1);
+  transform: translateX(-50%);
   pointer-events: none;
+}
+
+.decision-instrument--open {
+  width: min(48rem, calc(100vw - var(--space-4)));
+}
+
+.decision-instrument__backdrop {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  background: color-mix(in srgb, var(--canvas) 58%, transparent);
+  pointer-events: auto;
 }
 
 .decision-instrument__bar,
 .decision-instrument__drawer {
-  width: 100%;
+  position: relative;
+  z-index: 1;
   pointer-events: auto;
   border: var(--hairline) solid var(--border-ink);
   background: color-mix(in srgb, var(--surface) 97%, transparent);
   backdrop-filter: blur(12px);
+  box-shadow: 0 1rem 3rem color-mix(in srgb, black 42%, transparent);
 }
 
 .decision-instrument__bar {
   display: flex;
+  width: max-content;
+  max-width: 100%;
   align-items: stretch;
-  flex-direction: column;
+  justify-self: center;
   gap: var(--space-1);
   padding: var(--space-1);
   border-top: 2px solid var(--accent-ink);
 }
 
 .decision-instrument__bar [data-slot="button"] {
-  width: 100%;
   min-width: 0;
   height: auto;
   white-space: normal;
@@ -1708,11 +1816,12 @@ textarea::placeholder {
 
 .decision-instrument__drawer {
   display: grid;
-  max-height: min(70vh, 42rem);
+  width: 100%;
+  max-height: min(72vh, 42rem);
   overflow-y: auto;
   gap: var(--space-2);
   padding: var(--space-2);
-  border-bottom: 0;
+  border-top: 2px solid var(--accent-ink);
 }
 
 .decision-instrument__drawer-header {
@@ -1725,6 +1834,14 @@ textarea::placeholder {
 .decision-instrument__drawer-header > div {
   display: grid;
   gap: var(--space-1);
+}
+
+.decision-instrument__guidance {
+  max-width: 58ch;
+  margin: 0;
+  color: var(--muted-ink);
+  font-size: 0.78rem;
+  line-height: 1.55;
 }
 
 .decision-instrument__loose-comments {
@@ -1751,11 +1868,19 @@ textarea::placeholder {
     grid-template-columns: minmax(30rem, 1fr) minmax(20rem, 25rem);
   }
 
+  .scope-layout--conversation-collapsed {
+    grid-template-columns: minmax(30rem, 1fr) 3.25rem;
+  }
+
   .scope-utility {
     position: static;
     grid-column: 1 / -1;
     grid-template-columns: minmax(10rem, 0.5fr) minmax(11rem, 0.55fr) minmax(20rem, 1.5fr);
     min-height: 0;
+  }
+
+  .scope-utility__art {
+    display: none;
   }
 
   .scope-utility__route,
@@ -1789,6 +1914,10 @@ textarea::placeholder {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .scope-layout--conversation-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .scope-utility,
   .scope-document,
   .scope-conversation {
@@ -1799,8 +1928,20 @@ textarea::placeholder {
     min-height: 0;
   }
 
-  .decision-instrument {
-    position: static;
+  .scope-conversation--collapsed {
+    min-height: 3.25rem;
+  }
+
+  .scope-conversation--collapsed .scope-conversation__toggle {
+    top: var(--space-1);
+    right: var(--space-1);
+    min-height: 0;
+    transform: none;
+    writing-mode: horizontal-tb;
+  }
+
+  .scope-conversation__art {
+    display: none;
   }
 }
 
@@ -1862,7 +2003,8 @@ textarea::placeholder {
   }
 
   .review-block {
-    padding-inline: var(--space-1) var(--space-4);
+    grid-template-columns: minmax(0, 1fr) 2.5rem;
+    padding-inline: var(--space-1);
   }
 
   .review-block__comment-action {
@@ -1879,14 +2021,18 @@ textarea::placeholder {
     padding: var(--space-1);
   }
 
-  .decision-instrument {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-
   .decision-instrument__drawer {
-    max-height: calc(100dvh - 6rem - env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - 7rem - env(safe-area-inset-bottom, 0px));
     overscroll-behavior: contain;
     padding: var(--space-1);
+  }
+
+  .decision-instrument__bar {
+    flex-wrap: wrap;
+  }
+
+  .decision-instrument__bar [data-slot="button"] {
+    flex: 1 1 12rem;
   }
 }
 
