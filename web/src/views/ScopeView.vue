@@ -9,7 +9,7 @@ import ScopeHeader from '@/components/review/ScopeHeader.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import StatusMark from '@/components/StatusMark.vue'
 import { Button } from '@/components/ui/button'
-import { createArrivalMark } from '@/lib/arrival-mark'
+import { createLatestEventChannel, EVENT_TRANSITION_MS } from '@/lib/event-channel'
 import {
   createComment,
   eventPath,
@@ -22,7 +22,14 @@ import {
   setCommentStatus,
   submitVerdict,
 } from '@/lib/scope-review'
+import type {
+  MutationOutcome,
+  ReviewReceipt,
+  TransmissionEvent,
+  TriangulationEvent,
+} from '@/lib/motion-events'
 import type { Verdict } from '@/lib/scopes'
+import { prefersReducedMotion, withViewTransition } from '@/lib/view-transition'
 
 interface ArtifactDocumentHandle {
   focusThread: (threadId: string) => void
@@ -36,22 +43,26 @@ const scope = ref<ScopeDetail>()
 const failure = ref<string>()
 const actionFailure = ref<string>()
 const busy = ref(false)
+const transmission = ref<TransmissionEvent>()
 const pendingArtifact = ref<ScopeDetail>()
 const pendingArtifactUpdate = ref(false)
 const dirtyComposers = ref(new Set<string>())
 const activeThreadId = ref<string>()
+const artifactTransitionSource = ref<string>()
+const artifactFocusTarget = ref<string>()
 const artifactDocument = ref<ArtifactDocumentHandle>()
 const conversationCollapsed = ref(false)
-// Two marks, because the two arrivals land in different places: content the reviewer did not cause
-// arrives at the document stage, and the reviewer's own submission arrives at one thread.
-const documentArrival = createArrivalMark()
-const threadArrival = createArrivalMark()
+// Independent latest-event channels: remote document receipt never erases reviewer confirmation.
+const documentArrival = createLatestEventChannel<string>()
+const reviewReceipt = createLatestEventChannel<ReviewReceipt>()
+const artifactAcquisition = createLatestEventChannel<string>(EVENT_TRANSITION_MS)
+const triangulation = createLatestEventChannel<TriangulationEvent>(EVENT_TRANSITION_MS)
+const reconfiguration = createLatestEventChannel<'conversation'>(EVENT_TRANSITION_MS)
 let events: EventSource | undefined
 let loadGeneration = 0
 
 const hasDirtyComposer = computed(() => dirtyComposers.value.size > 0)
-const documentReplaced = computed(() => documentArrival.target.value === DOCUMENT_ARRIVAL)
-const recordedThreadId = computed(() => threadArrival.target.value)
+const documentReplaced = computed(() => documentArrival.event.value === DOCUMENT_ARRIVAL)
 
 const kind = computed<ScopeKind>(() => (route.name === 'session' ? 'session' : 'change'))
 const key = computed(() => String(route.params.id ?? route.params.name ?? ''))
@@ -102,9 +113,17 @@ const artifactThreadCounts = computed<Record<string, CommentCounts>>(() => {
 
 watch(
   () => selectedArtifact.value?.path,
-  () => {
+  (path) => {
     activeThreadId.value = undefined
+    if (!path || artifactFocusTarget.value !== path) return
+
+    artifactFocusTarget.value = undefined
+    const heading = document.getElementById('selected-artifact-title')
+    if (!heading) throw new Error(`Selected artifact heading missing for ${path}`)
+    heading.focus({ preventScroll: true })
+    heading.scrollIntoView({ block: 'start', behavior: navigationBehavior() })
   },
+  { flush: 'post' },
 )
 
 function describe(error: unknown): string {
@@ -140,25 +159,67 @@ function mergeReviewState(target: ScopeDetail, source: ScopeDetail): ScopeDetail
   }
 }
 
+function detectReviewReceipt(previous: ScopeDetail, next: ScopeDetail): ReviewReceipt | undefined {
+  const previousThreads = new Map(previous.comments.map((thread) => [thread.comment.id, thread]))
+  for (const thread of next.comments) {
+    const prior = previousThreads.get(thread.comment.id)
+    if (!prior) return { kind: 'created-thread', threadId: thread.comment.id, source: 'remote' }
+    if (thread.replies.length > prior.replies.length) {
+      return { kind: 'extended-thread', threadId: thread.comment.id, source: 'remote' }
+    }
+    if (thread.status !== prior.status) {
+      return {
+        kind: 'changed-status',
+        threadId: thread.comment.id,
+        status: thread.status,
+        source: 'remote',
+      }
+    }
+  }
+
+  if (next.standingVerdict?.id !== previous.standingVerdict?.id) {
+    return { kind: 'standing-verdict', source: 'remote' }
+  }
+  if (
+    next.standingVerdict &&
+    previous.standingVerdict &&
+    (next.standingVerdict.directiveDelivered !== previous.standingVerdict.directiveDelivered ||
+      next.standingVerdict.directivePending !== previous.standingVerdict.directivePending)
+  ) {
+    return { kind: 'delivery', source: 'remote' }
+  }
+  return undefined
+}
+
+function receiptForOutcome(outcome: MutationOutcome): ReviewReceipt {
+  return { ...outcome, source: 'reviewer' }
+}
+
 async function replaceLiveState(
   detail: ScopeDetail,
   artifactsChanged: boolean,
   reviewStateChanged: boolean,
+  markRemoteReceipt = true,
 ) {
   if (!scope.value) return
 
+  const previous = scope.value
   const scrollTop = window.scrollY
   const scrollLeft = window.scrollX
   const next = artifactsChanged
     ? { ...scope.value, artifacts: detail.artifacts, comments: detail.comments }
     : scope.value
   scope.value = reviewStateChanged ? mergeReviewState(next, detail) : next
+  if (reviewStateChanged && markRemoteReceipt) {
+    const receipt = detectReviewReceipt(previous, scope.value)
+    if (receipt) reviewReceipt.signal(receipt)
+  }
   await nextTick()
 
   if (scrollTop || scrollLeft) window.scrollTo(scrollLeft, scrollTop)
   // Marked here rather than where the event arrived, so a deferred update reports at the moment
   // the reviewer's document actually changes.
-  if (artifactsChanged) documentArrival.mark(DOCUMENT_ARRIVAL)
+  if (artifactsChanged) documentArrival.signal(DOCUMENT_ARRIVAL)
 }
 
 async function applyPendingArtifactUpdate() {
@@ -210,12 +271,12 @@ async function refresh(generation = loadGeneration) {
   }
 }
 
-async function refreshReviewState(generation = loadGeneration) {
+async function refreshReviewState(generation = loadGeneration, markRemoteReceipt = true) {
   const detail = await fetchScope(kind.value, key.value)
   if (generation !== loadGeneration) return
 
   if (pendingArtifact.value) pendingArtifact.value = mergeReviewState(pendingArtifact.value, detail)
-  await replaceLiveState(detail, false, true)
+  await replaceLiveState(detail, false, true, markRemoteReceipt)
 }
 
 function queueArtifactUpdate(detail: ScopeDetail, reviewStateChanged: boolean) {
@@ -262,19 +323,26 @@ function observe() {
 }
 
 watch(
-  () => [route.name, key.value],
+  [() => route.name, key],
   async () => {
     loadGeneration += 1
     const generation = loadGeneration
     scope.value = undefined
     failure.value = undefined
     actionFailure.value = undefined
+    busy.value = false
+    transmission.value = undefined
     pendingArtifact.value = undefined
     pendingArtifactUpdate.value = false
     dirtyComposers.value = new Set()
     activeThreadId.value = undefined
+    artifactTransitionSource.value = undefined
+    artifactFocusTarget.value = undefined
     documentArrival.clear()
-    threadArrival.clear()
+    reviewReceipt.clear()
+    artifactAcquisition.clear()
+    triangulation.clear()
+    reconfiguration.clear()
     events?.close()
     try {
       await refresh(generation)
@@ -288,26 +356,28 @@ watch(
 
 onBeforeUnmount(() => events?.close())
 
-/** An operation returns the thread its submission created or extended, or nothing to mark. */
-async function mutate(operation: () => Promise<string | undefined>) {
+async function mutate(
+  nextTransmission: TransmissionEvent,
+  operation: () => Promise<MutationOutcome>,
+): Promise<void> {
   busy.value = true
+  transmission.value = nextTransmission
   actionFailure.value = undefined
+  reviewReceipt.clear()
   try {
-    const threadId = await operation()
-    await refreshReviewState()
-    if (threadId) threadArrival.mark(threadId)
+    const outcome = await operation()
+    await refreshReviewState(loadGeneration, false)
+    reviewReceipt.signal(receiptForOutcome(outcome))
   } catch (error) {
     actionFailure.value = describe(error)
   } finally {
+    transmission.value = undefined
     busy.value = false
   }
 }
 
 function navigationBehavior(): ScrollBehavior {
-  return typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    ? 'auto'
-    : 'smooth'
+  return prefersReducedMotion() ? 'auto' : 'smooth'
 }
 
 async function selectArtifact(path: string) {
@@ -318,15 +388,32 @@ async function selectArtifact(path: string) {
   }
 
   activeThreadId.value = undefined
-  await router.push({ query: { ...route.query, artifact: path } })
+  artifactFocusTarget.value = path
+  artifactTransitionSource.value = path
+  // Flush initiating coordinate before native transition captures old pixels. Without this tick,
+  // browser sees only destination name and falls back to an unrelated root crossfade.
   await nextTick()
-  const heading = document.getElementById('selected-artifact-title')
-  heading?.focus({ preventScroll: true })
-  heading?.scrollIntoView({ block: 'start', behavior: navigationBehavior() })
+  try {
+    await withViewTransition(async () => {
+      await router.push({ query: { ...route.query, artifact: path } })
+      artifactTransitionSource.value = undefined
+      artifactAcquisition.signal(path)
+      await nextTick()
+    })
+  } finally {
+    artifactTransitionSource.value = undefined
+    if (artifactFocusTarget.value === path) artifactFocusTarget.value = undefined
+  }
+}
+
+function toggleConversation(): void {
+  reconfiguration.signal('conversation')
+  conversationCollapsed.value = !conversationCollapsed.value
 }
 
 async function activateThreadFromMarker(threadId: string) {
   activeThreadId.value = threadId
+  triangulation.signal({ threadId, origin: 'source', destination: 'thread' })
   await nextTick()
   const thread = document.getElementById(`artifact-thread-${threadId}`)
   thread?.focus({ preventScroll: true })
@@ -335,36 +422,39 @@ async function activateThreadFromMarker(threadId: string) {
 
 async function activateThreadFromConversation(threadId: string) {
   activeThreadId.value = threadId
+  triangulation.signal({ threadId, origin: 'thread', destination: 'source' })
   await nextTick()
   artifactDocument.value?.focusThread(threadId)
 }
 
 function addComment(comment: NewComment) {
-  return mutate(async () => (await createComment(kind.value, key.value, comment)).id)
+  return mutate({ kind: 'comment', target: 'artifact-comment' }, async () => ({
+    kind: 'created-thread',
+    threadId: (await createComment(kind.value, key.value, comment)).id,
+  }))
 }
 
 function reply(commentId: string, body: string) {
-  return mutate(async () => {
+  return mutate({ kind: 'reply', threadId: commentId }, async () => {
     await replyToComment(kind.value, key.value, commentId, body)
-    return commentId
+    return { kind: 'extended-thread', threadId: commentId }
   })
 }
 
 function setStatus(commentId: string, status: 'open' | 'resolved') {
-  return mutate(async () => {
+  return mutate({ kind: 'status', threadId: commentId }, async () => {
     await setCommentStatus(kind.value, key.value, commentId, status)
-    return undefined
+    return { kind: 'changed-status', threadId: commentId, status }
   })
 }
 
-// The drawer closes on submit, so the note it records has no thread on screen to mark.
 function submit(verdict: Verdict, comment: string) {
-  return mutate(async () => {
+  return mutate({ kind: 'verdict', target: 'standing-verdict' }, async () => {
     if (comment) {
       await createComment(kind.value, key.value, { kind: 'unanchored', body: comment })
     }
     await submitVerdict(kind.value, key.value, verdict)
-    return undefined
+    return { kind: 'standing-verdict' }
   })
 }
 </script>
@@ -377,13 +467,20 @@ function submit(verdict: Verdict, comment: string) {
       <p class="index-state__message">{{ failure }}</p>
     </section>
 
-    <section v-else-if="!scope" class="index-state" aria-live="polite" aria-busy="true">
-      <InstrumentLabel>Scope signal / observing</InstrumentLabel>
-      <h1 class="scope-register__title">Resolving document coordinates…</h1>
+    <section
+      v-else-if="!scope"
+      class="index-state scope-route-acquisition"
+      data-motion-event="acquire"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <InstrumentLabel>Scope signal / acquiring</InstrumentLabel>
+      <h1 class="scope-register__title">Acquiring route coordinate</h1>
+      <code class="scope-route-acquisition__key">{{ key }}</code>
     </section>
 
     <template v-else>
-      <ScopeHeader :scope="scope" />
+      <ScopeHeader :scope="scope" :receipt="reviewReceipt.event.value" />
 
       <div v-if="actionFailure" class="scope-action-error" role="alert">
         <strong>Action not recorded.</strong>
@@ -397,8 +494,18 @@ function submit(verdict: Verdict, comment: string) {
 
       <div
         class="scope-layout"
-        :class="{ 'scope-layout--conversation-collapsed': conversationCollapsed }"
+        :class="{
+          'scope-layout--conversation-collapsed': conversationCollapsed,
+          'scope-layout--triangulating-to-source': triangulation.event.value?.destination === 'source',
+          'scope-layout--triangulating-to-thread': triangulation.event.value?.destination === 'thread',
+        }"
       >
+        <span
+          v-if="triangulation.event.value"
+          class="scope-layout__direction-trace"
+          data-motion-event="triangulate"
+          aria-hidden="true"
+        />
         <aside class="scope-utility" aria-label="Scope instruments">
           <section class="scope-utility__route">
             <InstrumentLabel>Route coordinate</InstrumentLabel>
@@ -418,6 +525,7 @@ function submit(verdict: Verdict, comment: string) {
             :selected-path="selectedArtifact?.path"
             :thread-counts="artifactThreadCounts"
             :interactive="scope.kind === 'change'"
+            :acquiring-path="artifactTransitionSource"
             @select="selectArtifact"
           />
           <div class="scope-utility__art" aria-hidden="true">
@@ -433,7 +541,11 @@ function submit(verdict: Verdict, comment: string) {
             :requested-path="requestedArtifactPath"
             :unavailable="selectionUnavailable"
             :active-thread-id="activeThreadId"
+            :triangulation="triangulation.event.value"
+            :acquired="artifactAcquisition.event.value === selectedArtifact?.path"
             :replaced="documentReplaced"
+            :transmission="transmission"
+            :receipt="reviewReceipt.event.value"
             :busy="busy"
             @comment="addComment"
             @activate-thread="activateThreadFromMarker"
@@ -443,7 +555,14 @@ function submit(verdict: Verdict, comment: string) {
 
         <aside
           class="scope-conversation"
-          :class="{ 'scope-conversation--collapsed': conversationCollapsed }"
+          :class="{
+            'scope-conversation--collapsed': conversationCollapsed,
+            'scope-conversation--reconfiguring':
+              reconfiguration.event.value === 'conversation',
+          }"
+          :data-motion-event="
+            reconfiguration.event.value === 'conversation' ? 'reconfigure' : undefined
+          "
           aria-label="Artifact conversation"
         >
           <Button
@@ -454,7 +573,7 @@ function submit(verdict: Verdict, comment: string) {
             :aria-expanded="!conversationCollapsed"
             aria-controls="scope-conversation-body"
             :aria-label="conversationCollapsed ? 'Expand anchored threads' : 'Collapse anchored threads'"
-            @click="conversationCollapsed = !conversationCollapsed"
+            @click="toggleConversation"
           >
             <span aria-hidden="true">{{ conversationCollapsed ? '←' : '→' }}</span>
             <span class="scope-conversation__toggle-label">Threads</span>
@@ -467,7 +586,9 @@ function submit(verdict: Verdict, comment: string) {
                 :artifact="selectedArtifact"
                 :threads="selectedThreads"
                 :active-thread-id="activeThreadId"
-                :recorded-thread-id="recordedThreadId"
+                :triangulation="triangulation.event.value"
+                :transmission="transmission"
+                :receipt="reviewReceipt.event.value"
                 :busy="busy"
                 @activate="activateThreadFromConversation"
                 @reply="reply"
@@ -486,7 +607,8 @@ function submit(verdict: Verdict, comment: string) {
 
             <DecisionInstrument
               :scope="scope"
-              :recorded-thread-id="recordedThreadId"
+              :transmission="transmission"
+              :receipt="reviewReceipt.event.value"
               :busy="busy"
               @submit="submit"
               @reply="reply"

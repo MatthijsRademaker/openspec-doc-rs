@@ -3,15 +3,18 @@ import { computed, ref, watch } from 'vue'
 import StatusMark from '@/components/StatusMark.vue'
 import { Button } from '@/components/ui/button'
 import { age } from '@/lib/age'
+import type { ReviewReceipt, TransmissionEvent } from '@/lib/motion-events'
 import type { Thread } from '@/lib/scope-review'
 
 const props = withDefaults(
   defineProps<{
     thread: Thread
+    transmission?: TransmissionEvent
+    receipt?: ReviewReceipt
     busy?: boolean
     showAnchorLoss?: boolean
   }>(),
-  { busy: false, showAnchorLoss: false },
+  { transmission: undefined, receipt: undefined, busy: false, showAnchorLoss: false },
 )
 
 const emit = defineEmits<{
@@ -23,8 +26,33 @@ const emit = defineEmits<{
 const replying = ref(false)
 const replyBody = ref('')
 const replyComposerDirty = computed(() => replying.value && replyBody.value.length > 0)
+const isTransmittingReply = computed(
+  () =>
+    props.transmission?.kind === 'reply' && props.transmission.threadId === props.thread.comment.id,
+)
+const isTransmittingStatus = computed(
+  () =>
+    props.transmission?.kind === 'status' &&
+    props.transmission.threadId === props.thread.comment.id,
+)
+const receivedStatus = computed(
+  () =>
+    props.receipt?.kind === 'changed-status' && props.receipt.threadId === props.thread.comment.id,
+)
 
 watch(replyComposerDirty, (dirty) => emit('composer', dirty), { immediate: true })
+watch(
+  () => props.receipt,
+  (receipt) => {
+    if (
+      receipt?.source === 'reviewer' &&
+      receipt.kind === 'extended-thread' &&
+      receipt.threadId === props.thread.comment.id
+    ) {
+      cancelReply()
+    }
+  },
+)
 
 function cancelReply() {
   replying.value = false
@@ -35,15 +63,28 @@ function submitReply() {
   const body = replyBody.value.trim()
   if (!body) return
   emit('reply', props.thread.comment.id, body)
-  replyBody.value = ''
-  replying.value = false
 }
 </script>
 
 <template>
-  <article class="comment-thread" :aria-labelledby="`comment-${thread.comment.id}`">
+  <article
+    class="comment-thread"
+    :class="{
+      'comment-thread--transmitting': isTransmittingReply || isTransmittingStatus,
+      'comment-thread--received-status': receivedStatus,
+    }"
+    :data-motion-event="
+      isTransmittingReply || isTransmittingStatus ? 'transmit' : receivedStatus ? 'resolve' : undefined
+    "
+    :aria-busy="isTransmittingReply || isTransmittingStatus"
+    :aria-labelledby="`comment-${thread.comment.id}`"
+  >
     <header class="comment-thread__header">
-      <StatusMark :kind="thread.status" :label="thread.status" />
+      <StatusMark
+        :kind="thread.status"
+        :label="thread.status"
+        :event="receivedStatus ? 'resolve' : undefined"
+      />
       <span v-if="thread.anchorState === 'fuzzy'" class="comment-thread__moved">↝ Anchor moved</span>
     </header>
 
@@ -76,6 +117,13 @@ function submitReply() {
       <p>{{ reply.body }}</p>
     </div>
 
+    <p v-if="isTransmittingReply" class="transmission-status" role="status">
+      Transmitting reply to thread
+    </p>
+    <p v-else-if="isTransmittingStatus" class="transmission-status" role="status">
+      Transmitting comment status
+    </p>
+
     <p v-if="thread.status === 'addressed'" class="comment-thread__claim">
       Agent claims work complete. Review response, then accept or reopen.
     </p>
@@ -90,7 +138,9 @@ function submitReply() {
         :disabled="busy"
       />
       <div class="comment-thread__actions">
-        <Button type="submit" size="sm" :disabled="busy || !replyBody.trim()">Record reply</Button>
+        <Button type="submit" size="sm" :disabled="busy || !replyBody.trim()">
+          {{ isTransmittingReply ? 'Transmitting reply…' : 'Record reply' }}
+        </Button>
         <Button type="button" variant="ghost" size="sm" :disabled="busy" @click="cancelReply">
           Cancel
         </Button>

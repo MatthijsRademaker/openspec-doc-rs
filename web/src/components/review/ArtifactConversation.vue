@@ -4,6 +4,7 @@ import CommentThread from '@/components/review/CommentThread.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import { Button } from '@/components/ui/button'
 import { scopeRelativeArtifactPath } from '@/lib/artifact-path'
+import type { ReviewReceipt, TransmissionEvent, TriangulationEvent } from '@/lib/motion-events'
 import type { Artifact, Thread } from '@/lib/scope-review'
 
 const props = withDefaults(
@@ -11,10 +12,18 @@ const props = withDefaults(
     artifact: Artifact
     threads: Thread[]
     activeThreadId?: string
-    recordedThreadId?: string
+    triangulation?: TriangulationEvent
+    transmission?: TransmissionEvent
+    receipt?: ReviewReceipt
     busy?: boolean
   }>(),
-  { activeThreadId: undefined, recordedThreadId: undefined, busy: false },
+  {
+    activeThreadId: undefined,
+    triangulation: undefined,
+    transmission: undefined,
+    receipt: undefined,
+    busy: false,
+  },
 )
 
 const emit = defineEmits<{
@@ -23,6 +32,11 @@ const emit = defineEmits<{
   status: [commentId: string, status: 'open' | 'resolved']
   composer: [id: string, dirty: boolean]
 }>()
+
+const receivedThreadId = computed(() => {
+  const receipt = props.receipt
+  return receipt && 'threadId' in receipt ? receipt.threadId : undefined
+})
 
 const orderedThreads = computed(() => {
   const blockPositions = new Map(props.artifact.blocks.map((block, index) => [block.id, index]))
@@ -64,8 +78,22 @@ const orderedThreads = computed(() => {
         class="artifact-conversation__thread"
         :class="{
           'artifact-conversation__thread--active': thread.comment.id === activeThreadId,
-          'artifact-conversation__thread--recorded': thread.comment.id === recordedThreadId,
+          'artifact-conversation__thread--triangulation-origin':
+            thread.comment.id === triangulation?.threadId && triangulation.origin === 'thread',
+          'artifact-conversation__thread--triangulation-destination':
+            thread.comment.id === triangulation?.threadId && triangulation.destination === 'thread',
+          'artifact-conversation__thread--received':
+            thread.comment.id === receivedThreadId,
         }"
+        :data-motion-event="
+          thread.comment.id === triangulation?.threadId
+            ? 'triangulate'
+            : thread.comment.id === receivedThreadId
+              ? receipt?.kind === 'changed-status'
+                ? 'resolve'
+                : 'receive'
+              : undefined
+        "
         :data-thread-id="thread.comment.id"
         tabindex="-1"
       >
@@ -83,6 +111,8 @@ const orderedThreads = computed(() => {
         </Button>
         <CommentThread
           :thread="thread"
+          :transmission="transmission"
+          :receipt="receipt"
           :busy="busy"
           @reply="(commentId, body) => emit('reply', commentId, body)"
           @status="(commentId, status) => emit('status', commentId, status)"

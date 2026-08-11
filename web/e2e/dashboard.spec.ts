@@ -120,6 +120,29 @@ test('renders realistic scope data through complete instrument registers', async
   expectHealthy(health)
 })
 
+test('routes scope coordinates while preserving modified links', async ({
+  page,
+  context,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop modified-link contract')
+  const health = observeBrowserHealth(page)
+  await page.goto('/')
+  const link = page.getByRole('link', { name: fixtureTitle })
+
+  const popupPromise = context.waitForEvent('page')
+  await link.click({ modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'] })
+  const popup = await popupPromise
+  await popup.waitForLoadState('domcontentloaded')
+  await expect(page).toHaveURL('/')
+  await expect(popup).toHaveURL(new RegExp(`/changes/${fixtureChange}`))
+  await popup.close()
+
+  await link.click()
+  await expect(page).toHaveURL(new RegExp(`/changes/${fixtureChange}`))
+  await expectArtifactQuery(page, proposalPath)
+  expectHealthy(health)
+})
+
 test('keeps sole theme and all font roles offline', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('openspec-doc-theme', 'light'))
   const health = observeBrowserHealth(page)
@@ -147,6 +170,10 @@ test('canonicalizes default artifact, restores copied nested URL, and supports B
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'desktop Router contract')
+  let scopeRequests = 0
+  page.on('request', (request) => {
+    if (request.url().endsWith(`/api/changes/${fixtureChange}`)) scopeRequests += 1
+  })
   await page.goto(`/changes/${fixtureChange}`)
 
   await expectArtifactQuery(page, proposalPath)
@@ -157,7 +184,30 @@ test('canonicalizes default artifact, restores copied nested URL, and supports B
     await expect(artifactButton(page, path.slice(changeRoot.length + 1))).toBeVisible()
   }
 
-  await artifactButton(page, 'design.md').click()
+  const acquisition = await artifactButton(page, 'design.md').evaluate(async (button) => {
+    if (!(button instanceof HTMLButtonElement))
+      throw new Error('Artifact coordinate is not a button')
+    button.click()
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    const transitionStyle = (pseudo: string) => {
+      const style = getComputedStyle(document.documentElement, pseudo)
+      return { animationName: style.animationName, opacity: style.opacity }
+    }
+    return {
+      oldRoot: transitionStyle('::view-transition-old(root)'),
+      oldCoordinate: transitionStyle('::view-transition-old(artifact-coordinate)'),
+      newCoordinate: transitionStyle('::view-transition-new(artifact-coordinate)'),
+      oldLock: transitionStyle('::view-transition-old(artifact-lock)'),
+      newLock: transitionStyle('::view-transition-new(artifact-lock)'),
+    }
+  })
+  expect(acquisition).toEqual({
+    oldRoot: { animationName: 'none', opacity: '0' },
+    oldCoordinate: { animationName: 'artifact-coordinate-depart', opacity: '1' },
+    newCoordinate: { animationName: 'artifact-coordinate-arrive', opacity: '1' },
+    oldLock: { animationName: 'artifact-lock-depart', opacity: '1' },
+    newLock: { animationName: 'artifact-lock-arrive', opacity: '1' },
+  })
   await expectArtifactQuery(page, designPath)
   await expect(page.getByText('Conversation follows exact selected artifact.')).toBeVisible()
   await expect(page.getByText('Browser lane must see this proposal.')).toHaveCount(0)
@@ -171,6 +221,7 @@ test('canonicalizes default artifact, restores copied nested URL, and supports B
   await expect(page.getByText('Conversation follows exact selected artifact.')).toBeVisible()
   await page.goForward()
   await expectArtifactQuery(page, tasksPath)
+  expect(scopeRequests).toBe(1)
 
   await gotoArtifact(page, htmlSpecPath)
   await expect(page.getByText('Nested paths remain exact.')).toBeVisible()
@@ -308,6 +359,10 @@ test('opens the scope feedback drawer at its own beginning', async ({ page }, te
   await page.getByRole('button', { name: 'Open scope feedback, 2 unplaced notes' }).click()
   const panel = page.locator('#scope-comment-panel')
   await expect(panel).toBeVisible()
+  await expect(panel).toHaveAttribute('data-motion-event', 'reconfigure')
+  await expect
+    .poll(() => panel.evaluate((element) => getComputedStyle(element).clipPath))
+    .toBe('inset(0px)')
   expect(
     await panel.evaluate((element) => ({
       scrollTop: element.scrollTop,
@@ -377,6 +432,10 @@ test('keeps document line breaks identical across conversation rail collapse', a
   const expanded = await lineBoxes()
   await page.getByRole('button', { name: 'Collapse anchored threads' }).click()
   await expect(page.locator('#scope-conversation-body')).toBeHidden()
+  await expect(page.locator('.scope-conversation')).toHaveAttribute(
+    'data-motion-event',
+    'reconfigure',
+  )
   expect(await lineBoxes(), 'collapsing the rail re-wrapped the document').toEqual(expanded)
 })
 
@@ -436,6 +495,10 @@ test('links persistent conversation to exact repeated source occurrence', async 
 
   await page.getByRole('button', { name: 'Collapse anchored threads' }).click()
   await expect(page.locator('#scope-conversation-body')).toBeHidden()
+  await expect(page.locator('.scope-conversation')).not.toHaveAttribute(
+    'data-motion-event',
+    'reconfigure',
+  )
   const collapsedRail = await page.locator('.scope-conversation').evaluate((element) => ({
     width: element.clientWidth,
     height: element.clientHeight,
@@ -511,9 +574,25 @@ test('replies, resolves, and reopens while second tab reconciles selected thread
   await gotoArtifact(page, proposalPath)
   await gotoArtifact(second, proposalPath)
 
+  let releaseReply: () => void = () => {
+    throw new Error('reply gate was not initialized')
+  }
+  const replyGate = new Promise<void>((resolve) => {
+    releaseReply = resolve
+  })
+  await page.route('**/replies', async (route) => {
+    await replyGate
+    await route.continue()
+  })
   await page.getByRole('button', { name: 'Reply' }).click()
   await page.getByLabel('Reply to thread').fill('Follow-up recorded from browser.')
   await page.getByRole('button', { name: 'Record reply' }).click()
+  await expect(page.getByText('Transmitting reply to thread')).toBeVisible()
+  releaseReply()
+  await expect(page.locator('#artifact-thread-e2e-open-comment')).toHaveClass(
+    /artifact-conversation__thread--received/,
+  )
+  await page.unroute('**/replies')
   await expect(
     second
       .locator('.comment-message--reviewer')
@@ -521,7 +600,9 @@ test('replies, resolves, and reopens while second tab reconciles selected thread
   ).toBeVisible()
 
   await page.getByRole('button', { name: 'Resolve', exact: true }).click()
+  await expect(page.locator('.comment-thread--received-status')).toBeVisible()
   await expect(second.getByRole('button', { name: 'Reopen' }).first()).toBeVisible()
+  await expect(second.locator('.comment-thread--received-status')).toBeVisible()
   await page.getByRole('button', { name: 'Reopen' }).first().click()
   await expect(second.getByRole('button', { name: 'Resolve', exact: true })).toBeVisible()
   await second.close()
@@ -601,23 +682,29 @@ test('locks both panes from either direction of activation', async ({ page }, te
   // Marker click: the pane that must change is the one the reviewer did not click, and the change
   // there used to be a second border on a surface that already had one.
   await anchoredBlock.locator('.review-block__marker').click()
+  await expect(anchoredBlock).toHaveClass(/review-block--triangulation-origin/)
+  await expect(railThread).toHaveClass(/artifact-conversation__thread--triangulation-destination/)
   await expect(railThread).toHaveClass(/artifact-conversation__thread--active/)
   await expect(railThread.locator('.artifact-conversation__crosshair-lock')).toHaveCSS(
     'opacity',
     '1',
   )
-  expect(
-    await railThread.evaluate((element) => getComputedStyle(element, '::before').transform),
-  ).toBe('matrix(1, 0, 0, 1, 0, 0)')
+  await expect
+    .poll(() => railThread.evaluate((element) => getComputedStyle(element, '::before').transform))
+    .toBe('matrix(1, 0, 0, 1, 0, 0)')
 
   // Thread click has to read the same way in the other direction.
   await page.reload()
   await expect(anchoredBlock).not.toHaveClass(/review-block--active/)
   await page.getByRole('button', { name: 'Locate source for comment e2e-open-comment' }).click()
+  await expect(railThread).toHaveClass(/artifact-conversation__thread--triangulation-origin/)
+  await expect(anchoredBlock).toHaveClass(/review-block--triangulation-destination/)
   await expect(anchoredBlock).toHaveClass(/review-block--active/)
-  expect(
-    await anchoredBlock.evaluate((element) => getComputedStyle(element, '::before').transform),
-  ).toBe('matrix(1, 0, 0, 1, 0, 0)')
+  await expect
+    .poll(() =>
+      anchoredBlock.evaluate((element) => getComputedStyle(element, '::before').transform),
+    )
+    .toBe('matrix(1, 0, 0, 1, 0, 0)')
   await expect(sourceBlocks.nth(0)).not.toHaveClass(/review-block--active/)
 })
 
@@ -708,6 +795,12 @@ test('keeps every added effect inert under reduced motion', async ({ page }, tes
 
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Cancel' }).click()
+  await page.getByRole('button', { name: 'Collapse anchored threads' }).click()
+  await expect(page.locator('#scope-conversation-body')).toBeHidden()
+  await expect(page.locator('.scope-conversation')).not.toHaveAttribute(
+    'data-motion-event',
+    'reconfigure',
+  )
 
   // Suppressing the motion must not suppress the report the motion carries.
   await writeFile(
@@ -802,6 +895,14 @@ test('keeps selected-artifact workbench in one complete narrow flow', async ({
       .bottom,
   }))
   expect(clearance.lastContentBottom).toBeLessThanOrEqual(clearance.viewportBottom)
+
+  await page.getByRole('button', { name: /Open scope feedback/ }).click()
+  const drawer = page.locator('#scope-comment-panel')
+  await expect(drawer).toBeVisible()
+  await expectContained(drawer, 'narrow decision drawer', page.locator('body'), 'viewport body')
+  await page.keyboard.press('Escape')
+  await expect(drawer).toHaveCount(0)
+  await expect(page.locator('#scope-comment-trigger')).toBeFocused()
 })
 
 test('keeps index identifiers and every session reachable in narrow flow', async ({
@@ -867,6 +968,14 @@ test('keeps keyboard focus and reduced-motion navigation immediate', async ({ pa
     .filter({ hasText: 'Repeated review target.' })
     .nth(1)
   await expect(repeatedBlock).toBeFocused()
+
+  await artifactButton(page, 'design.md').click()
+  await expectArtifactQuery(page, designPath)
+  await expect(page.locator('#selected-artifact-title')).toHaveText('design.md')
+  await expect(page.locator('#selected-artifact-title')).toBeFocused()
+  const reducedAcquisition = page.locator('.artifact-document__coordinate-lock')
+  await expect(reducedAcquisition).toHaveCount(1)
+  await expect(reducedAcquisition).toHaveCSS('animation-duration', '0s')
 })
 
 test('captures deterministic selected-artifact design evidence', async ({ page }, testInfo) => {

@@ -1,7 +1,22 @@
 import { render, screen } from '@testing-library/vue'
+import { defineComponent } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Index, Scope } from '@/lib/scopes'
 import IndexView from '@/views/IndexView.vue'
+
+const RouteTarget = defineComponent({ template: '<p>target</p>' })
+
+function renderIndex() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/changes/:name', component: RouteTarget },
+      { path: '/sessions/:id', component: RouteTarget },
+    ],
+  })
+  return render(IndexView, { global: { plugins: [router] } })
+}
 
 function stubIndex(body: Index) {
   vi.stubGlobal(
@@ -62,7 +77,7 @@ describe('IndexView', () => {
   it('shows a distinct loading instrument while the index is in flight', () => {
     vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})))
 
-    const { container } = render(IndexView)
+    const { container } = renderIndex()
 
     expect(screen.getByText('Observing available scopes…')).toBeTruthy()
     expect(screen.getByText('Index signal / observing')).toBeTruthy()
@@ -72,7 +87,7 @@ describe('IndexView', () => {
   it('renders empty registers as successful emptiness, not failure', async () => {
     stubIndex({ sessions: [], changes: [] })
 
-    render(IndexView)
+    renderIndex()
 
     expect(await screen.findByText('No sessions discovered.')).toBeTruthy()
     expect(screen.getByText('No changes discovered.')).toBeTruthy()
@@ -85,7 +100,7 @@ describe('IndexView', () => {
   it('keeps Changes primary and before Sessions when sessions outnumber changes', async () => {
     stubIndex(PRESSURED_INDEX)
 
-    render(IndexView)
+    renderIndex()
 
     const sessions = await screen.findByRole('heading', { name: 'Sessions', level: 2 })
     const changes = screen.getByRole('heading', { name: 'Changes', level: 1 })
@@ -96,7 +111,7 @@ describe('IndexView', () => {
   it('renders every scope field returned by the server', async () => {
     stubIndex(PRESSURED_INDEX)
 
-    render(IndexView)
+    renderIndex()
 
     const key = PRESSURED_INDEX.changes[0]?.key ?? ''
     const link = await screen.findByRole('link', { name: key })
@@ -111,7 +126,7 @@ describe('IndexView', () => {
   it('keeps observation and plate images decorative', async () => {
     stubIndex(PRESSURED_INDEX)
 
-    const { container } = render(IndexView)
+    const { container } = renderIndex()
     await screen.findByRole('heading', { name: 'Sessions' })
 
     const images = container.querySelectorAll<HTMLImageElement>(
@@ -133,7 +148,7 @@ describe('IndexView', () => {
   it('renders a failure alert with its cause, never as emptiness', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')))
 
-    render(IndexView)
+    renderIndex()
 
     expect((await screen.findByRole('alert')).textContent).toContain(
       'The index could not be loaded: fetch failed',
@@ -146,7 +161,7 @@ describe('IndexView', () => {
     window.localStorage.setItem('openspec-doc-theme', 'light')
     vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})))
 
-    render(IndexView)
+    renderIndex()
 
     expect(document.documentElement.classList.contains('light')).toBe(false)
     expect(document.documentElement.classList.contains('dark')).toBe(false)

@@ -4,7 +4,9 @@ import { computed, ref, watch } from 'vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import { Button } from '@/components/ui/button'
 import { scopeRelativeArtifactPath } from '@/lib/artifact-path'
+import type { ReviewReceipt, TransmissionEvent, TriangulationEvent } from '@/lib/motion-events'
 import type { Artifact, Block, NewComment, Thread } from '@/lib/scope-review'
+import { prefersReducedMotion } from '@/lib/view-transition'
 
 const props = withDefaults(
   defineProps<{
@@ -13,7 +15,11 @@ const props = withDefaults(
     requestedPath?: string
     unavailable?: boolean
     activeThreadId?: string
+    triangulation?: TriangulationEvent
+    acquired?: boolean
     replaced?: boolean
+    transmission?: TransmissionEvent
+    receipt?: ReviewReceipt
     busy?: boolean
   }>(),
   {
@@ -21,7 +27,11 @@ const props = withDefaults(
     requestedPath: undefined,
     unavailable: false,
     activeThreadId: undefined,
+    triangulation: undefined,
+    acquired: false,
     replaced: false,
+    transmission: undefined,
+    receipt: undefined,
     busy: false,
   },
 )
@@ -43,10 +53,22 @@ const target = ref<CommentTarget>()
 const commentBody = ref('')
 const blockElements = new Map<string, HTMLElement>()
 const commentComposerDirty = computed(() => Boolean(target.value && commentBody.value.length > 0))
+const isTransmittingComment = computed(
+  () => props.transmission?.kind === 'comment' && props.transmission.target === 'artifact-comment',
+)
 
 watch(commentComposerDirty, (dirty) => emit('composer', 'artifact-comment', dirty), {
   immediate: true,
 })
+watch(
+  () => props.receipt,
+  (receipt) => {
+    if (receipt?.source === 'reviewer' && receipt.kind === 'created-thread' && target.value) {
+      cancelComment()
+      window.getSelection()?.removeAllRanges()
+    }
+  },
+)
 
 const commentsByBlock = computed(() => {
   const grouped = new Map<string, Thread[]>()
@@ -70,16 +92,24 @@ function blockThreads(blockId: string): Thread[] {
   return commentsByBlock.value.get(blockId) ?? []
 }
 
+function triangulationRole(blockId: string): 'origin' | 'destination' | undefined {
+  if (!props.triangulation) return undefined
+  const includesTarget = blockThreads(blockId).some(
+    (thread) => thread.comment.id === props.triangulation?.threadId,
+  )
+  if (!includesTarget) return undefined
+  if (props.triangulation.origin === 'source') return 'origin'
+  if (props.triangulation.destination === 'source') return 'destination'
+  return undefined
+}
+
 function setBlockElement(blockId: string, element: Element | ComponentPublicInstance | null): void {
   if (element instanceof HTMLElement) blockElements.set(blockId, element)
   else blockElements.delete(blockId)
 }
 
 function navigationBehavior(): ScrollBehavior {
-  return typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    ? 'auto'
-    : 'smooth'
+  return prefersReducedMotion() ? 'auto' : 'smooth'
 }
 
 function focusThread(threadId: string): void {
@@ -131,9 +161,6 @@ function submitComment() {
     searchFrom: target.value.block.range.start,
     body: commentBody.value.trim(),
   })
-  target.value = undefined
-  commentBody.value = ''
-  window.getSelection()?.removeAllRanges()
 }
 </script>
 
@@ -141,14 +168,25 @@ function submitComment() {
   <section
     v-if="artifact"
     class="artifact-document"
-    :class="{ 'artifact-document--replaced': replaced }"
+    :class="{
+      'artifact-document--acquired': acquired,
+      'artifact-document--replaced': replaced,
+    }"
+    :data-motion-event="acquired ? 'acquire' : replaced ? 'receive' : undefined"
     aria-labelledby="selected-artifact-title"
   >
     <header class="artifact-document__header">
       <div class="artifact-document__identity">
         <InstrumentLabel>Selected artifact</InstrumentLabel>
         <h2 id="selected-artifact-title" tabindex="-1">{{ artifactLabel(artifact.path) }}</h2>
-        <code :title="artifact.path">{{ scopeRelativeArtifactPath(artifact.path) }}</code>
+        <div class="artifact-document__coordinate">
+          <code :title="artifact.path">{{ scopeRelativeArtifactPath(artifact.path) }}</code>
+          <span
+            v-if="acquired"
+            class="artifact-document__coordinate-lock"
+            aria-hidden="true"
+          />
+        </div>
         <!-- The report is text as well as an edge, so reduced motion still reports the arrival. It
              names the replacement and nothing about which blocks differ: block identity across a
              rewrite belongs to the anchor resolver. The region is always present — a live region
@@ -180,7 +218,11 @@ function submitComment() {
             'review-block--active': blockThreads(block.id).some(
               (thread) => thread.comment.id === activeThreadId,
             ),
+            'review-block--triangulation-origin': triangulationRole(block.id) === 'origin',
+            'review-block--triangulation-destination':
+              triangulationRole(block.id) === 'destination',
           }"
+          :data-motion-event="triangulationRole(block.id) ? 'triangulate' : undefined"
           :data-block-id="block.id"
           tabindex="-1"
           @mouseup="startSelectionComment($event, block)"
@@ -234,7 +276,13 @@ function submitComment() {
              the page jolting. -->
         <Transition name="composer">
           <div v-if="target?.block.id === block.id" class="review-block-row__composer-slot">
-            <form class="review-block-row__composer" @submit.prevent="submitComment">
+            <form
+              class="review-block-row__composer"
+              :class="{ 'review-block-row__composer--transmitting': isTransmittingComment }"
+              :data-motion-event="isTransmittingComment ? 'transmit' : undefined"
+              :aria-busy="isTransmittingComment"
+              @submit.prevent="submitComment"
+            >
               <label :for="`comment-${block.id}`">
                 {{ target.selected ? 'Comment on selected text' : 'Comment on block' }}
               </label>
@@ -249,8 +297,11 @@ function submitComment() {
               />
               <div class="comment-thread__actions">
                 <Button type="submit" size="sm" :disabled="busy || !commentBody.trim()">
-                  Record comment
+                  {{ isTransmittingComment ? 'Transmitting comment…' : 'Record comment' }}
                 </Button>
+                <span v-if="isTransmittingComment" class="transmission-status" role="status">
+                  Transmitting comment to review record
+                </span>
                 <Button
                   type="button"
                   variant="ghost"

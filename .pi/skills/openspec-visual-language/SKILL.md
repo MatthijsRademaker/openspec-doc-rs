@@ -75,8 +75,14 @@ The ratchet that keeps "weird" fluent for a developer:
   semantic tokens from `web/src/style.css`, bundled Cormorant Garamond and IBM Plex fonts,
   offline assets, reduced-motion, `bun run test:e2e` — is unchanged. Express the visual language *through*
   the semantic tokens; extend the token set centrally rather than hardcoding locally.
-- **Motion is instrument-grade.** 100–200ms, `cubic-bezier(0.2, 0, 0.2, 1)`, fades and
-  slight lateral shifts. No parallax theatrics, no decorative loaders.
+- **Motion is instrument-grade.** Acquire exact coordinates, triangulate linked content,
+  transmit reviewer intent, receive real arrivals, resolve semantic geometry, and reconfigure
+  chassis. Use central 100–200ms timing, hard masks, registration rules, target locks, optical
+  slits, and glyph/line metamorphosis only for real events. Same-channel events replace older
+  marks; document receipt and reviewer confirmation stay independent. Reduced motion skips native
+  view transitions and makes displacement, clipping, masks, and smooth scroll immediate. No
+  perpetual artwork, parallax, pointer-following fields, cursor trails, sound, spring spectacle,
+  whole-page glitch, or decorative loaders.
 
 ## Using the image assets
 

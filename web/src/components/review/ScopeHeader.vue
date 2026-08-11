@@ -3,9 +3,10 @@ import DocumentHeading from '@/components/DocumentHeading.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import StatusMark from '@/components/StatusMark.vue'
 import { age } from '@/lib/age'
+import type { ReviewReceipt } from '@/lib/motion-events'
 import type { ScopeDetail } from '@/lib/scope-review'
 
-defineProps<{ scope: ScopeDetail }>()
+defineProps<{ scope: ScopeDetail; receipt?: ReviewReceipt }>()
 </script>
 
 <template>
@@ -21,16 +22,34 @@ defineProps<{ scope: ScopeDetail }>()
     </div>
 
     <div class="scope-header__state">
-      <section aria-labelledby="standing-verdict-title">
+      <section
+        :class="{
+          'scope-header__standing--received':
+            receipt?.kind === 'standing-verdict' || receipt?.kind === 'delivery',
+        }"
+        :data-motion-event="
+          receipt?.kind === 'standing-verdict'
+            ? 'receive'
+            : receipt?.kind === 'delivery'
+              ? 'resolve'
+              : undefined
+        "
+        aria-labelledby="standing-verdict-title"
+      >
         <InstrumentLabel>Standing verdict</InstrumentLabel>
         <h2 id="standing-verdict-title" class="sr-only">Standing verdict</h2>
         <template v-if="scope.standingVerdict">
-          <StatusMark kind="verdict" :label="scope.standingVerdict.verdict" />
+          <StatusMark
+            kind="verdict"
+            :label="scope.standingVerdict.verdict"
+            :event="receipt?.kind === 'standing-verdict' ? 'receive' : undefined"
+          />
           <time :datetime="scope.standingVerdict.createdAt">
             Submitted {{ age(scope.standingVerdict.createdAt) }}
           </time>
           <StatusMark
             kind="delivery"
+            :event="receipt?.kind === 'delivery' ? 'resolve' : undefined"
             :label="
               scope.standingVerdict.directiveDelivered
                 ? 'Delivered to agent'

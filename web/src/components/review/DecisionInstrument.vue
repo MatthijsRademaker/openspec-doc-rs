@@ -3,16 +3,18 @@ import { computed, nextTick, ref, watch } from 'vue'
 import CommentThread from '@/components/review/CommentThread.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import { Button } from '@/components/ui/button'
+import type { ReviewReceipt, TransmissionEvent } from '@/lib/motion-events'
 import type { ScopeDetail } from '@/lib/scope-review'
 import type { Verdict } from '@/lib/scopes'
 
 const props = withDefaults(
   defineProps<{
     scope: ScopeDetail
-    recordedThreadId?: string
+    transmission?: TransmissionEvent
+    receipt?: ReviewReceipt
     busy?: boolean
   }>(),
-  { recordedThreadId: undefined, busy: false },
+  { transmission: undefined, receipt: undefined, busy: false },
 )
 
 const emit = defineEmits<{
@@ -26,6 +28,11 @@ const open = ref(false)
 const comment = ref('')
 const commentPanel = ref<HTMLElement>()
 const composerDirty = computed(() => open.value && comment.value.length > 0)
+const isTransmittingVerdict = computed(() => props.transmission?.kind === 'verdict')
+const receivedThreadId = computed(() => {
+  const receipt = props.receipt
+  return receipt && 'threadId' in receipt ? receipt.threadId : undefined
+})
 
 watch(composerDirty, (dirty) => emit('composer', 'decision-comment', dirty), { immediate: true })
 
@@ -101,7 +108,18 @@ function trapFocus(event: KeyboardEvent) {
 </script>
 
 <template>
-  <aside class="decision-instrument" aria-label="Review decisions">
+  <aside
+    class="decision-instrument"
+    :class="{
+      'decision-instrument--transmitting': isTransmittingVerdict,
+      'decision-instrument--received': receipt?.kind === 'standing-verdict',
+    }"
+    :data-motion-event="
+      isTransmittingVerdict ? 'transmit' : receipt?.kind === 'standing-verdict' ? 'receive' : undefined
+    "
+    :aria-busy="isTransmittingVerdict"
+    aria-label="Review decisions"
+  >
     <div class="decision-instrument__bar">
       <Button
         id="scope-comment-trigger"
@@ -119,6 +137,9 @@ function trapFocus(event: KeyboardEvent) {
           {{ open ? 'Close scope feedback' : `Scope feedback · ${looseThreads.length}` }}
         </span>
       </Button>
+      <span v-if="isTransmittingVerdict" class="transmission-status" role="status">
+        Transmitting standing verdict
+      </span>
       <Button
         v-if="scope.kind === 'session'"
         type="button"
@@ -143,12 +164,13 @@ function trapFocus(event: KeyboardEvent) {
       />
     </Transition>
 
-    <Transition name="drawer">
+    <Transition name="plate">
       <section
         v-if="open"
         id="scope-comment-panel"
         ref="commentPanel"
         class="decision-instrument__drawer"
+        data-motion-event="reconfigure"
         role="dialog"
         aria-modal="true"
         aria-labelledby="scope-comment-panel-title"
@@ -180,8 +202,10 @@ function trapFocus(event: KeyboardEvent) {
           <CommentThread
             v-for="thread in looseThreads"
             :key="thread.comment.id"
-            :class="{ 'comment-thread--recorded': thread.comment.id === recordedThreadId }"
+            :class="{ 'comment-thread--received': thread.comment.id === receivedThreadId }"
             :thread="thread"
+            :transmission="transmission"
+            :receipt="receipt"
             :busy="busy"
             :show-anchor-loss="thread.anchorState === 'orphaned' || thread.anchorState === 'missing'"
             @reply="forwardReply"

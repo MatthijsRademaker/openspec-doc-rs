@@ -159,11 +159,15 @@
   --radius-md: 0.25rem;
   --radius: 0.25rem;
   --hairline: 1px;
+  /* One event grammar owns timing and geometry. Components expose verbs, never local durations. */
   --motion-duration: 160ms;
   --motion-easing: cubic-bezier(0.2, 0, 0.2, 1);
+  --motion-event-dwell: 2200ms;
   /* Every decorative displacement is a multiple of this, so reduced motion zeroes all of them
      from one place instead of from a list of selectors that goes stale. */
   --motion-nudge: 2px;
+  --motion-rule: 1.5rem;
+  --motion-lock: 1.5rem;
 }
 
 @layer base {
@@ -246,8 +250,41 @@
   background: currentColor;
 }
 
+/* Event verbs map to central geometry and color. Surfaces opt in with `data-motion-event`; this
+   keeps component templates semantic and prevents timing values spreading into local styles. */
+[data-motion-event="acquire"] {
+  --event-color: var(--focus-ink);
+  --event-displacement: var(--motion-nudge);
+}
+
+[data-motion-event="triangulate"] {
+  --event-color: var(--focus-ink);
+  --event-displacement: calc(2 * var(--motion-nudge));
+}
+
+[data-motion-event="transmit"] {
+  --event-color: var(--reviewer);
+  --event-displacement: calc(2 * var(--motion-nudge));
+}
+
+[data-motion-event="receive"] {
+  --event-color: var(--delivery);
+  --event-displacement: var(--motion-nudge);
+}
+
+[data-motion-event="resolve"] {
+  --event-color: var(--resolved);
+  --event-displacement: var(--motion-nudge);
+}
+
+[data-motion-event="reconfigure"] {
+  --event-color: var(--accent-ink);
+  --event-displacement: calc(2 * var(--motion-nudge));
+}
+
 .status-mark {
   --status-color: var(--accent-ink);
+  position: relative;
   min-height: 1.5rem;
   border-color: color-mix(in srgb, var(--status-color) 55%, transparent);
   background: transparent;
@@ -298,6 +335,47 @@
 .status-mark--agent {
   --status-color: var(--agent);
   border-right-width: 3px;
+}
+
+.status-mark--event::after {
+  position: absolute;
+  right: var(--space-half);
+  bottom: -2px;
+  left: var(--space-half);
+  height: var(--hairline);
+  background: var(--event-color, var(--status-color));
+  content: "";
+  transform-origin: left center;
+  animation: resolve-rule var(--motion-duration) var(--motion-easing) both;
+  pointer-events: none;
+}
+
+.status-mark--event .status-mark__glyph {
+  animation: resolve-glyph var(--motion-duration) var(--motion-easing) both;
+}
+
+@keyframes resolve-rule {
+  from {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes resolve-glyph {
+  from {
+    opacity: 0;
+    transform: translateX(calc(-1 * var(--event-displacement)));
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .document-heading {
@@ -581,6 +659,7 @@
 }
 
 .scope-entry {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(27rem, 0.8fr);
   min-width: 0;
@@ -594,6 +673,32 @@
 .scope-entry:has(.scope-entry__link:hover) {
   background: var(--raised);
   transform: translateX(var(--motion-nudge));
+}
+
+.scope-entry::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--motion-rule);
+  height: var(--hairline);
+  background: var(--event-color, var(--focus-ink));
+  content: "";
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition:
+    opacity var(--motion-duration) var(--motion-easing),
+    transform var(--motion-duration) var(--motion-easing);
+}
+
+.scope-entry--acquiring::before {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.scope-entry--acquiring .scope-entry__link {
+  color: var(--focus-ink);
+  view-transition-name: scope-coordinate;
 }
 
 .scope-entry__identity {
@@ -992,6 +1097,7 @@
    `minmax()` makes the property discrete, and the collapse then jumps — which is the point at which
    someone reaches for a JavaScript height animation instead. */
 .scope-layout {
+  position: relative;
   display: grid;
   grid-template-columns: clamp(14rem, 17vw, 18rem) minmax(32rem, 1fr) minmax(20rem, 26rem);
   min-width: 0;
@@ -1005,6 +1111,55 @@
 
 .scope-layout--conversation-collapsed {
   grid-template-columns: clamp(14rem, 17vw, 18rem) minmax(32rem, 1fr) minmax(3.25rem, 3.25rem);
+}
+
+.scope-layout__direction-trace {
+  position: fixed;
+  z-index: 12;
+  top: 50%;
+  right: 0;
+  width: calc(2 * var(--motion-rule));
+  height: var(--hairline);
+  background: var(--event-color);
+  transform-origin: right center;
+  animation: triangulation-trace var(--motion-duration) var(--motion-easing) both;
+  pointer-events: none;
+}
+
+.scope-layout--triangulating-to-source .scope-layout__direction-trace {
+  right: auto;
+  left: 0;
+  transform-origin: left center;
+}
+
+.scope-layout__direction-trace::after {
+  position: absolute;
+  top: calc(-0.5 * var(--motion-nudge));
+  right: 0;
+  width: var(--motion-nudge);
+  height: var(--motion-nudge);
+  border-top: var(--hairline) solid var(--event-color);
+  border-right: var(--hairline) solid var(--event-color);
+  content: "";
+  transform: rotate(45deg);
+}
+
+.scope-layout--triangulating-to-source .scope-layout__direction-trace::after {
+  right: auto;
+  left: 0;
+  transform: rotate(-135deg);
+}
+
+@keyframes triangulation-trace {
+  from {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
 }
 
 .scope-utility,
@@ -1104,6 +1259,58 @@
   color: var(--bone);
 }
 
+.scope-route-acquisition {
+  position: relative;
+  overflow: hidden;
+}
+
+.scope-route-acquisition::after {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  width: var(--motion-lock);
+  height: var(--motion-lock);
+  border: var(--hairline) solid var(--event-color);
+  content: "";
+  clip-path: polygon(
+    0 0,
+    42% 0,
+    42% 8%,
+    8% 8%,
+    8% 42%,
+    0 42%,
+    0 0,
+    100% 0,
+    100% 42%,
+    92% 42%,
+    92% 8%,
+    58% 8%,
+    58% 0,
+    100% 0,
+    100% 100%,
+    58% 100%,
+    58% 92%,
+    92% 92%,
+    92% 58%,
+    100% 58%,
+    100% 100%,
+    0 100%,
+    0 58%,
+    8% 58%,
+    8% 92%,
+    42% 92%,
+    42% 100%,
+    0 100%
+  );
+}
+
+.scope-route-acquisition__key {
+  color: var(--focus-ink);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  overflow-wrap: anywhere;
+  view-transition-name: scope-coordinate;
+}
+
 .artifact-navigator {
   width: 100%;
 }
@@ -1141,6 +1348,27 @@
 
 .artifact-navigator__path:hover {
   color: var(--bone);
+}
+
+.artifact-navigator__path::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--motion-rule);
+  height: var(--hairline);
+  background: var(--event-color, var(--focus-ink));
+  content: "";
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition:
+    opacity var(--motion-duration) var(--motion-easing),
+    transform var(--motion-duration) var(--motion-easing);
+}
+
+.artifact-navigator__path--acquiring::before {
+  opacity: 1;
+  transform: scaleX(1);
 }
 
 .artifact-navigator__path--selected {
@@ -1190,6 +1418,15 @@
   word-break: break-word;
 }
 
+.artifact-navigator__path--acquiring .artifact-navigator__exact {
+  color: var(--focus-ink);
+  view-transition-name: artifact-coordinate;
+}
+
+.artifact-navigator__path--acquiring .artifact-navigator__lock {
+  view-transition-name: artifact-lock;
+}
+
 .artifact-navigator__threads {
   grid-column: 2;
   color: var(--muted-ink);
@@ -1230,16 +1467,24 @@
 .artifact-document::after {
   position: absolute;
   z-index: 3;
-  inset: 0;
-  border: 2px solid var(--delivery);
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: linear-gradient(180deg, transparent, var(--delivery) 18% 82%, transparent);
   content: "";
   opacity: 0;
-  transition: opacity var(--motion-duration) var(--motion-easing);
+  transform: scaleY(0);
+  transform-origin: center;
+  transition:
+    opacity var(--motion-duration) var(--motion-easing),
+    transform var(--motion-duration) var(--motion-easing);
   pointer-events: none;
 }
 
 .artifact-document--replaced::after {
   opacity: 1;
+  transform: scaleY(1);
 }
 
 .artifact-document__replacement {
@@ -1271,6 +1516,78 @@
   overflow: hidden;
   border-bottom: var(--hairline) solid var(--border-ink);
   background: var(--canvas);
+}
+
+.artifact-document__header::before,
+.artifact-document__header::after {
+  position: absolute;
+  z-index: 4;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Coordinate transfer terminates as one optical operation: a narrow slit crosses the artwork
+   while registration rules lock the selected-document plane. Neither layer snapshots prose. */
+.artifact-document__header::before {
+  top: 0;
+  bottom: 0;
+  left: 38%;
+  width: clamp(2.5rem, 8vw, 7rem);
+  border-inline: var(--hairline) solid var(--event-color, var(--focus-ink));
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--event-color, var(--focus-ink)) 11%, transparent),
+    transparent
+  );
+}
+
+.artifact-document__header::after {
+  inset: 0;
+  border-block: var(--hairline) solid var(--event-color, var(--focus-ink));
+  clip-path: inset(0 100% 0 0);
+}
+
+.artifact-document--acquired .artifact-document__header::before {
+  animation: artifact-acquisition-slit var(--motion-duration) var(--motion-easing) both;
+}
+
+.artifact-document--acquired .artifact-document__header::after {
+  animation: artifact-acquisition-register var(--motion-duration) var(--motion-easing) both;
+}
+
+@keyframes artifact-acquisition-slit {
+  0% {
+    opacity: 0;
+    transform: translateX(calc(-2 * var(--motion-rule)));
+  }
+
+  22% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(calc(5 * var(--motion-rule)));
+  }
+}
+
+@keyframes artifact-acquisition-register {
+  0% {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+
+  55% {
+    opacity: 0.8;
+    clip-path: inset(0);
+  }
+
+  100% {
+    opacity: 0;
+    clip-path: inset(0);
+  }
 }
 
 .artifact-document__identity {
@@ -1306,6 +1623,67 @@
   line-height: 1.55;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.artifact-document__coordinate {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.artifact-document--acquired .artifact-document__identity code {
+  color: var(--focus-ink);
+  view-transition-name: artifact-coordinate;
+}
+
+.artifact-document__coordinate-lock {
+  position: relative;
+  display: block;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 1.75rem;
+  border: var(--hairline) solid var(--event-color, var(--focus-ink));
+  border-radius: 50%;
+  animation: artifact-coordinate-lock var(--motion-duration) var(--motion-easing) both;
+  view-transition-name: artifact-lock;
+}
+
+.artifact-document__coordinate-lock::before,
+.artifact-document__coordinate-lock::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  background: var(--event-color, var(--focus-ink));
+  content: "";
+  transform: translate(-50%, -50%);
+}
+
+.artifact-document__coordinate-lock::before {
+  width: 2.25rem;
+  height: var(--hairline);
+}
+
+.artifact-document__coordinate-lock::after {
+  width: var(--hairline);
+  height: 2.25rem;
+}
+
+@keyframes artifact-coordinate-lock {
+  0% {
+    opacity: 0;
+    clip-path: circle(0 at 50% 50%);
+  }
+
+  55% {
+    opacity: 1;
+    clip-path: circle(50% at 50% 50%);
+  }
+
+  100% {
+    opacity: 0;
+    clip-path: circle(50% at 50% 50%);
+  }
 }
 
 .artifact-document__arrival-art {
@@ -1400,6 +1778,16 @@
 .review-block--active::after {
   opacity: 1;
   transform: scaleX(1);
+}
+
+.review-block--triangulation-origin {
+  outline: var(--hairline) dashed var(--reviewer);
+  outline-offset: calc(-1 * var(--space-half));
+}
+
+.review-block--triangulation-destination {
+  outline: var(--hairline) solid var(--delivery);
+  outline-offset: calc(-1 * var(--space-half));
 }
 
 /* The measure must stay below the narrowest document column any desktop layout produces
@@ -1637,6 +2025,38 @@ textarea::placeholder {
     var(--surface);
 }
 
+.scope-conversation::after {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0 46%,
+    var(--event-color, var(--accent-ink)) 46% calc(46% + var(--hairline)),
+    transparent calc(46% + var(--hairline))
+  );
+  content: "";
+  opacity: 0;
+  clip-path: inset(0 50% 0 50%);
+  pointer-events: none;
+}
+
+.scope-conversation--reconfiguring::after {
+  animation: chassis-reconfigure var(--motion-duration) var(--motion-easing) both;
+}
+
+@keyframes chassis-reconfigure {
+  from {
+    opacity: 1;
+    clip-path: inset(0 50% 0 50%);
+  }
+
+  to {
+    opacity: 0.35;
+    clip-path: inset(0);
+  }
+}
+
 /* The rail tracks the viewport so the decision instrument it carries stays reachable from any
    scroll position in a document that is far taller than the rail's own content. */
 .scope-conversation__frame {
@@ -1769,8 +2189,19 @@ textarea::placeholder {
   transform: scaleX(1);
 }
 
-.artifact-conversation__thread--recorded,
-.comment-thread--recorded {
+.artifact-conversation__thread--triangulation-origin {
+  outline: var(--hairline) dashed var(--reviewer);
+  outline-offset: calc(-1 * var(--space-half));
+}
+
+.artifact-conversation__thread--triangulation-destination {
+  outline: var(--hairline) solid var(--delivery);
+  outline-offset: calc(-1 * var(--space-half));
+}
+
+.artifact-conversation__thread--received,
+.comment-thread--received,
+.comment-thread--received-status {
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--delivery) 76%, transparent);
 }
 
@@ -1895,6 +2326,49 @@ textarea::placeholder {
   gap: var(--space-1);
 }
 
+.transmission-status {
+  color: var(--reviewer);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.review-block-row__composer--transmitting,
+.comment-thread--transmitting,
+.decision-instrument--transmitting {
+  position: relative;
+}
+
+.review-block-row__composer--transmitting::after,
+.comment-thread--transmitting::after,
+.decision-instrument--transmitting::after {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  width: calc(2 * var(--motion-rule));
+  height: var(--hairline);
+  background: var(--event-color);
+  content: "";
+  transform-origin: right center;
+  animation: transmit-carrier var(--motion-duration) var(--motion-easing) both;
+  pointer-events: none;
+}
+
+@keyframes transmit-carrier {
+  from {
+    opacity: 0.35;
+    transform: scaleX(0.25);
+  }
+
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
 .comment-thread__moved,
 .comment-message__meta time,
 .comment-thread__claim,
@@ -1986,6 +2460,16 @@ textarea::placeholder {
   gap: var(--space-1);
 }
 
+.decision-instrument__bar .transmission-status {
+  align-self: center;
+  padding-inline: var(--space-1);
+}
+
+.decision-instrument--received,
+.scope-header__standing--received {
+  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--delivery) 76%, transparent);
+}
+
 .decision-instrument__bar [data-slot="button"] {
   min-width: 0;
   flex: 1 1 auto;
@@ -2018,12 +2502,15 @@ textarea::placeholder {
 }
 
 .drawer-backdrop-enter-active,
-.drawer-backdrop-leave-active,
-.drawer-enter-active,
-.drawer-leave-active {
+.drawer-backdrop-leave-active {
+  transition: opacity var(--motion-duration) var(--motion-easing);
+}
+
+.plate-enter-active,
+.plate-leave-active {
   transition:
-    opacity var(--motion-duration) var(--motion-easing),
-    transform var(--motion-duration) var(--motion-easing);
+    clip-path var(--motion-duration) var(--motion-easing),
+    opacity var(--motion-duration) var(--motion-easing);
 }
 
 .drawer-backdrop-enter-from,
@@ -2047,16 +2534,14 @@ textarea::placeholder {
   background: color-mix(in srgb, var(--surface) 97%, transparent);
   backdrop-filter: blur(12px);
   box-shadow: 0 1rem 3rem color-mix(in srgb, black 42%, transparent);
+  clip-path: inset(0);
   transform: translateX(-50%);
 }
 
-/* After the drawer's own rule, not before it: these carry the same specificity, so an earlier
-   `transform` here would lose to the centring translate and the rise would never happen. The rise
-   composes with that translate, which is why it is written out in full. */
-.drawer-enter-from,
-.drawer-leave-to {
+.plate-enter-from,
+.plate-leave-to {
   opacity: 0;
-  transform: translate(-50%, calc(4 * var(--motion-nudge)));
+  clip-path: inset(100% 0 0);
 }
 
 .decision-instrument__drawer-header {
@@ -2152,6 +2637,20 @@ textarea::placeholder {
 
   .scope-layout--conversation-collapsed {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .scope-layout__direction-trace {
+    display: none;
+  }
+
+  .review-block--triangulation-origin,
+  .artifact-conversation__thread--triangulation-origin {
+    border-top: 2px dashed var(--reviewer);
+  }
+
+  .review-block--triangulation-destination,
+  .artifact-conversation__thread--triangulation-destination {
+    border-bottom: 2px solid var(--delivery);
   }
 
   .scope-utility,
@@ -2282,6 +2781,14 @@ textarea::placeholder {
     display: none;
   }
 
+  /* Stacked source and destination use local acquisition; no shared pixel crosses reading flow. */
+  .artifact-navigator__path--acquiring .artifact-navigator__exact,
+  .artifact-navigator__path--acquiring .artifact-navigator__lock,
+  .artifact-document--acquired .artifact-document__identity code,
+  .artifact-document__coordinate-lock {
+    view-transition-name: none;
+  }
+
   .review-block {
     grid-template-columns: minmax(0, 1fr) 2.5rem;
     padding-inline: var(--space-1);
@@ -2312,6 +2819,101 @@ textarea::placeholder {
   }
 }
 
+/* Native transition owns only named coordinates. Root snapshots switch immediately so complete
+   documents and conversations never ghost over one another during artifact replacement. */
+::view-transition-old(root) {
+  opacity: 0;
+  animation: none;
+}
+
+::view-transition-new(root) {
+  animation: none;
+}
+
+::view-transition-group(scope-coordinate),
+::view-transition-group(artifact-coordinate),
+::view-transition-group(artifact-lock) {
+  animation-duration: var(--motion-duration);
+  animation-timing-function: var(--motion-easing);
+}
+
+::view-transition-old(scope-coordinate),
+::view-transition-new(scope-coordinate),
+::view-transition-old(artifact-coordinate),
+::view-transition-new(artifact-coordinate),
+::view-transition-old(artifact-lock),
+::view-transition-new(artifact-lock) {
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(artifact-coordinate) {
+  animation: artifact-coordinate-depart var(--motion-duration) var(--motion-easing) both;
+}
+
+::view-transition-new(artifact-coordinate) {
+  animation: artifact-coordinate-arrive var(--motion-duration) var(--motion-easing) both;
+}
+
+::view-transition-old(artifact-lock) {
+  animation: artifact-lock-depart var(--motion-duration) var(--motion-easing) both;
+}
+
+::view-transition-new(artifact-lock) {
+  animation: artifact-lock-arrive var(--motion-duration) var(--motion-easing) both;
+}
+
+@keyframes artifact-coordinate-depart {
+  from {
+    opacity: 1;
+    clip-path: inset(0);
+  }
+
+  to {
+    opacity: 0;
+    clip-path: inset(0 0 0 100%);
+  }
+}
+
+@keyframes artifact-coordinate-arrive {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    opacity: 1;
+    clip-path: inset(0);
+  }
+}
+
+@keyframes artifact-lock-depart {
+  from {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: rotate(45deg) scale(0.5);
+  }
+}
+
+@keyframes artifact-lock-arrive {
+  from {
+    opacity: 0;
+    transform: rotate(-45deg) scale(0.4);
+  }
+
+  55% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 [data-slot="button"]:focus-visible {
   outline: 2px solid var(--focus-ink);
   outline-offset: 3px;
@@ -2325,6 +2927,8 @@ textarea::placeholder {
   :root {
     --motion-duration: 0ms;
     --motion-nudge: 0px;
+    --motion-rule: 0px;
+    --motion-lock: 0px;
   }
 
   html {

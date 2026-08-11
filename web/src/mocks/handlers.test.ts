@@ -31,6 +31,26 @@ describe('MSW API handlers', () => {
     expect(scope.comments).toHaveLength(6)
   })
 
+  it('originates remote review-state independently from reviewer mutations', async () => {
+    const path = `${origin}/api/changes/${MOCK_CHANGE_KEY}`
+    const beforeResponse = await fetch(path)
+    const before = (await beforeResponse.json()) as {
+      comments: Array<{ status: string }>
+      artifacts: unknown[]
+    }
+
+    const updateResponse = await fetch(`${path}/mock/review-state`, { method: 'POST' })
+    const afterResponse = await fetch(path)
+    const after = (await afterResponse.json()) as {
+      comments: Array<{ status: string }>
+      artifacts: unknown[]
+    }
+
+    expect(updateResponse.ok).toBe(true)
+    expect(after.comments[0]?.status).not.toBe(before.comments[0]?.status)
+    expect(after.artifacts).toEqual(before.artifacts)
+  })
+
   it('applies comment mutations and exposes updated scope state', async () => {
     const path = `${origin}/api/sessions/${MOCK_SESSION_ID}`
     const createResponse = await fetch(`${path}/comments`, {

@@ -10,7 +10,7 @@ import {
   scopeAddress,
   setMockCommentStatus,
   submitMockVerdict,
-} from './data'
+} from './data.ts'
 
 const verdicts: readonly Verdict[] = ['keep-exploring', 'move-to-proposal', 'comment-resolution']
 
@@ -176,8 +176,20 @@ function createScopeHandlers(
       broadcast(address, REVIEW_STATE_CHANGED)
       return HttpResponse.json(record, { status: 201 })
     }),
-    // The one live-update path no reviewer mutation reaches: an agent rewriting an artifact on
-    // disk while the reviewer reads it.
+    // Deterministic remote review-state origin, separate from reviewer mutation endpoints.
+    http.post(`${basePath}/mock/review-state`, ({ params }) => {
+      const { address, key } = readScope(params)
+      const scope = getMockScope(kind, key)
+      if (!scope) return errorResponse(404, `Unknown mock ${kind} scope: ${key}`)
+      const thread = scope.comments[0]
+      if (!thread) return errorResponse(409, `Mock ${kind} scope has no review thread`)
+      const status = thread.status === 'resolved' ? 'open' : 'resolved'
+      const update = setMockCommentStatus(kind, key, thread.comment.id, status)
+      if (!update) return errorResponse(404, `Unknown mock comment: ${thread.comment.id}`)
+      broadcast(address, REVIEW_STATE_CHANGED)
+      return HttpResponse.json(update)
+    }),
+    // Remote artifact origin, independent of reviewer mutations and review-state arrival.
     http.post(`${basePath}/mock/artifact-rewrite`, async ({ params, request }) => {
       const { address, key } = readScope(params)
       if (!getMockScope(kind, key)) return errorResponse(404, `Unknown mock ${kind} scope: ${key}`)

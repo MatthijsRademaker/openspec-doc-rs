@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { nextTick, reactive } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ARRIVAL_DWELL_MS } from '@/lib/arrival-mark'
+import { EVENT_DWELL_MS, EVENT_TRANSITION_MS } from '@/lib/event-channel'
 import type { Artifact, ScopeDetail } from '@/lib/scope-review'
 import ScopeView from '@/views/ScopeView.vue'
 
@@ -284,6 +284,8 @@ Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
   value: vi.fn(),
 })
 
+const originalStartViewTransition = document.startViewTransition
+
 afterEach(() => {
   route.name = 'session'
   route.params = { id: SESSION_SCOPE.key }
@@ -292,10 +294,26 @@ afterEach(() => {
   push.mockClear()
   StubEventSource.instances = []
   Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
+  Object.defineProperty(document, 'startViewTransition', {
+    configurable: true,
+    value: originalStartViewTransition,
+  })
   vi.unstubAllGlobals()
 })
 
 describe('ScopeView selected-artifact workbench', () => {
+  it('reports exact route coordinate while scope data is unresolved', () => {
+    useChange({ artifact: PROPOSAL_PATH })
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})))
+
+    const { container } = render(ScopeView)
+
+    expect(screen.getByRole('heading', { name: 'Acquiring route coordinate' })).toBeTruthy()
+    expect(screen.getByText(CHANGE_SCOPE.key)).toBeTruthy()
+    expect(container.querySelector('[data-motion-event="acquire"]')).toBeTruthy()
+    expect(screen.queryByText(CHANGE_SCOPE.title ?? '')).toBeNull()
+  })
+
   it('canonicalizes unqualified change to first server artifact with replace', async () => {
     useChange()
     stubScope(CHANGE_SCOPE)
@@ -332,6 +350,12 @@ describe('ScopeView selected-artifact workbench', () => {
     await fireEvent.click(screen.getByRole('button', { name: /design\.md/ }))
     expect(push).toHaveBeenLastCalledWith({ query: { artifact: DESIGN_PATH } })
     expect(await screen.findByRole('heading', { name: 'Design coordinate' })).toBeTruthy()
+    expect(document.activeElement).toBe(document.getElementById('selected-artifact-title'))
+    expect(document.querySelector('.artifact-document--acquired')).toBeTruthy()
+    expect(document.querySelector('.artifact-document__coordinate-lock')).toBeTruthy()
+    expect(document.querySelector('.artifact-document')?.getAttribute('data-motion-event')).toBe(
+      'acquire',
+    )
 
     await fireEvent.click(screen.getByRole('button', { name: /tasks\.md/ }))
     expect(push).toHaveBeenLastCalledWith({ query: { artifact: TASKS_PATH } })
@@ -339,6 +363,34 @@ describe('ScopeView selected-artifact workbench', () => {
 
     route.query = { artifact: DESIGN_PATH }
     expect(await screen.findByRole('heading', { name: 'Design coordinate' })).toBeTruthy()
+  })
+
+  it('flushes clicked coordinate before native transition captures source pixels', async () => {
+    useChange({ artifact: PROPOSAL_PATH })
+    stubScope(CHANGE_SCOPE)
+    let capturedSource: { path: string; event: string | null; lock: string | null } | undefined
+    const start = vi.fn((update: () => void | Promise<void>) => {
+      const source = document.querySelector('.artifact-navigator__path--acquiring')
+      capturedSource = {
+        path: source?.querySelector('.artifact-navigator__exact')?.textContent?.trim() ?? '',
+        event: source?.getAttribute('data-motion-event') ?? null,
+        lock: source?.querySelector('.artifact-navigator__lock')?.textContent?.trim() ?? null,
+      }
+      const updateCallbackDone = (async () => {
+        await update()
+      })()
+      return { updateCallbackDone }
+    })
+    Object.defineProperty(document, 'startViewTransition', { configurable: true, value: start })
+    render(ScopeView)
+    await screen.findByRole('heading', { name: 'Proposal coordinate' })
+
+    await fireEvent.click(screen.getByRole('button', { name: /design\.md/ }))
+
+    await waitFor(() => expect(start).toHaveBeenCalledOnce())
+    expect(capturedSource).toEqual({ path: 'design.md', event: 'acquire', lock: '◇' })
+    expect(await screen.findByRole('heading', { name: 'Design coordinate' })).toBeTruthy()
+    expect(document.querySelector('.artifact-document__coordinate-lock')).toBeTruthy()
   })
 
   it('keeps invalid exact query, scope identity, and every available path visible', async () => {
@@ -407,6 +459,10 @@ describe('ScopeView selected-artifact workbench', () => {
     const collapse = screen.getByRole('button', { name: 'Collapse anchored threads' })
     await fireEvent.click(collapse)
     expect(screen.getByRole('button', { name: 'Expand anchored threads' })).toBeTruthy()
+    expect(document.querySelector('.scope-conversation--reconfiguring')).toBeTruthy()
+    expect(document.querySelector('.scope-conversation')?.getAttribute('data-motion-event')).toBe(
+      'reconfigure',
+    )
     expect(document.getElementById('scope-conversation-body')?.style.display).toBe('none')
     await fireEvent.click(screen.getByRole('button', { name: 'Expand anchored threads' }))
     expect(document.getElementById('scope-conversation-body')?.style.display).not.toBe('none')
@@ -432,12 +488,57 @@ describe('ScopeView selected-artifact workbench', () => {
     // The pane the reviewer did not click is the one that used to change by almost nothing.
     const railThread = document.querySelector('.artifact-conversation__thread--active')
     expect(railThread?.getAttribute('id')).toBe('artifact-thread-proposal-thread')
+    expect(railThread?.classList).toContain(
+      'artifact-conversation__thread--triangulation-destination',
+    )
+    expect(repeated[1]?.classList).toContain('review-block--triangulation-origin')
     expect(railThread?.querySelector('.artifact-conversation__crosshair-lock')).toBeTruthy()
+    expect(container.querySelector('.scope-layout__direction-trace')).toBeTruthy()
 
     await fireEvent.click(
       screen.getByRole('button', { name: 'Locate source for comment proposal-thread' }),
     )
     expect(document.activeElement).toBe(repeated[1])
+    expect(repeated[1]?.classList).toContain('review-block--triangulation-destination')
+    expect(railThread?.classList).toContain('artifact-conversation__thread--triangulation-origin')
+  })
+
+  it('clears transient triangulation while preserving settled active exactness', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    useChange({ artifact: PROPOSAL_PATH })
+    stubScope(CHANGE_SCOPE)
+    const { container } = render(ScopeView)
+    await screen.findByText('Proposal thread body.')
+
+    await fireEvent.click(container.querySelector('.review-block__marker') as HTMLButtonElement)
+    expect(container.querySelector('[data-motion-event="triangulate"]')).toBeTruthy()
+
+    vi.advanceTimersByTime(EVENT_TRANSITION_MS + 1)
+    await nextTick()
+    expect(container.querySelector('[data-motion-event="triangulate"]')).toBeNull()
+    expect(container.querySelector('.scope-layout__direction-trace')).toBeNull()
+    expect(container.querySelector('.review-block--active')).toBeTruthy()
+    expect(container.querySelector('.artifact-conversation__thread--active')).toBeTruthy()
+    vi.useRealTimers()
+  })
+
+  it('uses immediate scroll while preserving paired locks under reduced motion', async () => {
+    useChange({ artifact: PROPOSAL_PATH })
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: true })),
+    )
+    stubScope(CHANGE_SCOPE)
+    const { container } = render(ScopeView)
+    await screen.findByText('Proposal thread body.')
+    const scrollIntoView = vi.mocked(HTMLElement.prototype.scrollIntoView)
+    scrollIntoView.mockClear()
+
+    await fireEvent.click(container.querySelector('.review-block__marker') as HTMLButtonElement)
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'auto' })
+    expect(container.querySelector('.review-block--active')).toBeTruthy()
+    expect(container.querySelector('.artifact-conversation__thread--active')).toBeTruthy()
   })
 
   it('locks the document block when activation comes from the conversation pane', async () => {
@@ -471,6 +572,7 @@ describe('ScopeView selected-artifact workbench', () => {
       screen.getByRole('button', { name: 'Open scope feedback, 1 unplaced note' }),
     )
     const dialog = screen.getByRole('dialog', { name: 'Review the whole exploration' })
+    expect(dialog.getAttribute('data-motion-event')).toBe('reconfigure')
     expect(dialog.closest('.scope-conversation')).toBeNull()
     expect(document.activeElement).toBe(dialog)
     expect(screen.getByText('This concern must remain reachable.')).toBeTruthy()
@@ -516,7 +618,7 @@ describe('ScopeView selected-artifact workbench', () => {
       .mockResolvedValueOnce(response(SESSION_SCOPE))
       .mockResolvedValueOnce(response({ error: 'comment refused' }, 409))
     vi.stubGlobal('fetch', fetchMock)
-    render(ScopeView)
+    const { container } = render(ScopeView)
     await screen.findByRole('heading', { name: 'Exploration' })
 
     await fireEvent.click(screen.getByRole('button', { name: /Comment on .* block 2/ }))
@@ -525,6 +627,113 @@ describe('ScopeView selected-artifact workbench', () => {
 
     expect((await screen.findByRole('alert')).textContent).toContain('comment refused')
     expect(screen.getByRole('heading', { name: 'Exploration' })).toBeTruthy()
+    expect(screen.getByLabelText('Comment on block')).toHaveProperty('value', 'Keep exact failure.')
+    expect(container.querySelector('[data-motion-event="receive"]')).toBeNull()
+  })
+
+  it('names unresolved comment transmission and lands success at created thread', async () => {
+    let resolveMutation: (response: Response) => void = () => {
+      throw new Error('mutation resolver was not initialized')
+    }
+    const pendingMutation = new Promise<Response>((resolve) => {
+      resolveMutation = resolve
+    })
+    const createdThread = {
+      ...SESSION_SCOPE.comments[0],
+      comment: {
+        ...SESSION_SCOPE.comments[0]?.comment,
+        id: 'created-thread',
+        body: 'New anchored concern.',
+      },
+      replies: [],
+    }
+    const updated = {
+      ...SESSION_SCOPE,
+      comments: [...SESSION_SCOPE.comments, createdThread],
+      commentCounts: { open: 2, addressed: 0, resolved: 1 },
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(SESSION_SCOPE))
+      .mockReturnValueOnce(pendingMutation)
+      .mockResolvedValueOnce(response(updated))
+    vi.stubGlobal('fetch', fetchMock)
+    const { container } = render(ScopeView)
+    await screen.findByRole('heading', { name: 'Exploration' })
+
+    await fireEvent.click(screen.getByRole('button', { name: /Comment on .* block 2/ }))
+    await fireEvent.update(screen.getByLabelText('Comment on block'), 'New anchored concern.')
+    await fireEvent.click(screen.getByRole('button', { name: 'Record comment' }))
+
+    expect(screen.getByText('Transmitting comment to review record').getAttribute('role')).toBe(
+      'status',
+    )
+    expect(screen.getByLabelText('Comment on block')).toHaveProperty(
+      'value',
+      'New anchored concern.',
+    )
+    resolveMutation(response({ id: 'created-thread' }, 201))
+
+    await waitFor(() =>
+      expect(
+        container
+          .querySelector('#artifact-thread-created-thread')
+          ?.classList.contains('artifact-conversation__thread--received'),
+      ).toBe(true),
+    )
+    expect(screen.queryByLabelText('Comment on block')).toBeNull()
+  })
+
+  it('lands successful status and verdict outcomes at semantic destinations', async () => {
+    const resolvedScope: ScopeDetail = {
+      ...SESSION_SCOPE,
+      comments: SESSION_SCOPE.comments.map((thread) =>
+        thread.comment.id === 'anchored' ? { ...thread, status: 'resolved' as const } : thread,
+      ),
+      commentCounts: { open: 0, addressed: 0, resolved: 2 },
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(SESSION_SCOPE))
+      .mockResolvedValueOnce(response({ status: 'resolved' }))
+      .mockResolvedValueOnce(response(resolvedScope))
+    vi.stubGlobal('fetch', fetchMock)
+    const { container } = render(ScopeView)
+    await screen.findByRole('heading', { name: 'Exploration' })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Resolve' }))
+    await waitFor(() =>
+      expect(container.querySelector('.comment-thread--received-status')).toBeTruthy(),
+    )
+    expect(container.querySelector('.status-mark[data-motion-event="resolve"]')).toBeTruthy()
+
+    const verdictScope: ScopeDetail = {
+      ...resolvedScope,
+      verdicts: [
+        ...resolvedScope.verdicts,
+        {
+          id: 'verdict-2',
+          verdict: 'move-to-proposal',
+          notes: '',
+          createdAt: '2026-08-07T12:00:00Z',
+        },
+      ],
+      standingVerdict: {
+        id: 'verdict-2',
+        verdict: 'move-to-proposal',
+        createdAt: '2026-08-07T12:00:00Z',
+        directiveDelivered: false,
+        directivePending: true,
+      },
+    }
+    fetchMock
+      .mockResolvedValueOnce(response({ id: 'verdict-2' }, 201))
+      .mockResolvedValueOnce(response(verdictScope))
+    await fireEvent.click(screen.getByRole('button', { name: 'Move to proposal' }))
+    await waitFor(() =>
+      expect(container.querySelector('.scope-header__standing--received')).toBeTruthy(),
+    )
+    expect(screen.getAllByText('move-to-proposal').length).toBeGreaterThan(0)
   })
 
   it('applies clean live update and preserves selected-artifact reading model', async () => {
@@ -596,6 +805,8 @@ describe('ScopeView selected-artifact workbench', () => {
     )
     expect(screen.getByText('Document content replaced')).toBeTruthy()
     expect(scrollTo).toHaveBeenCalledWith(0, 420)
+    await fireEvent.click(screen.getByRole('button', { name: /Comment on .* block 2/ }))
+    expect(screen.getByLabelText('Comment on block')).toBeTruthy()
   })
 
   it('reports a deferred replacement when it applies, not when it was detected', async () => {
@@ -631,10 +842,10 @@ describe('ScopeView selected-artifact workbench', () => {
     await fireEvent.update(screen.getByLabelText('Reply to thread'), 'Reviewer follow-up.')
     await fireEvent.click(screen.getByRole('button', { name: 'Record reply' }))
     await waitFor(() =>
-      expect(container.querySelector('.artifact-conversation__thread--recorded')).toBeTruthy(),
+      expect(container.querySelector('.artifact-conversation__thread--received')).toBeTruthy(),
     )
     expect(
-      container.querySelector('.artifact-conversation__thread--recorded')?.getAttribute('id'),
+      container.querySelector('.artifact-conversation__thread--received')?.getAttribute('id'),
     ).toBe('artifact-thread-anchored')
     expect(container.querySelector('.artifact-document--replaced')).toBeNull()
   })
@@ -659,7 +870,7 @@ describe('ScopeView selected-artifact workbench', () => {
     )
     expect(container.querySelector('[aria-label="Dismiss"]')).toBeNull()
 
-    vi.advanceTimersByTime(ARRIVAL_DWELL_MS + 1)
+    vi.advanceTimersByTime(EVENT_DWELL_MS + 1)
     await nextTick()
     expect(container.querySelector('.artifact-document--replaced')).toBeNull()
     expect(screen.queryByText('Document content replaced')).toBeNull()
@@ -680,7 +891,39 @@ describe('ScopeView selected-artifact workbench', () => {
 
     expect(await screen.findByText('2 open')).toBeTruthy()
     expect(container.querySelector('.artifact-document--replaced')).toBeNull()
-    expect(container.querySelector('.artifact-conversation__thread--recorded')).toBeNull()
+    expect(container.querySelector('.artifact-conversation__thread--received')).toBeNull()
+  })
+
+  it('marks known remote review destination and decays without document claims', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const updated: ScopeDetail = {
+      ...SESSION_SCOPE,
+      comments: SESSION_SCOPE.comments.map((thread) =>
+        thread.comment.id === 'anchored' ? { ...thread, status: 'resolved' as const } : thread,
+      ),
+      commentCounts: { open: 0, addressed: 0, resolved: 2 },
+    }
+    const fetchMock = stubLiveScope()
+    const { container } = render(ScopeView)
+    await screen.findByRole('heading', { name: 'Exploration' })
+
+    fetchMock.mockResolvedValueOnce(response(updated))
+    StubEventSource.instances[0]?.emit(
+      JSON.stringify({ artifactsChanged: false, reviewStateChanged: true }),
+    )
+
+    await screen.findByText('2 resolved')
+    await waitFor(() =>
+      expect(container.querySelector('.comment-thread--received-status')).toBeTruthy(),
+    )
+    expect(container.querySelector('.artifact-document--replaced')).toBeNull()
+    expect(screen.queryByText('Document content replaced')).toBeNull()
+
+    vi.advanceTimersByTime(EVENT_DWELL_MS + 1)
+    await nextTick()
+    expect(container.querySelector('.comment-thread--received-status')).toBeNull()
+    expect(container.querySelector('[data-motion-event="resolve"]')).toBeNull()
+    vi.useRealTimers()
   })
 
   it('refreshes review state immediately while artifact composer remains dirty', async () => {

@@ -141,14 +141,35 @@ Focus is visibly offset from borders.
   complete document precedes conversation, comment actions stay visible without hover, and
   final content clears decision controls and safe-area inset.
 
-Motion explains entry, state change, or the arrival of content the reviewer did not cause, with
-opacity or slight lateral movement in 100–200ms using `cubic-bezier(0.2, 0, 0.2, 1)`. That bound
-is how long a transition takes to *finish*; a mark reporting an arrival may dwell longer than
-that, provided it withholds nothing, intercepts nothing, and decays on its own instead of
-becoming a state something has to clear. No perpetual orbit, parallax, animated ornament, or
-spectacle loader. `prefers-reduced-motion: reduce` removes decorative displacement and makes
-transitions immediate; suppression is global, so an effect added later is inert without being
-listed, and an effect that must survive it opts out explicitly.
+Motion uses six event verbs tied to real system work:
+
+| Verb | Trigger | Geometry | Settled truth |
+| --- | --- | --- | --- |
+| Acquire | Scope, artifact, or thread selection | Registration rule, hard reveal, target ticks | Existing selected/current state |
+| Triangulate | Source/thread navigation | Paired origin/destination locks and bounded edge trace | Existing active block and thread |
+| Transmit | Unresolved reviewer mutation | Carrier rule at submitting surface | Returned thread, status, or verdict |
+| Receive | Successful mutation or remote update | Landing edge, lock, or optical slit | Updated content and semantic state |
+| Resolve | Status or delivery change | Glyph and line geometry closes or redirects | Immediate visible label and final glyph |
+| Reconfigure | Rail or decision surface opens/closes | Hard mask and compatible chassis-track movement | Existing expanded, collapsed, or modal state |
+
+One event produces one hero gesture. Same-channel events replace older marks; document receipt
+and reviewer confirmation use independent channels. Effects disappear after reporting and never
+become persisted state. Desktop triangulation may use a viewport-edge direction trace, while
+narrow flow keeps marks local and vertical rather than drawing through content.
+
+Standard transitions finish in 100–200ms using the central 160ms token and
+`cubic-bezier(0.2, 0, 0.2, 1)`. Allowed geometry includes opacity, slight registration
+displacement, line growth, hard masks, clipping, and glyph/line metamorphosis. A nonblocking
+arrival report may dwell longer when it withholds nothing, intercepts nothing, and clears itself.
+Content, Router history, focus, semantic text, and final geometry update immediately rather than
+waiting for presentation.
+
+Rejected ambient effects: perpetual orbit, parallax, pointer-following fields, cursor trails,
+sound, haptics, spring spectacle, whole-page glitch, animated artwork, and decorative loaders.
+`prefers-reduced-motion: reduce` skips native view transitions, removes smooth scrolling and
+decorative displacement, and makes masks and transitions immediate. Suppression is global, so an
+effect added later is inert without being listed; any required surviving effect must opt out
+explicitly.
 
 ## Interaction and accessibility
 

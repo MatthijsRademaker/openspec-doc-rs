@@ -1,9 +1,27 @@
-import { render, screen } from '@testing-library/vue'
+import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
+import { defineComponent } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ScopeRegister from '@/components/ScopeRegister.vue'
 import type { Scope } from '@/lib/scopes'
 
 const NOW = new Date('2026-08-06T12:00:00Z')
+const RouteTarget = defineComponent({ template: '<p>target</p>' })
+
+function renderRegister(props: InstanceType<typeof ScopeRegister>['$props']) {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: RouteTarget },
+      { path: '/changes/:name', component: RouteTarget },
+      { path: '/sessions/:id', component: RouteTarget },
+    ],
+  })
+  return {
+    router,
+    ...render(ScopeRegister, { props, global: { plugins: [router] } }),
+  }
+}
 
 function scope(overrides: Partial<Scope> = {}): Scope {
   return {
@@ -28,7 +46,7 @@ describe('ScopeRegister', () => {
   })
 
   it('renders a named empty instrument', () => {
-    render(ScopeRegister, { props: { scopes: [], prefix: 'changes', title: 'Changes' } })
+    renderRegister({ scopes: [], prefix: 'changes', title: 'Changes' })
 
     expect(screen.getByRole('heading', { name: 'Changes' })).toBeTruthy()
     expect(screen.getByText('No changes discovered.')).toBeTruthy()
@@ -37,7 +55,7 @@ describe('ScopeRegister', () => {
 
   it('keeps titled and promoted identities separate from exact keys', () => {
     const item = scope({ title: 'Promoted observatory change' })
-    render(ScopeRegister, { props: { scopes: [item], prefix: 'changes', title: 'Changes' } })
+    renderRegister({ scopes: [item], prefix: 'changes', title: 'Changes' })
 
     const link = screen.getByRole('link', { name: 'Promoted observatory change' })
     expect(link.getAttribute('href')).toBe(`/changes/${item.key}`)
@@ -47,7 +65,7 @@ describe('ScopeRegister', () => {
 
   it('renders one operational identity for an untitled session', () => {
     const item = scope()
-    render(ScopeRegister, { props: { scopes: [item], prefix: 'sessions', title: 'Sessions' } })
+    renderRegister({ scopes: [item], prefix: 'sessions', title: 'Sessions' })
 
     const link = screen.getByRole('link', { name: item.key })
     expect(link.getAttribute('href')).toBe(`/sessions/${item.key}`)
@@ -56,20 +74,18 @@ describe('ScopeRegister', () => {
   })
 
   it('keeps modified time, comment count, verdict, and recent marker visible', () => {
-    render(ScopeRegister, {
-      props: {
-        scopes: [
-          scope({
-            title: 'Observatory design system',
-            modifiedAt: '2026-08-06T10:00:00Z',
-            openComments: 3,
-            verdict: 'comment-resolution',
-            mostRecentlyActive: true,
-          }),
-        ],
-        prefix: 'changes',
-        title: 'Changes',
-      },
+    renderRegister({
+      scopes: [
+        scope({
+          title: 'Observatory design system',
+          modifiedAt: '2026-08-06T10:00:00Z',
+          openComments: 3,
+          verdict: 'comment-resolution',
+          mostRecentlyActive: true,
+        }),
+      ],
+      prefix: 'changes',
+      title: 'Changes',
     })
 
     expect(screen.getByText('2h ago')).toBeTruthy()
@@ -80,10 +96,31 @@ describe('ScopeRegister', () => {
     expect(screen.getByText('◆')).toBeTruthy()
   })
 
-  it('renders explicit zero and dashes instead of fabricated values', () => {
-    render(ScopeRegister, {
-      props: { scopes: [scope()], prefix: 'changes', title: 'Changes' },
+  it('routes primary activation and preserves modified-click behavior', async () => {
+    vi.useRealTimers()
+    const item = scope()
+    const { router, container } = renderRegister({
+      scopes: [item],
+      prefix: 'changes',
+      title: 'Changes',
     })
+    const link = screen.getByRole('link', { name: item.key })
+
+    // jsdom cannot open a background tab; cancel browser default while preserving modifier data.
+    link.addEventListener('click', (event) => event.preventDefault(), {
+      capture: true,
+      once: true,
+    })
+    await fireEvent.click(link, { ctrlKey: true })
+    expect(router.currentRoute.value.path).toBe('/')
+    expect(container.querySelector('.scope-entry--acquiring')).toBeNull()
+
+    await fireEvent.click(link)
+    await waitFor(() => expect(router.currentRoute.value.path).toBe(`/changes/${item.key}`))
+  })
+
+  it('renders explicit zero and dashes instead of fabricated values', () => {
+    renderRegister({ scopes: [scope()], prefix: 'changes', title: 'Changes' })
 
     expect(screen.getAllByText('—')).toHaveLength(2)
     expect(screen.getByText('0')).toBeTruthy()

@@ -8,10 +8,16 @@ const props = withDefaults(
   defineProps<{
     paths: string[]
     selectedPath?: string
+    acquiringPath?: string
     threadCounts?: Record<string, CommentCounts>
     interactive?: boolean
   }>(),
-  { selectedPath: undefined, threadCounts: () => ({}), interactive: true },
+  {
+    selectedPath: undefined,
+    acquiringPath: undefined,
+    threadCounts: () => ({}),
+    interactive: true,
+  },
 )
 
 const emit = defineEmits<{ select: [path: string] }>()
@@ -51,7 +57,11 @@ function threadLabel(counts: CommentCounts): string {
         <button
           type="button"
           class="artifact-navigator__path"
-          :class="{ 'artifact-navigator__path--selected': entry.path === selectedPath }"
+          :class="{
+            'artifact-navigator__path--selected': entry.path === selectedPath,
+            'artifact-navigator__path--acquiring': entry.path === acquiringPath,
+          }"
+          :data-motion-event="entry.path === acquiringPath ? 'acquire' : undefined"
           :aria-current="entry.path === selectedPath ? 'page' : undefined"
           :title="entry.path"
           @click="emit('select', entry.path)"

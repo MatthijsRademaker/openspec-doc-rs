@@ -7,6 +7,7 @@ type StatusKind = 'open' | 'addressed' | 'resolved' | 'verdict' | 'delivery' | '
 const props = defineProps<{
   kind: StatusKind
   label: string
+  event?: 'receive' | 'resolve'
 }>()
 
 const glyph = computed(
@@ -24,7 +25,14 @@ const glyph = computed(
 </script>
 
 <template>
-  <Badge :variant="props.kind" :class="`status-mark status-mark--${props.kind}`">
+  <Badge
+    :variant="props.kind"
+    :class="[
+      `status-mark status-mark--${props.kind}`,
+      { 'status-mark--event': props.event },
+    ]"
+    :data-motion-event="props.event"
+  >
     <span class="status-mark__glyph" aria-hidden="true">{{ glyph }}</span>
     <span>{{ props.label }}</span>
   </Badge>
