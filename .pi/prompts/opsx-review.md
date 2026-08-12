@@ -19,33 +19,24 @@ Start a Pi-assisted OpenSpec review in the `openspec-doc` browser viewer.
 
    Announce: `Using change: <name>` and mention that `/opsx-review <other>` can review a different active change.
 
-2. **Start or reuse the viewer**
+2. **Provide the review URL**
 
-   Start the local viewer for the current project when one is not already running:
+   Do not start, probe, or supervise a viewer. Each project has its own port, the turn-end hook brings a
+   dashboard up on it, and picking a port on a conflict is a deterministic decision the binary makes. Ask
+   it where the review is:
 
    ```bash
-   openspec-doc serve --root . --host 127.0.0.1 --port 4321
+   openspec-doc serve url
    ```
 
-   If port `4321` is already serving this project, reuse it. If the port is occupied by something else, choose another available local port and report it.
-
-   Keep the process running while the user reviews. Document that `Ctrl+C` stops a manually started viewer.
-
-3. **Provide the review URL**
-
-   When the active change name is known, provide the direct companion review URL:
+   That prints the project's URL and whether a dashboard is serving it, and is correct either way. Append
+   the change's path to it:
 
    ```txt
-   http://127.0.0.1:<port>/changes/<change-name>/companion
+   <url>/changes/<change-name>
    ```
 
-   If the change name cannot be confirmed, provide the active changes index instead:
-
-   ```txt
-   http://127.0.0.1:<port>/changes
-   ```
-
-4. **Explain review behavior**
+3. **Explain review behavior**
 
    Tell the user:
    - Starting review does not create, modify, or delete files under `openspec/`.
@@ -66,8 +57,8 @@ Example:
 
 ```txt
 Using change: add-auth
-Viewer: http://127.0.0.1:4321
-Review: http://127.0.0.1:4321/changes/add-auth/companion
+Viewer: http://127.0.0.1:4323 (serving)
+Review: http://127.0.0.1:4323/changes/add-auth
 
 This review session keeps OpenSpec artifacts read-only from the browser. Browser comments are sidecar feedback records only; Pi applies proposal/design/spec/task updates only after explicit approval.
 ```

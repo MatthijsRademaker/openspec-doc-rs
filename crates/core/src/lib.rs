@@ -5,10 +5,12 @@
 //! Also hosts the agent hook bridge ([`hook`]), which reads and writes the
 //! project's directive sidecar files, the exploration scratch notes
 //! ([`scratch`]) that pre-date a change directory, the anchored review
-//! comments ([`comments`]) recorded against either, and the phase verdicts
-//! ([`verdict`]) a reviewer reaches about a whole scope.
+//! comments ([`comments`]) recorded against either, the phase verdicts
+//! ([`verdict`]) a reviewer reaches about a whole scope, and the port a
+//! project's dashboard belongs on ([`dashboard`]).
 
 pub mod comments;
+pub mod dashboard;
 mod error;
 pub mod hook;
 mod root;

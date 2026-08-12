@@ -20,6 +20,8 @@ const fixturePaths = [proposalPath, designPath, tasksPath, htmlSpecPath, visualS
 const desktopObstructionViewport = { width: 1280, height: 800 }
 // The plate branch needs a document column wider than 63rem, which the 1440 project never reaches.
 const wideDesktopViewport = { width: 1920, height: 1080 }
+// Where a capped index used to leave a quarter of the display blank on each side.
+const ultraWideViewport = { width: 2560, height: 1440 }
 
 function parseUrl(raw: string, context: string): URL {
   try {
@@ -53,7 +55,11 @@ function observeBrowserHealth(page: Page): BrowserHealth {
   })
   page.on('pageerror', (error) => health.pageErrors.push(error.message))
   page.on('requestfailed', (request) => {
-    health.failedRequests.push(`${request.url()} — ${request.failure()?.errorText ?? 'unknown'}`)
+    const reason = request.failure()?.errorText ?? 'unknown'
+    // Leaving a scope closes its live-update channel, and the browser reports a closed EventSource
+    // as an aborted request. That is what leaving the scope means, not a failed load.
+    if (request.url().endsWith('/events') && reason === 'net::ERR_ABORTED') return
+    health.failedRequests.push(`${request.url()} — ${reason}`)
   })
   page.on('request', (request) => {
     const url = parseUrl(request.url(), 'browser request')
@@ -142,6 +148,198 @@ test('routes scope coordinates while preserving modified links', async ({
   await link.click()
   await expect(page).toHaveURL(new RegExp(`/changes/${fixtureChange}`))
   await expectArtifactQuery(page, proposalPath)
+  expectHealthy(health)
+})
+
+/**
+ * Records what the page did while it navigated: whether a route transition ran at all, and whether
+ * the reviewer was ever shown the loading placeholder on the way. Neither is observable afterwards,
+ * because a transition marker and a discarded placeholder both leave nothing behind.
+ */
+async function observeRouteGestures(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const record = { marks: [] as string[], placeholder: false }
+    Object.assign(window, { __routeGestures: record })
+    new MutationObserver(() => {
+      const mark = document.documentElement.dataset.viewTransition
+      if (mark) record.marks.push(mark)
+      if (document.querySelector('.scope-route-acquisition')) record.placeholder = true
+    }).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-view-transition'],
+      childList: true,
+      subtree: true,
+    })
+  })
+}
+
+function routeGestures(page: Page): Promise<{ marks: string[]; placeholder: boolean }> {
+  return page.evaluate(
+    () =>
+      (window as unknown as { __routeGestures: { marks: string[]; placeholder: boolean } })
+        .__routeGestures,
+  )
+}
+
+async function shellGeometry(page: Page, selector: string) {
+  return page.evaluate((target) => {
+    const shell = document.querySelector(target)
+    if (!shell) throw new Error(`no ${target} on this route`)
+    return {
+      width: Math.round(shell.getBoundingClientRect().width),
+      stage: document.documentElement.clientWidth,
+      padding: getComputedStyle(shell).paddingLeft,
+    }
+  }, selector)
+}
+
+/* The index used to stop growing at 90rem and centre the remainder, so on a wide display it was a
+   column with a quarter of the screen blank on each side beside a page that filled it. */
+test('gives the index and a scope the same display at the same padding', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop width contract')
+  const health = observeBrowserHealth(page)
+  await page.setViewportSize(ultraWideViewport)
+
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Changes', level: 1 })).toBeVisible()
+  const index = await shellGeometry(page, '.observatory-shell')
+
+  await page.goto(`/changes/${fixtureChange}`)
+  await expect(page.locator('.scope-header')).toBeVisible()
+  const scope = await shellGeometry(page, '.scope-workbench')
+
+  expect(index.width, 'the index reserves no empty canvas').toBe(index.stage)
+  expect(scope.width, 'the scope route reserves no empty canvas').toBe(scope.stage)
+  expect(index.padding, 'both routes read one shell padding').toBe(scope.padding)
+  expectHealthy(health)
+})
+
+/* Panel, divider and artwork crop were a mix of `min(52%, 42rem)`, `52%` and `46%`, which agree
+   only below roughly an 80rem container. Above it a band of bare canvas opened between the panel's
+   edge and the artwork, and it grew with the display. */
+test('holds the index hero in proportion at every width', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop hero composition contract')
+  const health = observeBrowserHealth(page)
+
+  for (const width of [1280, 1920, ultraWideViewport.width]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'Changes', level: 1 })).toBeVisible()
+
+    const hero = await page.evaluate(() => {
+      const box = (selector: string) => {
+        const element = document.querySelector(selector)
+        if (!element) throw new Error(`no ${selector} in the hero`)
+        return element.getBoundingClientRect()
+      }
+      const band = box('.index-observation')
+      const panel = box('.index-observation__content')
+      const field = box('.index-field')
+      // The crop is the last inset value, and it stays a percentage in the computed style.
+      const crop = /([\d.]+)(%|px)\)\s*$/.exec(
+        getComputedStyle(document.querySelector('.index-field') as Element).clipPath,
+      )
+      if (!crop) throw new Error('the observation field declares no left crop')
+      return {
+        panelFraction: panel.width / band.width,
+        panelRight: panel.right,
+        artworkLeft:
+          field.left + (crop[2] === '%' ? (field.width * Number(crop[1])) / 100 : Number(crop[1])),
+      }
+    })
+
+    expect(hero.panelFraction, `panel proportion at ${width}px`).toBeCloseTo(0.52, 2)
+    expect(
+      Math.round(hero.panelRight),
+      `no bare band between panel and artwork at ${width}px`,
+    ).toBeGreaterThanOrEqual(Math.round(hero.artworkLeft))
+  }
+  expectHealthy(health)
+})
+
+/* The gesture used to end at the `<code>` inside the loading state, which the scope throws away the
+   moment it loads. Holding the navigation is what lets it end at the header the reviewer selected,
+   and the placeholder never appearing at all is what proves the hold did its job. */
+test('acquires the scope coordinate on the loaded identity, not on scaffolding', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop acquisition contract')
+  const health = observeBrowserHealth(page)
+  await page.goto('/')
+  await observeRouteGestures(page)
+
+  await page.getByRole('link', { name: fixtureTitle }).click()
+  await expect(page.locator('.scope-header')).toBeVisible()
+
+  const gestures = await routeGestures(page)
+  expect(gestures.marks, 'a route change carries the page-level treatment').toContain('route')
+  expect(gestures.placeholder, 'a held navigation never shows the loading placeholder').toBe(false)
+  expect(
+    await page.evaluate(
+      () =>
+        getComputedStyle(
+          document.querySelector('.scope-header__identity .document-heading__title') as Element,
+        ).viewTransitionName,
+    ),
+  ).toBe('scope-coordinate')
+  // The marker exists for the transition and no longer, so nothing later inherits route treatment.
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.dataset.viewTransition ?? null))
+    .toBeNull()
+  expectHealthy(health)
+})
+
+/* Wrapping the two link sites individually left Back unhooked in both directions, which is why
+   the transition is owned at the Router instead. */
+test('returns to the index by link and by Back with the same gesture', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop history contract')
+  const health = observeBrowserHealth(page)
+  await page.goto('/')
+  await page.getByRole('link', { name: fixtureTitle }).click()
+  await expect(page.locator('.scope-header')).toBeVisible()
+  await observeRouteGestures(page)
+
+  await page.getByRole('link', { name: 'Observation index' }).click()
+  await expect(page).toHaveURL('/')
+  await expect(page.getByRole('heading', { name: 'Changes', level: 1 })).toBeVisible()
+  expect((await routeGestures(page)).marks, 'the return leg animates too').toContain('route')
+
+  // Back into the scope and Forward out of it: the same gesture in the direction travelled, and
+  // the direction a link site can never see.
+  await page.goBack()
+  await expect(page).toHaveURL(new RegExp(`/changes/${fixtureChange}`))
+  await expect(page.locator('.scope-header')).toBeVisible()
+  await page.goForward()
+  await expect(page).toHaveURL('/')
+  await expect(page.getByRole('link', { name: fixtureTitle })).toBeVisible()
+  expect(
+    (await routeGestures(page)).marks.length,
+    'history navigation is treated in both directions',
+  ).toBeGreaterThanOrEqual(3)
+  expectHealthy(health)
+})
+
+test('commits index navigation without a hold or a treatment under reduced motion', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop reduced-motion contract')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const health = observeBrowserHealth(page)
+  await page.goto('/')
+  await observeRouteGestures(page)
+
+  await page.getByRole('link', { name: fixtureTitle }).click()
+  await expect(page).toHaveURL(new RegExp(`/changes/${fixtureChange}`))
+  await expect(page.locator('.scope-header')).toBeVisible()
+
+  expect((await routeGestures(page)).marks, 'no route treatment under reduced motion').toEqual([])
+  await page.getByRole('link', { name: 'Observation index' }).click()
+  await expect(page.getByRole('heading', { name: 'Changes', level: 1 })).toBeVisible()
+  expect((await routeGestures(page)).marks).toEqual([])
   expectHealthy(health)
 })
 
@@ -982,13 +1180,41 @@ test('keeps index identifiers and every session reachable in narrow flow', async
   await expect(page.locator('.index-workbench a')).toHaveCount(
     fixtureScopeCount.changes + fixtureScopeCount.sessions,
   )
+  const changes = page.getByRole('heading', { name: 'Changes', level: 1 })
+  const sessions = page.getByRole('heading', { name: 'Sessions', level: 2 })
+  await expect(changes).toBeVisible()
+  expect(
+    await changes.evaluate(
+      (heading, other) =>
+        Boolean(heading.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING),
+      await sessions.elementHandle(),
+    ),
+  ).toBe(true)
   expect(
     await page.evaluate(() => ({
       viewport: window.innerWidth,
       documentWidth: document.documentElement.scrollWidth,
       platesDisplay: getComputedStyle(document.querySelector('.index-plates') as Element).display,
+      // Atmosphere goes before content: the field stops being ground and returns to a bounded crop
+      // below the hero, so nothing in the registers is read against it.
+      fieldPosition: getComputedStyle(document.querySelector('.index-field') as Element).position,
+      fieldMask: getComputedStyle(document.querySelector('.index-field') as Element).maskImage,
+      fieldBelowHero:
+        (document.querySelector('.index-field') as Element).getBoundingClientRect().top >=
+        (document.querySelector('.index-observation') as Element).getBoundingClientRect().bottom,
+      fieldAboveRegisters:
+        (document.querySelector('.index-field') as Element).getBoundingClientRect().bottom <=
+        (document.querySelector('.index-workbench') as Element).getBoundingClientRect().top,
     })),
-  ).toEqual({ viewport: 390, documentWidth: 390, platesDisplay: 'none' })
+  ).toEqual({
+    viewport: 390,
+    documentWidth: 390,
+    platesDisplay: 'none',
+    fieldPosition: 'static',
+    fieldMask: 'none',
+    fieldBelowHero: true,
+    fieldAboveRegisters: true,
+  })
 })
 
 test('keeps keyboard focus and reduced-motion navigation immediate', async ({ page }, testInfo) => {

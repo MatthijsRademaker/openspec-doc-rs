@@ -3,6 +3,7 @@
 
 mod cli;
 mod comment;
+mod discovery;
 mod error;
 mod hook;
 mod root;
@@ -15,7 +16,7 @@ use std::process::ExitCode;
 use clap::Parser;
 use openspec_doc_core::comments::Status;
 
-use crate::cli::{Cli, Command, CommentCommand, HookCommand, ScratchCommand};
+use crate::cli::{Cli, Command, CommentCommand, HookCommand, ScratchCommand, ServeCommand};
 use crate::error::Error;
 
 fn main() -> ExitCode {
@@ -84,10 +85,16 @@ fn run(cli: Cli) -> Result<(), Error> {
     match cli.command {
         Command::Summary => summary::run(project),
         Command::Serve {
+            command: Some(ServeCommand::Url),
+            ..
+        } => serve::url(project),
+        Command::Serve {
+            command: None,
             host,
             port,
             no_open,
-        } => serve::run(project, host, port, no_open),
+            idle_exit,
+        } => serve::run(project, host, port, no_open, idle_exit),
         Command::Hook { command } => match command {
             HookCommand::Stop { agent } => hook::stop(project, agent),
             HookCommand::Prompt { agent } => hook::prompt(project, agent),
@@ -131,6 +138,11 @@ fn run(cli: Cli) -> Result<(), Error> {
             ScratchCommand::Claim { session, change } => scratch::claim(project, &session, &change),
         },
     }
+}
+
+/// Diagnostics go to stderr; stdout carries what the agent parses.
+pub(crate) fn report(message: &str) {
+    eprintln!("openspec-doc: {message}");
 }
 
 pub(crate) fn eprint_chain(error: &dyn std::error::Error) {

@@ -5,6 +5,13 @@ import { onScopeDispose, ref, type Ref } from 'vue'
  * content or interaction and clear themselves, keeping them events rather than durable state.
  */
 export const EVENT_TRANSITION_MS = 160
+/**
+ * Covers the longest animation the acquired class gates, which is `--motion-duration-resolve`, not
+ * the shorter `--motion-duration-acquire` beside it. A channel whose dwell is shorter than the
+ * animation it gates removes the class mid-gesture and the animation is cut off at the dwell, so
+ * the CSS duration reads as a value the interface never actually shows. These move together.
+ */
+export const EVENT_ACQUIRE_MS = 600
 export const EVENT_DWELL_MS = 2200
 
 export interface LatestEventChannel<T> {

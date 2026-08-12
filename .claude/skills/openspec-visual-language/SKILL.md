@@ -77,8 +77,14 @@ The ratchet that keeps "weird" fluent for a developer:
   the semantic tokens; extend the token set centrally rather than hardcoding locally.
 - **Motion is instrument-grade.** Acquire exact coordinates, triangulate linked content,
   transmit reviewer intent, receive real arrivals, resolve semantic geometry, and reconfigure
-  chassis. Use central 100–200ms timing, hard masks, registration rules, target locks, optical
-  slits, and glyph/line metamorphosis only for real events. Same-channel events replace older
+  chassis. Use central 100–200ms timing — with one exception, acquire, at 400ms for its movement
+  and 600ms for the identity's halftone resolve — plus hard masks, halftone reveals in the plates'
+  own texture, target locks, and glyph/line metamorphosis, only for real events. **Acquire is the
+  worked example: read "Acquire is the worked example" in `designs/dashboard-review-workbench.md`
+  before designing any new motion, and check your treatment against its five rules.** The first of
+  them decides most cases — a treatment must say what the surface is made of, so if it would look
+  the same over a chart, a table, or a login form, it is describing nothing. Same-channel events
+  replace older
   marks; document receipt and reviewer confirmation stay independent. Reduced motion skips native
   view transitions and makes displacement, clipping, masks, and smooth scroll immediate. No
   perpetual artwork, parallax, pointer-following fields, cursor trails, sound, spring spectacle,

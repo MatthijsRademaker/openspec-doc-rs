@@ -3,12 +3,17 @@ import { onMounted, ref } from 'vue'
 import DocumentHeading from '@/components/DocumentHeading.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import ScopeRegister from '@/components/ScopeRegister.vue'
+import { takeHeldIndex } from '@/lib/route-transition'
 import { fetchIndex, type Index } from '@/lib/scopes'
 
-const index = ref<Index>()
+// A held navigation hands its payload over rather than making the destination fetch it again. The
+// registers are then rendered in the same frame the transition captures, which is the only way the
+// returning gesture has a real entry to land on.
+const index = ref<Index | undefined>(takeHeldIndex())
 const failure = ref<string>()
 
 onMounted(async () => {
+  if (index.value) return
   try {
     index.value = await fetchIndex()
   } catch (error) {
@@ -19,6 +24,17 @@ onMounted(async () => {
 
 <template>
   <main class="observatory-shell observatory-index">
+    <!-- Page-level ground, not hero decoration: the field is the surface the registers are panels
+         on, so it lives beside them rather than inside the band it starts in. -->
+    <div class="index-field" aria-hidden="true">
+      <img
+        class="index-field__image"
+        src="/assets/images/observatory-field.webp"
+        alt=""
+        aria-hidden="true"
+      />
+    </div>
+
     <header class="index-observation">
       <div class="index-observation__content">
         <p class="index-product">openspec-doc <span aria-hidden="true">/</span> review index</p>
@@ -28,14 +44,6 @@ onMounted(async () => {
           kicker="Index / observation field"
           title="Changes"
           description="Select exact scope coordinates."
-        />
-      </div>
-      <div class="index-observation__art" aria-hidden="true">
-        <img
-          class="index-observation__image"
-          src="/assets/images/observatory-field.webp"
-          alt=""
-          aria-hidden="true"
         />
       </div>
     </header>

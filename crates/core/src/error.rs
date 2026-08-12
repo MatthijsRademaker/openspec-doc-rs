@@ -114,6 +114,29 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+
+    #[error(
+        "no directory to keep the port registry in: neither a state nor a local data directory is available; set {} to choose one",
+        crate::dashboard::STATE_DIR_ENV
+    )]
+    NoStateDir,
+
+    #[error("malformed port registry {}", path.display())]
+    PortRegistry {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    // `serve forget` lands in `add-serve-process-control`. This text and that
+    // command have to agree; whichever is touched second checks the other.
+    #[error(
+        "every port in {}-{} is assigned to a project that still exists: forget one with `openspec-doc serve forget`, or remove its entry from {}",
+        crate::dashboard::RANGE.start(),
+        crate::dashboard::RANGE.end(),
+        path.display()
+    )]
+    PortRangeFull { path: PathBuf },
 }
 
 impl Error {

@@ -155,6 +155,11 @@ The repository SHALL maintain a dashboard design reference defining the review-w
 - **WHEN** an agent is asked to create or restyle a dashboard view or component
 - **THEN** its repository guidance SHALL direct it to inspect the dashboard design reference before choosing layout, type, color, or motion
 
+#### Scenario: Motion policy is carried by a worked example
+
+- **WHEN** the design reference states the motion policy
+- **THEN** it SHALL name one shipped gesture as the reference implementation and state the rules that gesture demonstrates against its actual tokens, durations, and mechanisms, rather than stating the policy only as a list of permitted geometry and rejected effects, and frontend guidance SHALL point agents at that example before they design new motion
+
 #### Scenario: Typography matches executable assets
 
 - **WHEN** the dashboard declares a font family in component or design configuration

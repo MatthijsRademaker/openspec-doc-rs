@@ -81,7 +81,32 @@ describe('IndexView', () => {
 
     expect(screen.getByText('Observing available scopes…')).toBeTruthy()
     expect(screen.getByText('Index signal / observing')).toBeTruthy()
-    expect(container.querySelector('.index-observation__image')).toBeTruthy()
+    expect(container.querySelector('.index-field__image')).toBeTruthy()
+  })
+
+  /* The index grew from a 90rem column to the whole display. Nothing about its composition was
+     supposed to move with it, and a width change is exactly the kind of edit that quietly does. */
+  it('keeps its register composition and reading order when the page occupies the display', async () => {
+    stubIndex(PRESSURED_INDEX)
+
+    const { container } = renderIndex()
+    await screen.findByRole('heading', { name: 'Sessions' })
+
+    const shell = container.querySelector('.observatory-shell.observatory-index')
+    expect(Array.from(shell?.children ?? [], (child) => child.className.split(' ')[0])).toEqual([
+      'index-field',
+      'index-observation',
+      'index-workbench',
+      'index-plates',
+    ])
+    const registers = container.querySelectorAll('.index-workbench > .scope-register')
+    expect(Array.from(registers, (register) => [...register.classList].pop())).toEqual([
+      'scope-register--primary',
+      'scope-register--secondary',
+    ])
+    // Separation stays a gap between detached panels: it is where the field is seen.
+    expect(container.querySelector('.index-workbench')?.className).toBe('index-workbench')
+    expect(container.querySelectorAll('.index-plate')).toHaveLength(3)
   })
 
   it('renders empty registers as successful emptiness, not failure', async () => {
@@ -130,7 +155,7 @@ describe('IndexView', () => {
     await screen.findByRole('heading', { name: 'Sessions' })
 
     const images = container.querySelectorAll<HTMLImageElement>(
-      '.index-observation__image, .index-plate__image',
+      '.index-field__image, .index-plate__image',
     )
     expect(Array.from(images, (image) => image.getAttribute('src'))).toEqual([
       '/assets/images/observatory-field.webp',

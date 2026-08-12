@@ -5,7 +5,31 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
+use openspec_doc_core::dashboard::STATE_DIR_ENV;
 use tempfile::TempDir;
+
+/// A port registry per test, since the harness gives each test its own thread.
+///
+/// Two reasons, and the second is the subtle one. Without an override at all,
+/// every invocation here writes a real assignment for a temp directory into the
+/// developer's own registry. And sharing one override across tests is not enough:
+/// the registry is read-modify-write and deliberately unlocked — the design
+/// accepts that a concurrent write costs one restart's worth of stability — so a
+/// test asserting that a project's port is stable has to be the only writer.
+fn state_dir() -> PathBuf {
+    thread_local! {
+        static STATE: TempDir = TempDir::new().expect("state dir");
+    }
+
+    STATE.with(|state| state.path().to_owned())
+}
+
+/// Start `openspec-doc` with this test's own port registry.
+fn binary() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_openspec-doc"));
+    command.env(STATE_DIR_ENV, state_dir());
+    command
+}
 
 /// A temp directory that is a valid OpenSpec project root, containing each of
 /// `dirs` (relative paths).
@@ -16,18 +40,26 @@ fn project_fixture(dirs: &[&str]) -> TempDir {
     }
     fs::create_dir_all(temp.path().join("openspec")).expect("create openspec dir");
     fs::write(temp.path().join("openspec/config.yaml"), "").expect("write config");
+
+    // A turn boundary in a session that has an exploration ensures a dashboard,
+    // and these tests drive the real binary, so there is nothing to inject: left
+    // alone they leave a detached server on a real port serving a temp directory
+    // that is about to be deleted, and open a browser tab per test. A directory
+    // where the log belongs makes the start fail before it spawns anything, which
+    // the hook reports and carries past — which is itself the behaviour task 5.7
+    // asks for. The dashboard step is tested where it can be injected, in
+    // `hook::tests` and `discovery::tests`.
+    fs::create_dir_all(temp.path().join(".openspec-doc/serve.log")).expect("block the serve log");
+
     temp
 }
 
 fn run(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_openspec-doc"))
-        .args(args)
-        .output()
-        .expect("run openspec-doc")
+    binary().args(args).output().expect("run openspec-doc")
 }
 
 fn run_in(cwd: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_openspec-doc"))
+    binary()
         .current_dir(cwd)
         .args(args)
         .output()
@@ -35,7 +67,7 @@ fn run_in(cwd: &Path, args: &[&str]) -> Output {
 }
 
 fn run_with_stdin(args: &[&str], stdin: &str) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_openspec-doc"))
+    let mut child = binary()
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -60,7 +92,7 @@ fn run_with_stdin(args: &[&str], stdin: &str) -> Output {
 /// other test a failed write means the binary died when it should have been
 /// reading.
 fn run_expecting_early_exit(args: &[&str], stdin: &str) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_openspec-doc"))
+    let mut child = binary()
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -520,23 +552,34 @@ fn hook_stop_injects_a_pending_directive_then_allows_the_next_turn_to_end() {
     }
 }
 
-/// The session still has to become visible to the dashboard, or the reviewer
-/// has nothing to submit a verdict against — but registering it must not put a
-/// directive in front of the agent.
+/// A session with an exploration has to become visible to the dashboard, or the
+/// reviewer has nothing to submit a verdict against — but registering it must not
+/// put a directive in front of the agent, and a session with nothing to review
+/// must not be registered at all.
 #[test]
-fn hook_stop_allows_and_registers_the_session_when_it_has_no_directive() {
+fn hook_stop_registers_a_session_with_an_exploration_and_no_other() {
     for (agent, payload, _, expected_allow) in AGENTS {
         let fixture = project_fixture(&[]);
         let root = fixture.path().to_str().unwrap().to_owned();
         let payload = payload.replace("SESSION", SESSION_ID);
+        let args = ["hook", "stop", "--agent", agent, "--root", &root];
 
-        let output = run_with_stdin(
-            &["hook", "stop", "--agent", agent, "--root", &root],
-            &payload,
+        // A session that asked one question about one function is not something
+        // the reviewer's index should be listing.
+        let unexplored = run_with_stdin(&args, &payload);
+
+        assert!(unexplored.status.success(), "{}", stderr(&unexplored));
+        assert_eq!(stdout(&unexplored).trim(), expected_allow, "agent {agent}");
+        assert!(
+            !directive_path(fixture.path(), SESSION_ID).exists(),
+            "agent {agent} registered a session that never explored"
         );
 
-        assert!(output.status.success(), "{}", stderr(&output));
-        assert_eq!(stdout(&output).trim(), expected_allow, "agent {agent}");
+        write_session_note(fixture.path(), "# Exploration\n");
+        let explored = run_with_stdin(&args, &payload);
+
+        assert!(explored.status.success(), "{}", stderr(&explored));
+        assert_eq!(stdout(&explored).trim(), expected_allow, "agent {agent}");
         let record = fs::read_to_string(directive_path(fixture.path(), SESSION_ID))
             .expect("the session is registered for the dashboard to discover");
         assert!(
@@ -552,6 +595,8 @@ fn hook_stop_allows_and_registers_the_session_when_it_has_no_directive() {
 fn registering_a_session_does_not_overwrite_a_directive_it_already_has() {
     let fixture = project_fixture(&[]);
     let root = fixture.path().to_str().unwrap().to_owned();
+    // A note, so this turn boundary reaches the registration step at all.
+    write_session_note(fixture.path(), "# Exploration\n");
     write_pending_directive(fixture.path(), SESSION_ID, REASON);
 
     let blocked = claude_stop(&root);
@@ -1064,6 +1109,68 @@ fn hook_explore_readies_the_note_location_and_says_where_it_is() {
     assert!(stdout.contains("reviewer"), "{stdout}");
 }
 
+/// The moment the reviewer asks to be shown the exploration. Before the port
+/// assignment there was no URL to give them and no way to produce one, because the
+/// port was a property of a running process and nothing had started one yet.
+#[test]
+fn hook_explore_prints_this_projects_dashboard_url_and_starts_nothing() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+
+    let output = run_with_stdin(
+        &["hook", "explore", "--agent", "claude", "--root", &root],
+        &EXPANSION_PAYLOAD.replace("SESSION", SESSION_ID),
+    );
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    let stdout = stdout(&output);
+    let url = assigned_url(&root);
+    assert!(
+        stdout.contains(&url),
+        "the reviewer is not told where the review will be: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("{url}/sessions/{SESSION_ID}")),
+        "the session's own page is what they want: {stdout}"
+    );
+    assert!(
+        !directive_path(fixture.path(), SESSION_ID).exists(),
+        "starting an exploration must register nothing on its own"
+    );
+}
+
+/// The URL this project's dashboard belongs at, whether or not one is serving it.
+fn assigned_url(root: &str) -> String {
+    let output = run(&["serve", "url", "--root", root]);
+    assert!(output.status.success(), "{}", stderr(&output));
+
+    stdout(&output)
+        .split_whitespace()
+        .next()
+        .expect("a URL on the first line")
+        .to_owned()
+}
+
+/// The capability the port assignment exists to provide: an answer with nothing
+/// running at all.
+#[test]
+fn serve_url_names_the_assigned_port_with_no_dashboard_running() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+
+    let output = run(&["serve", "url", "--root", &root]);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    let stdout = stdout(&output);
+    assert!(stdout.contains("http://127.0.0.1:43"), "{stdout}");
+    assert!(stdout.contains("(not running)"), "{stdout}");
+    // Asked twice, a project's URL is the same URL.
+    assert_eq!(
+        stdout,
+        self::stdout(&run(&["serve", "url", "--root", &root]))
+    );
+}
+
 #[test]
 fn hook_explore_leaves_an_exploration_already_written_alone() {
     let fixture = project_fixture(&[]);
@@ -1172,4 +1279,99 @@ fn subcommand_help_does_not_execute_the_subcommand() {
         assert!(stdout.contains("--root <PATH>"), "{stdout}");
         assert!(stderr(&output).is_empty(), "{}", stderr(&output));
     }
+}
+
+/// The only test that starts a real dashboard, because detachment, the log, and
+/// the poll that waits for an answer cannot be observed from outside the binary
+/// any other way: they pass in a harness and fail in a real hook invocation.
+///
+/// It kills what it started using the pid that dashboard reports about itself,
+/// which is the same fact `serve list` will be built on. Unix only — the
+/// mechanism under test is `process_group(0)`.
+#[cfg(unix)]
+#[test]
+fn hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it() {
+    let fixture = project_fixture(&[]);
+    // This one test needs the start to actually happen.
+    fs::remove_dir(fixture.path().join(".openspec-doc/serve.log")).expect("unblock the serve log");
+    let root = fixture.path().to_str().unwrap().to_owned();
+    write_session_note(fixture.path(), "# Exploration\n\nSomething to read.\n");
+    // Registered already, so this turn boundary opens no browser tab: the tab is
+    // bounded by first registration, and a test run must not open one per test.
+    let record = directive_path(fixture.path(), SESSION_ID);
+    fs::create_dir_all(record.parent().unwrap()).expect("create directives dir");
+    fs::write(
+        &record,
+        r#"{"pending":false,"reason":"","createdAt":"2026-08-12T08:00:00Z","consumedAt":null}"#,
+    )
+    .expect("register the session");
+
+    let stopped = claude_stop(&root);
+    assert!(stopped.status.success(), "{}", stderr(&stopped));
+
+    // The hook process has exited by now, so anything still serving outlived it.
+    let listed = run(&["serve", "url", "--root", &root]);
+    let listed = stdout(&listed);
+    let Some(url) = listed.split_whitespace().next().map(str::to_owned) else {
+        panic!("no URL printed: {listed}");
+    };
+    let identity = identity_of(&url);
+    let pid: i32 = between(&identity, "\"pid\":", "}")
+        .trim()
+        .parse()
+        .unwrap_or_else(|error| panic!("{error} in {identity}"));
+
+    // Killed before any assertion can fail and leak it.
+    let killed = Command::new("kill")
+        .arg(pid.to_string())
+        .status()
+        .expect("kill the dashboard");
+
+    assert!(
+        listed.contains("(serving)"),
+        "the started dashboard was not found: {listed}\nhook said: {}",
+        stderr(&stopped)
+    );
+    assert!(
+        identity.contains(&format!(
+            "\"root\":\"{}\"",
+            fixture.path().canonicalize().unwrap().display()
+        )),
+        "the dashboard serves someone else: {identity}"
+    );
+    assert!(
+        fixture.path().join(".openspec-doc/serve.log").is_file(),
+        "the dashboard's output has nowhere to explain a failed start"
+    );
+    assert!(
+        killed.success(),
+        "could not stop the dashboard this test started"
+    );
+}
+
+/// One fixed `GET` to the identity route, the way the hook's own probe does it.
+#[cfg(unix)]
+fn identity_of(url: &str) -> String {
+    use std::io::Read;
+    use std::net::TcpStream;
+
+    let address = url.trim_start_matches("http://");
+    let mut stream = TcpStream::connect(address).expect("connect to the dashboard");
+    stream
+        .write_all(format!("GET /api/identity HTTP/1.0\r\nHost: {address}\r\n\r\n").as_bytes())
+        .expect("write request");
+    let mut response = String::new();
+    stream.read_to_string(&mut response).expect("read response");
+    response
+}
+
+#[cfg(unix)]
+fn between<'a>(haystack: &'a str, after: &str, before: &str) -> &'a str {
+    let rest = haystack
+        .split_once(after)
+        .unwrap_or_else(|| panic!("no {after:?} in {haystack}"))
+        .1;
+    rest.split_once(before)
+        .unwrap_or_else(|| panic!("no {before:?} after {after:?} in {haystack}"))
+        .0
 }

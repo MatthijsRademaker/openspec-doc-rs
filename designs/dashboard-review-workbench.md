@@ -88,8 +88,10 @@ instead docked fixed above the safe-area inset and the flow reserves clearance b
 The drawer is modal in both: teleported out of the layout, backdropped, focus-trapped, and
 overlaying the page only while a reviewer holds it open.
 
-The selected document holds a fixed readable measure rather than filling its column, so
-collapsing the conversation rail turns freed width into margin instead of re-wrapping prose.
+The selected document holds a readable measure derived from the viewport rather than from its
+column, so collapsing the conversation rail turns freed width into margin instead of re-wrapping
+prose. The measure grows with the viewport on stages wide enough that a fixed one would spend the
+growth on void, but never with the column.
 The collapse control therefore buys the reviewer quiet — the threads go away and the chassis
 breathes — and no longer buys a wider document. That is a smaller benefit than it used to
 advertise; if it turns out not to be worth a control, remove the control rather than restore
@@ -110,11 +112,31 @@ the foot of that content, inside a fade three times as long — so the region be
 thread is always a trace, and artwork with no free space below it never resolves at all. At
 narrow width atmosphere shrinks or disappears before content.
 
+The index observation field is the one artwork that continues past its own band. It is a
+page-level layer beneath the hero *and* the change and session registers, sized by the source's
+own proportions rather than by the band, so widening the display enlarges the composition instead
+of opening a gap inside it. Its fade is a declared distance and not a judgement: full strength
+lasts only as long as the hero's free space, the field reaches the top of the register panelling
+at roughly a third of full strength, and it decays to nothing over the remainder. It ends above
+the lower plate strip, which carries its own hard-cropped artwork and would otherwise compound
+with it. This stays composition rather than wallpaper for one structural reason — the registers
+are opaque `--surface` panels, so the field is seen *around and between* them and never through
+them, and no identifier, metadata value, state label, link, or focus ring is ever read against
+it. The gaps in the register grid are therefore load-bearing: welding the registers into one
+chassis would leave the bleed nowhere to show. At 390px the field stops being ground and returns
+to the bounded crop below the hero.
+
+Stipple has one sanctioned use *on* content rather than beside it: an acquired artifact identity
+resolves through a halftone mask, so for the length of that gesture the dot grid is what the title
+is made of and it prints in the same texture as the plate beside it. It is a transient reveal and
+not a layer — it advances monotonically toward full coverage, never starts from nothing, and leaves
+no mask behind. Any other motif over live text is out.
+
 Only named runtime slots may use raster derivatives. Shared observatory allowlist:
 
 | Runtime slot | Source and crop | Output | Index and scope roles |
 | --- | --- | --- | --- |
-| `web/public/assets/images/observatory-field.webp` | `main-panel-background.png`; crop `x=128, y=75, w=1408, h=845` excludes far-left pseudo-control rail while retaining black safe space and right-side face/orbit field | 1200×720 WebP, quality 84, 95,710 bytes | Decorative asymmetric field. Index: right-entering masthead art beside protected text, then bounded crop at 390px. Scope: bounded right-entering selected-document arrival plane beside opaque artifact identity; hidden at 390px before document measure or controls yield. |
+| `web/public/assets/images/observatory-field.webp` | `main-panel-background.png`; crop `x=128, y=75, w=1408, h=845` excludes far-left pseudo-control rail while retaining black safe space and right-side face/orbit field | 1200×720 WebP, quality 84, 95,710 bytes | Decorative asymmetric field. Index: right-entering masthead art beside protected text, continuing below the hero as the attenuated ground the opaque registers sit on, ending above the plate strip, then bounded crop at 390px. Scope: bounded right-entering selected-document arrival plane beside opaque artifact identity; hidden at 390px before document measure or controls yield. |
 | `web/public/assets/images/observatory-plate-sun.webp` | `abstract-sun.png`; crop `x=196, y=120, w=1280, h=640` centers dark solar aperture and radiating line field | 640×320 WebP, quality 82, 65,168 bytes | Decorative first hard-edged plate in index lower strip. Scope has no pre-document gallery; any future scope use is limited to subordinate peripheral chassis cells. |
 | `web/public/assets/images/observatory-plate-face.webp` | `abstract-face.png`; crop `x=196, y=150, w=1280, h=640` isolates eye and halftone texture rather than repeating masthead face composition | 640×320 WebP, quality 82, 73,302 bytes | Decorative second hard-edged plate in index lower strip. Scope has no pre-document gallery; any future scope use is limited to subordinate peripheral chassis cells. |
 | `web/public/assets/images/observatory-plate-star-system.webp` | `abstract-star-system.png`; crop `x=168, y=230, w=1280, h=640` places orbital intersections and nodes off center | 640×320 WebP, quality 82, 15,416 bytes | Decorative third hard-edged plate in index lower strip. Scope has no pre-document gallery; any future scope use is limited to subordinate peripheral chassis cells. |
@@ -145,10 +167,10 @@ Motion uses six event verbs tied to real system work:
 
 | Verb | Trigger | Geometry | Settled truth |
 | --- | --- | --- | --- |
-| Acquire | Scope, artifact, or thread selection | Registration rule, hard reveal, target ticks | Existing selected/current state |
+| Acquire | Scope, artifact, or thread selection | Target ticks, and — for an artifact — the identity printing out of the plate's halftone in discrete passes on a re-registering grid while the source rises into that fixed frame | Existing selected/current state |
 | Triangulate | Source/thread navigation | Paired origin/destination locks and bounded edge trace | Existing active block and thread |
 | Transmit | Unresolved reviewer mutation | Carrier rule at submitting surface | Returned thread, status, or verdict |
-| Receive | Successful mutation or remote update | Landing edge, lock, or optical slit | Updated content and semantic state |
+| Receive | Successful mutation or remote update | Landing edge or lock at the surface the content landed on | Updated content and semantic state |
 | Resolve | Status or delivery change | Glyph and line geometry closes or redirects | Immediate visible label and final glyph |
 | Reconfigure | Rail or decision surface opens/closes | Hard mask and compatible chassis-track movement | Existing expanded, collapsed, or modal state |
 
@@ -158,11 +180,47 @@ become persisted state. Desktop triangulation may use a viewport-edge direction 
 narrow flow keeps marks local and vertical rather than drawing through content.
 
 Standard transitions finish in 100–200ms using the central 160ms token and
-`cubic-bezier(0.2, 0, 0.2, 1)`. Allowed geometry includes opacity, slight registration
-displacement, line growth, hard masks, clipping, and glyph/line metamorphosis. A nonblocking
-arrival report may dwell longer when it withholds nothing, intercepts nothing, and clears itself.
-Content, Router history, focus, semantic text, and final geometry update immediately rather than
-waiting for presentation.
+`cubic-bezier(0.2, 0, 0.2, 1)`. Acquire is the one exception. The coordinate transfer and the
+source's rise share a 400ms token so the movement reads as one gesture rather than a fast transfer
+followed by a slow landing; the identity's halftone resolve runs a longer 600ms token of its own,
+because it is the one treatment a reviewer watches rather than reads through and at 400ms it was
+over before the eye had settled on the name. The transfer is a native view transition, which
+holds the page un-hit-testable while it runs, so that token is a latency budget as much as a motion
+one — raising it lengthens the window in which the rail ignores clicks by the same amount. The cost
+is pointer targeting only: route, history, focus, semantic text, and content have all updated
+before the window opens, and the click that opened it has already taken effect. The event channel
+gating a gesture dwells at least as long as the gesture, since a shorter dwell truncates the
+animation and the declared duration becomes one the interface never shows. Allowed geometry includes
+opacity, slight registration displacement, line growth, hard masks, clipping, halftone reveals in
+the plates' own texture, and glyph/line metamorphosis. A nonblocking arrival report may dwell longer
+when it withholds nothing, intercepts nothing, and clears itself. Content, Router history, focus,
+semantic text, and final geometry update immediately rather than waiting for presentation.
+
+### Acquire is the worked example — build new motion against it
+
+A prohibition list produces treatments that break none of the rules and mean nothing. Acquire is
+the reference gesture; check a proposed treatment against these five, all of which it earns
+concretely. Acquire previously reported itself with a lit bar sliding across the artwork under two
+registration rules — that broke no prohibition and was still wrong.
+
+1. **Say what the surface is made of.** The identity sits beside a dithered photographic plate, so
+   it prints in that plate's halftone: a 6px dot cell masking the title, coverage 30% → 100%. The
+   bar it replaced would have looked identical over a chart, a table, or a login form. If a
+   treatment would suit any surface, it is describing none.
+2. **Quantize it.** `steps(6, jump-start)`, and the grid re-registers on each pass via
+   `mask-position`, so the name breaks up differently every strike. The same geometry run
+   continuously is just a fade. The steps *are* the instrument.
+3. **Eat, never withhold.** Coverage starts at 30%, not 0%, and only climbs. The source rises from
+   `2 × --motion-rule` with its fade finished by 35% — inside the standard bound — so the gesture
+   may run long but the reading never waits for it.
+4. **Pick the duration against the mechanism.** The transfer is a native view transition and
+   suspends hit testing for exactly its own length, so it stays on the 400ms token; the halftone is
+   plain CSS on a real element and costs nothing, so it takes 600ms. Two numbers, deliberately, and
+   `--motion-duration-acquire` and `--motion-duration-resolve` are separate for that reason. Merging
+   them re-buys ~200ms of dead rail on every artifact click.
+5. **Make the gate outlast the gesture.** `EVENT_ACQUIRE_MS` covers the longest animation the
+   acquired class gates. It once did not, and the 500ms gesture ran for 160ms — invisible in either
+   file alone, and caught only by measuring. `VisualSystem.test.ts` now holds this.
 
 Rejected ambient effects: perpetual orbit, parallax, pointer-following fields, cursor trails,
 sound, haptics, spring spectacle, whole-page glitch, animated artwork, and decorative loaders.

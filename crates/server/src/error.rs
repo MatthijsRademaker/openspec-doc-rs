@@ -47,6 +47,13 @@ pub enum Error {
         source: io::Error,
     },
 
+    #[error(
+        "no free port for the dashboard: every port from {} to {} on {host} is taken",
+        openspec_doc_core::dashboard::RANGE.start(),
+        openspec_doc_core::dashboard::RANGE.end()
+    )]
+    RangeExhausted { host: String },
+
     #[error("failed to read the address of the bound listener")]
     LocalAddr {
         #[source]

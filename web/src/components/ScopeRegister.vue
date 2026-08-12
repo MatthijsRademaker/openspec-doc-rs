@@ -6,9 +6,9 @@ import RuledRegister from '@/components/RuledRegister.vue'
 import StatusMark from '@/components/StatusMark.vue'
 import { Badge } from '@/components/ui/badge'
 import { age } from '@/lib/age'
-import { createLatestEventChannel, EVENT_TRANSITION_MS } from '@/lib/event-channel'
+import { createLatestEventChannel, EVENT_ACQUIRE_MS } from '@/lib/event-channel'
+import { returningScopeKey } from '@/lib/route-transition'
 import type { Scope } from '@/lib/scopes'
-import { withViewTransition } from '@/lib/view-transition'
 
 const props = withDefaults(
   defineProps<{
@@ -25,7 +25,9 @@ const scopeCount = computed(
   () => `${props.scopes.length} ${props.scopes.length === 1 ? 'scope' : 'scopes'}`,
 )
 const emptyLabel = computed(() => `No ${props.prefix} discovered.`)
-const acquisition = createLatestEventChannel<string>(EVENT_TRANSITION_MS)
+// The gate outlasts the longest treatment it opens — the identity's halftone resolve, which runs
+// `--motion-duration-resolve`. A shorter dwell would cut the print off mid-pass.
+const acquisition = createLatestEventChannel<string>(EVENT_ACQUIRE_MS)
 
 function isPrimaryActivation(event: MouseEvent): boolean {
   return (
@@ -38,20 +40,13 @@ function isPrimaryActivation(event: MouseEvent): boolean {
   )
 }
 
-async function navigateScope(
-  event: MouseEvent,
-  navigate: (event?: MouseEvent) => Promise<unknown>,
-  key: string,
-): Promise<void> {
-  if (!isPrimaryActivation(event)) {
-    await navigate(event)
-    return
-  }
-
-  acquisition.signal(key)
-  await withViewTransition(async () => {
-    await navigate(event)
-  })
+/**
+ * Reports the acquisition and nothing else. The Router owns the navigation and the transition
+ * around it, because a click handler here cannot see the Back that returns through the same
+ * gesture.
+ */
+function reportAcquisition(event: MouseEvent, key: string): void {
+  if (isPrimaryActivation(event)) acquisition.signal(key)
 }
 </script>
 
@@ -76,27 +71,25 @@ async function navigateScope(
       <li v-for="scope in props.scopes" :key="scope.key" class="scope-register__item">
         <article
           class="scope-entry"
-          :class="{ 'scope-entry--acquiring': acquisition.event.value === scope.key }"
+          :class="{
+            'scope-entry--acquiring': acquisition.event.value === scope.key,
+            'scope-entry--coordinate':
+              acquisition.event.value === scope.key || returningScopeKey === scope.key,
+          }"
           :data-motion-event="acquisition.event.value === scope.key ? 'acquire' : undefined"
         >
           <div class="scope-entry__identity">
             <div class="scope-entry__title-line">
               <!-- Exact identity owns Router navigation. Title remains mutable display text only. -->
               <RouterLink
-                v-slot="{ href, navigate }"
-                custom
+                :class="[
+                  'scope-entry__link',
+                  { 'scope-entry__link--identifier': !scope.title },
+                ]"
                 :to="`/${props.prefix}/${scope.key}`"
+                @click="reportAcquisition($event, scope.key)"
               >
-                <a
-                  :class="[
-                    'scope-entry__link',
-                    { 'scope-entry__link--identifier': !scope.title },
-                  ]"
-                  :href="href"
-                  @click="navigateScope($event, navigate, scope.key)"
-                >
-                  {{ scope.title ?? scope.key }}
-                </a>
+                {{ scope.title ?? scope.key }}
               </RouterLink>
               <Badge v-if="scope.mostRecentlyActive" variant="instrument" class="scope-entry__recent">
                 <span aria-hidden="true">◎</span>

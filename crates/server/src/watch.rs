@@ -123,6 +123,20 @@ impl Hub {
 
         receiver
     }
+
+    /// How many pages are subscribed to any of this server's scopes right now.
+    ///
+    /// Read off the broadcast senders the hub already keeps, rather than a second
+    /// count maintained alongside them: a receiver dropped when a tab closes
+    /// leaves this figure correct with nothing to remember to update.
+    pub fn subscribers(&self) -> usize {
+        self.scopes
+            .lock()
+            .expect("hub lock")
+            .values()
+            .map(|watched| watched.updates.receiver_count())
+            .sum()
+    }
 }
 
 /// Watch every one of `target.watched_dirs`, reporting only the events that

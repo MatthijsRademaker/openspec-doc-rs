@@ -9,7 +9,11 @@ import ScopeHeader from '@/components/review/ScopeHeader.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import StatusMark from '@/components/StatusMark.vue'
 import { Button } from '@/components/ui/button'
-import { createLatestEventChannel, EVENT_TRANSITION_MS } from '@/lib/event-channel'
+import {
+  createLatestEventChannel,
+  EVENT_ACQUIRE_MS,
+  EVENT_TRANSITION_MS,
+} from '@/lib/event-channel'
 import {
   createComment,
   eventPath,
@@ -29,6 +33,7 @@ import type {
   TriangulationEvent,
 } from '@/lib/motion-events'
 import type { Verdict } from '@/lib/scopes'
+import { takeHeldScope } from '@/lib/route-transition'
 import { prefersReducedMotion, withViewTransition } from '@/lib/view-transition'
 
 interface ArtifactDocumentHandle {
@@ -55,7 +60,7 @@ const conversationCollapsed = ref(false)
 // Independent latest-event channels: remote document receipt never erases reviewer confirmation.
 const documentArrival = createLatestEventChannel<string>()
 const reviewReceipt = createLatestEventChannel<ReviewReceipt>()
-const artifactAcquisition = createLatestEventChannel<string>(EVENT_TRANSITION_MS)
+const artifactAcquisition = createLatestEventChannel<string>(EVENT_ACQUIRE_MS)
 const triangulation = createLatestEventChannel<TriangulationEvent>(EVENT_TRANSITION_MS)
 const reconfiguration = createLatestEventChannel<'conversation'>(EVENT_TRANSITION_MS)
 let events: EventSource | undefined
@@ -120,8 +125,10 @@ watch(
     artifactFocusTarget.value = undefined
     const heading = document.getElementById('selected-artifact-title')
     if (!heading) throw new Error(`Selected artifact heading missing for ${path}`)
+    // Focus moves without the viewport moving: selecting a coordinate replaces the document under
+    // an unchanged scroll position, so the reviewer keeps the vantage they chose. The acquisition
+    // gesture is what reports the arrival; a scroll would report it twice and steal the page.
     heading.focus({ preventScroll: true })
-    heading.scrollIntoView({ block: 'start', behavior: navigationBehavior() })
   },
   { flush: 'post' },
 )
@@ -262,7 +269,9 @@ async function canonicalizeArtifactSelection(detail: ScopeDetail, generation: nu
 }
 
 async function refresh(generation = loadGeneration) {
-  const detail = await fetchScope(kind.value, key.value)
+  // A held navigation already read this scope; taking it here renders the real header in the frame
+  // the transition captures, and spends no second round trip on what the hold already paid for.
+  const detail = takeHeldScope(kind.value, key.value) ?? (await fetchScope(kind.value, key.value))
   if (generation === loadGeneration) {
     scope.value = detail
     pendingArtifact.value = undefined

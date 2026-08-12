@@ -34,9 +34,28 @@ Delivered exactly once across the two.
 ```bash
 cargo install --path crates/cli --locked
 openspec-doc serve          # discovers the project root by walking up from the cwd
+openspec-doc serve url      # this project's dashboard URL, and whether one is serving it
 ```
 
 The `openspec` CLI must also be on `PATH` — promotion runs `openspec validate`.
+
+Once the hooks are wired, `serve` is not something you run: the turn-end hook brings a dashboard up at
+the first turn boundary of a session that has something to review, and keeps it up at every later one.
+
+**Each project gets its own port and keeps it.** The first time a project root is seen it is assigned the
+lowest free port in `4321`–`4352`, recorded in the machine's state directory — `$XDG_STATE_HOME/openspec-doc/ports.json`,
+defaulting to `~/.local/state`, and the local data directory on macOS and Windows. Machine-global rather
+than under `.openspec-doc/`, because ports are global to the machine and `.openspec-doc/` is gitignored:
+`git clean -xdf` would delete a record whose server is still running. So a project's URL is the same today
+as it was last week whatever order your checkouts started in, which is what makes it bookmarkable and what
+lets `serve url` answer with nothing running.
+
+That record is a hint and never an authority. Whether a dashboard is *running* is asked of the network: the
+whole range is swept for this project's root before anything is started, so losing the record costs
+stability and never correctness.
+
+Passing `--port` explicitly — as the frontend loop below does — gets you exactly that port, fails rather
+than falling back to another, and changes nothing about the project's assignment.
 
 ## Documentation
 

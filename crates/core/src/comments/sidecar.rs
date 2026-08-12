@@ -14,7 +14,7 @@ use crate::session::check_session_id;
 use super::anchor::{self, Anchor};
 use super::artifact;
 use super::record::{
-    new_id, Comment, Edit, Event, Relocation, Reply, ReplyAuthor, Status, StatusUpdate, Thread,
+    Comment, Edit, Event, Relocation, Reply, ReplyAuthor, Status, StatusUpdate, Thread, new_id,
 };
 use super::{COMMENTS_DIR, SESSION_DIR};
 

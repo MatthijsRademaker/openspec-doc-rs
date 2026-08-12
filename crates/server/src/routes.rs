@@ -10,12 +10,14 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use openspec_doc_core::comments::{self, Comment, Reply, ReplyAuthor, Status, StatusUpdate};
+use openspec_doc_core::dashboard::Identity;
 use openspec_doc_core::verdict::{self, Record, Verdict};
 use openspec_doc_core::{Error as CoreError, Project};
 use serde::{Deserialize, Serialize};
 use tokio_stream::{StreamExt, wrappers::BroadcastStream};
 
 use crate::error::{self, Error};
+use crate::idle::Activity;
 use crate::scope::Resolved;
 use crate::watch::{Hub, Target, Update};
 use crate::{api, assets, scope};
@@ -24,16 +26,19 @@ use crate::{api, assets, scope};
 struct AppState {
     project: Project,
     hub: Arc<Hub>,
+    activity: Arc<Activity>,
 }
 
-pub fn router(project: Project) -> Router {
+pub fn router(project: Project, hub: Arc<Hub>, activity: Arc<Activity>) -> Router {
     let state = AppState {
         project,
-        hub: Arc::new(Hub::default()),
+        hub,
+        activity,
     };
 
     Router::new()
         .route("/", get(app))
+        .route(openspec_doc_core::dashboard::IDENTITY_PATH, get(identity))
         .route("/api/index", get(index_data))
         .route("/sessions/{session_id}", get(session_page))
         .route("/changes/{name}", get(change_page))
@@ -116,6 +121,25 @@ struct NewVerdict {
 
 async fn app() -> Response {
     assets::shell()
+}
+
+/// Report which project this dashboard serves and the process serving it, and
+/// count the request as activity.
+///
+/// Discovery compares canonical roots, so the comparison is exact rather than
+/// heuristic. The process id is reported because it is the only thing that makes
+/// an unwanted dashboard killable once discovery has found it.
+///
+/// The turn-end hook probes this route to decide whether to start a dashboard, so
+/// a heartbeat and a start probe are the same request — which is what lets the
+/// idle deadline know a session is still working with every tab closed.
+async fn identity(State(state): State<AppState>) -> Json<Identity> {
+    state.activity.register();
+
+    Json(Identity {
+        root: state.project.root.clone(),
+        pid: std::process::id(),
+    })
 }
 
 async fn index_data(State(state): State<AppState>) -> Result<Json<api::Index>, RouteError> {
@@ -458,7 +482,12 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let address = listener.local_addr().expect("local addr");
         tokio::spawn(async move {
-            axum::serve(listener, router(project)).await.expect("serve");
+            axum::serve(
+                listener,
+                router(project, Arc::new(Hub::default()), Arc::default()),
+            )
+            .await
+            .expect("serve");
         });
         address
     }
@@ -531,6 +560,20 @@ mod tests {
             let response = fetch(address, path).await;
             assert!(response.starts_with("HTTP/1.1 404 Not Found"), "{response}");
         }
+    }
+
+    /// Discovery reuses a dashboard when this route names its own root, so the
+    /// form the root arrives in is what makes the comparison exact.
+    #[tokio::test]
+    async fn the_identity_route_names_the_canonical_root_and_the_process() {
+        let fixture = project_fixture();
+        let root = fixture.path().canonicalize().expect("root");
+        let address = serve(&root).await;
+
+        let identity = fetch_json(address, "/api/identity").await;
+
+        assert_eq!(identity["root"], root.display().to_string());
+        assert_eq!(identity["pid"], std::process::id());
     }
 
     #[tokio::test]

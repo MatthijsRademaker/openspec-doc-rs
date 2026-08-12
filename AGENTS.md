@@ -66,7 +66,10 @@ This project's own tool, `openspec-doc`, is wired into two of the agent's hooks:
 
 How it works:
 
-- The owner runs `openspec-doc serve` and reviews the exploration notes and change artifacts in a browser on `127.0.0.1`.
+- The dashboard starts itself. `hook stop` brings one up at the first turn boundary of a session that has something to review — a scratch note, or a change its exploration was promoted to — and keeps it up at every later one. Nobody has to remember to run `openspec-doc serve` first, and a session doing unrelated work leaves no dashboard behind.
+- **Each project has its own port and keeps it**, assigned in `4321`–`4352` the first time the root is seen and recorded in the machine's state directory (`$XDG_STATE_HOME/openspec-doc/ports.json`, or the local data directory on macOS and Windows). So this project's URL is a fact you can state before anything is running: `openspec-doc serve url` prints it plus whether a dashboard is live on it, and `hook explore` prints it beside the note path. **When the owner asks where the review is, answer with that URL** rather than telling them to start a server.
+- The owner reviews the exploration notes and change artifacts there, in a browser on `127.0.0.1`. A browser opens by itself once per session, at that session's own page, on the turn boundary that first registers it — not when the explore command runs, because at that moment the note does not exist yet and the page would have nothing on it.
+- A hook-started dashboard exits once nothing needs it: thirty minutes with no page subscribed *and* no turn boundary having asked for it. One started by hand does not, because a person asked for it. If a start fails, `.openspec-doc/serve.log` holds that server's output and the hook says so on stderr.
 - From that dashboard they leave comments — anchored to a passage, or scoped to the whole session or change when the feedback is not about one — and submit a phase verdict: keep exploring, move to proposal, or send the open comments back for work.
 - Whichever hook fires first turns the standing verdict into a directive and delivers it: `hook prompt` adds the directive's text to the context of the turn the owner's prompt starts, and `hook stop` blocks the turn end and feeds the text back into the session.
 - A directive is delivered exactly once across the two. Prompt-time delivery is the usual path, because the reviewer's own prompt is normally what follows a verdict — the Stop path is what stops you going idle while feedback is outstanding, and the only path that works when no prompt is coming.
@@ -77,10 +80,11 @@ Where the state lives, all under `.openspec-doc/` at the project root:
 
 | Path | What is in it |
 | --- | --- |
-| `directives/_session/<session-id>.json` | The directive queued for a session, and whether it has been injected yet |
+| `directives/_session/<session-id>.json` | The directive queued for a session, and whether it has been injected yet. Its existence is also what makes a session *listed*, so it is written only for a session that has something to review |
 | `comments/<change>.jsonl`, `comments/_session/<session-id>.jsonl` | Review comments, anchored to a passage or to the scope itself; `openspec-doc comment list --change <name>` prints them |
 | `verdicts/<change>.jsonl`, `verdicts/_session/<session-id>.jsonl` | The verdict stream, latest record last; the reviewer's notes are in it |
 | `scratch/<change>.md`, `scratch/_session/<session-id>.md` | The exploration note, before and after it is promoted to a change |
+| `serve.log` | A hook-started dashboard's own output, which is where a start that did not come up explains itself |
 
 Report back on a comment with `openspec-doc comment reply --change <name> --comment <id> --body <text>`, then mark it with `openspec-doc comment address --change <name> --comment <id>`. `addressed` is a claim that the work is done, which is yours to make. Do not resolve comments you were asked to address: resolving is the reviewer accepting the work, and reopening is them rejecting it — both are theirs.
 
@@ -97,3 +101,5 @@ That file is the *only* thing the dashboard gives the reviewer to read and ancho
 The note is also what gets promoted, and promotion happens only if you say which change the exploration became: run `openspec-doc scratch claim --session $CLAUDE_CODE_SESSION_ID --change <name>` once the change directory exists, and the next Stop renames the note to `.openspec-doc/scratch/<change>.md` and moves its comments with it, so the exploration stays readable after it has been formalized. Nothing infers this for you — a change directory appearing says nothing about which session created it, and with several sessions open, guessing renames someone else's exploration onto your change. An unclaimed note simply stays at its session path. A session with no note is never promoted at all, which is why nothing creates the file until an exploration actually starts.
 
 **Known gap:** `UserPromptExpansion` fires only for commands the *owner* types. If you start an exploration yourself by invoking the explore skill through the `Skill` tool, no hook fires and no note is created — write it yourself at the `$CLAUDE_CODE_SESSION_ID` path above.
+
+**Known gap, pi:** pi sessions get no scratch note at all. `.pi/extensions/openspec-doc-hook.ts` calls `hook stop` at `agent_end`, so pi gets the directive loop and the dashboard for free, but nothing calls `hook explore` — so a pi exploration is invisible to the reviewer, and a pi session is never registered under the review-material predicate either. The fix, when someone takes it: a `pi.on("input")` handler, which fires before skill and template expansion and sees raw input text, so its matcher has to cover both `/opsx-explore` (the prompt template) and `/skill:openspec-explore` (the skill). Do **not** use `pi.registerCommand` for it — extension commands are checked before the input event and suppress it, so registering `opsx-explore` would shadow `.pi/prompts/opsx-explore.md` and silently break the existing prompt.

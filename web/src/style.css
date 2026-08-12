@@ -159,8 +159,36 @@
   --radius-md: 0.25rem;
   --radius: 0.25rem;
   --hairline: 1px;
+  /* Every route's outer shell reads its width and padding here. Two routes each stating their own
+     is how the index came to stop at 90rem and centre itself while the scope workbench ran edge to
+     edge — the same decision written twice and free to drift. A route restating either locally is
+     a defect, not a variation. */
+  --shell-width: 100%;
+  --shell-padding: clamp(var(--space-half), 1.5vw, var(--space-2));
   /* One event grammar owns timing and geometry. Components expose verbs, never local durations. */
   --motion-duration: 160ms;
+  /* A route change is a standard transition and stays inside the 100–200ms bound, but it sits at the
+     top of it rather than at the component figure, because duration is chosen against the mechanism:
+     this one covers the whole viewport, and a pass that reads on a header is over before the eye has
+     crossed a page. At 160ms the grain was arriving faster than it could be seen. It is also the
+     window in which a root transition suspends hit testing, so the bound is a latency budget and
+     this is deliberately spent at its ceiling and no further. */
+  --motion-duration-route: 200ms;
+  /* Acquisition is one movement across two mechanisms: a native view transition carries the
+     coordinate from rail to header, and plain CSS on real elements reports the arrival at the
+     document — the identity printing out of halftone, the target lock, and the source rising into
+     the frame that identity sits in. Both run
+     this duration so they read as one gesture rather than a fast transfer followed by a slow
+     landing. The view-transition half suspends hit testing while it runs, so this token is a
+     latency budget as much as a motion one: raising it lengthens the window in which the interface
+     ignores clicks, one millisecond for one. */
+  --motion-duration-acquire: 400ms;
+  /* The identity's halftone resolve outlives the movement around it on purpose: it is the one
+     treatment a reviewer watches rather than reads through, and at the acquire duration it was
+     over before the eye had settled on the name. It is free to run long because it is plain CSS on
+     a real element — unlike the transfer above, nothing about it suspends hit testing. Whatever
+     gates this must dwell at least this long or the passes are cut off mid-print. */
+  --motion-duration-resolve: 600ms;
   --motion-easing: cubic-bezier(0.2, 0, 0.2, 1);
   --motion-event-dwell: 2200ms;
   /* Every decorative displacement is a multiple of this, so reduced motion zeroes all of them
@@ -452,29 +480,77 @@
 
 .observatory-shell {
   display: grid;
-  width: min(100%, 90rem);
+  width: var(--shell-width);
   min-width: 0;
-  margin: 0 auto;
-  padding: clamp(var(--space-2), 3vw, var(--space-6));
+  padding: var(--shell-padding);
   gap: clamp(var(--space-3), 3vw, var(--space-4));
+}
+
+.observatory-index {
+  position: relative;
+  isolation: isolate;
+  /* The hero band is the field's frame of reference as well as its own height: the fade is declared
+     against it, so the two cannot drift apart. */
+  --index-hero-height: clamp(14rem, 24vw, 19rem);
+}
+
+/* The field is sized by the source's own 1200×720, so its height is 60% of its width, and it is
+   lifted so the hero band lands on 33% of that height rather than on 50%. The band is a letterbox
+   — it shows a fifth of the source at a wide display — so what it is centred on is the whole
+   composition. The eye is at roughly a third of the source's height; centring the field instead
+   put the band's top edge straight through it at every width, which is a crop chosen by arithmetic
+   rather than by looking at the picture. Both numbers describe the same source and move together.
+   What the band excludes now continues below it as ground rather than being clipped away. */
+.index-field {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  right: 0;
+  left: 0;
+  aspect-ratio: 1200 / 720;
+  margin-top: calc(var(--index-hero-height) / 2 - 0.33 * 60%);
+  clip-path: inset(0 0 0 46%);
+  pointer-events: none;
+  /* The fade is a declared distance, not a judgement call. `33% ± hero/2` is the hero band in the
+     field's own coordinates, and full strength lasts for the whole of it — the band is the free
+     space, so nothing inside it may be attenuated. The decay starts at the band's lower edge and is
+     already down to a third one shell gap later, which is where the workbench begins, so every
+     register is a panel on ground rather than text on a picture.
+
+     Fading from a quarter-band inside the top of the hero dimmed the bottom of the crop, which is
+     the half of this source that has a face in it. A fade that reaches into the artwork's own band
+     is a crop, not a fade. */
+  mask-image: linear-gradient(
+    to bottom,
+    rgb(0 0 0) 0,
+    rgb(0 0 0) calc(33% + var(--index-hero-height) / 2),
+    rgb(0 0 0 / 0.32) calc(33% + var(--index-hero-height) / 2 + var(--space-4)),
+    rgb(0 0 0 / 0) 100%
+  );
+}
+
+.index-field__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  filter: contrast(1.04) saturate(0.76);
 }
 
 .index-observation {
   position: relative;
-  isolation: isolate;
   display: grid;
   min-width: 0;
-  min-height: clamp(14rem, 24vw, 19rem);
-  overflow: hidden;
-  border-block: var(--hairline) solid var(--border-ink);
-  background: var(--canvas);
+  min-height: var(--index-hero-height);
+  border-block-start: var(--hairline) solid var(--border-ink);
 }
 
 .index-observation__content {
   position: relative;
   z-index: 1;
   display: grid;
-  width: min(52%, 42rem);
+  width: 52%;
   min-width: 0;
   align-content: center;
   gap: var(--space-3);
@@ -491,22 +567,6 @@
   text-transform: uppercase;
 }
 
-.index-observation__art {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  clip-path: inset(0 0 0 46%);
-  pointer-events: none;
-}
-
-.index-observation__image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  filter: contrast(1.04) saturate(0.76);
-}
-
 .index-observation::after {
   position: absolute;
   z-index: 2;
@@ -518,7 +578,11 @@
   content: "";
 }
 
+/* Every band below the hero is a panel over the field, never a window onto it: opaque surface,
+   raised out of the field's plane, so no state text is ever read against artwork. */
 .index-state {
+  position: relative;
+  z-index: 1;
   display: grid;
   gap: var(--space-2);
   min-height: 10rem;
@@ -541,7 +605,11 @@
   overflow-wrap: anywhere;
 }
 
+/* The gaps are load-bearing here: they are where the field is seen. Welding the registers into one
+   chassis would leave the bleed nowhere to show. */
 .index-workbench {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(20rem, 0.8fr);
   min-width: 0;
@@ -555,6 +623,8 @@
 }
 
 .index-plates {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1.15fr) minmax(12rem, 0.7fr);
   min-width: 0;
@@ -659,7 +729,6 @@
 }
 
 .scope-entry {
-  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(27rem, 0.8fr);
   min-width: 0;
@@ -675,29 +744,26 @@
   transform: translateX(var(--motion-nudge));
 }
 
-.scope-entry::before {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: var(--motion-rule);
-  height: var(--hairline);
-  background: var(--event-color, var(--focus-ink));
-  content: "";
-  opacity: 0;
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition:
-    opacity var(--motion-duration) var(--motion-easing),
-    transform var(--motion-duration) var(--motion-easing);
-}
-
-.scope-entry--acquiring::before {
-  opacity: 1;
-  transform: scaleX(1);
-}
-
+/* Acquisition reports itself here the way it does at the document: the identity resolves through
+   the halftone the plates are built from. What stood here was a lit bar growing across the entry —
+   the treatment the reference gesture names and rejects, because a bar travelling across a surface
+   describes nothing about the surface it crosses. Same keyframes, same duration token and same
+   `steps()` as the document identity, so acquisition has one vocabulary rather than two. */
 .scope-entry--acquiring .scope-entry__link {
-  color: var(--focus-ink);
+  animation: artifact-acquisition-resolve var(--motion-duration-resolve) steps(6, jump-start) both;
+  color: var(--event-color, var(--focus-ink));
+  mask-image: radial-gradient(
+    circle at center,
+    #000 0 var(--acquisition-coverage),
+    #0000 var(--acquisition-coverage)
+  );
+  mask-repeat: repeat;
+  mask-size: 6px 6px;
+}
+
+/* Exactly one element on the index claims the coordinate, in whichever direction the gesture runs:
+   the entry being acquired on the way out, the entry being returned to on the way back. */
+.scope-entry--coordinate .scope-entry__link {
   view-transition-name: scope-coordinate;
 }
 
@@ -856,7 +922,7 @@
     width: 58%;
   }
 
-  .index-observation__art {
+  .index-field {
     clip-path: inset(0 0 0 54%);
   }
 
@@ -900,11 +966,11 @@
 
 @media (max-width: 37.5rem) {
   .observatory-shell {
-    padding: var(--space-2);
     gap: var(--space-3);
   }
 
   .index-observation {
+    order: -1;
     min-height: 0;
   }
 
@@ -913,14 +979,19 @@
     padding: var(--space-3) var(--space-2);
   }
 
-  .index-observation__art {
-    position: relative;
+  /* Atmosphere goes before content: the field stops being ground and returns to a bounded crop
+     under the hero, so nothing below it is read against artwork at all. */
+  .index-field {
+    position: static;
     height: 11rem;
+    aspect-ratio: auto;
+    margin-top: 0;
     clip-path: none;
+    mask-image: none;
     border-top: var(--hairline) solid var(--border-ink);
   }
 
-  .index-observation__image {
+  .index-field__image {
     object-position: 72% center;
   }
 
@@ -977,10 +1048,9 @@
 }
 
 .scope-workbench {
-  width: 100%;
+  width: var(--shell-width);
   min-width: 0;
-  margin: 0;
-  padding: clamp(var(--space-1), 1.5vw, var(--space-3));
+  padding: var(--shell-padding);
 }
 
 .scope-header {
@@ -1003,6 +1073,12 @@
 
 .scope-header__identity {
   border-right: var(--hairline) solid var(--border-ink);
+}
+
+/* The destination of the index gesture: the scope's real rendered identity, which is why the
+   navigation is held until it exists. */
+.scope-header__identity .document-heading__title {
+  view-transition-name: scope-coordinate;
 }
 
 .scope-header .document-heading__title {
@@ -1304,11 +1380,12 @@
   );
 }
 
+/* No coordinate name here. This is scaffolding the scope discards the moment it loads, and a
+   gesture that lands on it reports the arrival of something the reviewer never selected. */
 .scope-route-acquisition__key {
   color: var(--focus-ink);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   overflow-wrap: anywhere;
-  view-transition-name: scope-coordinate;
 }
 
 .artifact-navigator {
@@ -1464,6 +1541,10 @@
   /* Where the reading column ends is where the artwork plate begins, so both read one declaration:
      a plate 1rem out of step is 1rem of block background painted over the artwork. */
   --document-measure: min(100%, 45rem);
+  /* The prose measure must stay below the narrowest document column any desktop layout produces
+     (~487px at the 58rem breakpoint with the conversation rail expanded). Above that, collapsing
+     the rail crosses the boundary between `100%` and the measure and re-wraps every paragraph. */
+  --prose-measure: 48ch;
 
   position: relative;
 }
@@ -1522,75 +1603,91 @@
   background: var(--canvas);
 }
 
-.artifact-document__header::before,
-.artifact-document__header::after {
-  position: absolute;
-  z-index: 4;
-  content: "";
-  opacity: 0;
-  pointer-events: none;
+/* Registered so it interpolates as a number. A gradient stop written as a plain custom property is
+   an unparsed token to the animation engine, which then animates the whole `mask-image` discretely
+   — the dot grid jumps straight from its first pass to solid and the gesture is a two-frame flash.
+   This is the only mechanism that makes a value inside a gradient animatable. */
+@property --acquisition-coverage {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
 }
 
-/* Coordinate transfer terminates as one optical operation: a narrow slit crosses the artwork
-   while registration rules lock the selected-document plane. Neither layer snapshots prose. */
-.artifact-document__header::before {
-  top: 0;
-  bottom: 0;
-  left: 38%;
-  width: clamp(2.5rem, 8vw, 7rem);
-  border-inline: var(--hairline) solid var(--event-color, var(--focus-ink));
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in srgb, var(--event-color, var(--focus-ink)) 11%, transparent),
-    transparent
+/* The identity prints in the texture of the plate it sits beside. What was here before — a lit bar
+   sliding across the artwork under a pair of registration rules — was generic interface motion
+   wearing instrument colours: nothing about a travelling bar says the surface is a dithered
+   photographic plate, and beside the actual stipple it read as chrome laid over the picture rather
+   than as the picture resolving.
+
+   The mask is declared on the acquired rule rather than in the keyframes so it exists only while
+   the class does; a permanent mask here is compositing cost on every scroll for the length of one
+   gesture. `#0000` rather than `transparent` keeps both stops the same colour, or the dot edges
+   pick up a grey fringe against a near-black canvas. */
+.artifact-document--acquired .artifact-document__identity {
+  animation: artifact-acquisition-resolve var(--motion-duration-resolve) steps(6, jump-start) both;
+  mask-image: radial-gradient(
+    circle at center,
+    #000 0 var(--acquisition-coverage),
+    #0000 var(--acquisition-coverage)
   );
+  mask-repeat: repeat;
+  mask-size: 6px 6px;
 }
 
-.artifact-document__header::after {
-  inset: 0;
-  border-block: var(--hairline) solid var(--event-color, var(--focus-ink));
-  clip-path: inset(0 100% 0 0);
-}
+/* Coverage runs 30% → 100%, not 0% → 100%: the artifact's name is never withheld, it is eaten by
+   the dot grid and then printed solid, so legibility only improves as the gesture runs. It starts
+   deep enough that the name is a texture rather than text wearing a screen — 30% of a 6px cell is
+   the point where the serif breaks into dots instead of merely thinning.
 
-.artifact-document--acquired .artifact-document__header::before {
-  animation: artifact-acquisition-slit var(--motion-duration) var(--motion-easing) both;
-}
-
-.artifact-document--acquired .artifact-document__header::after {
-  animation: artifact-acquisition-register var(--motion-duration) var(--motion-easing) both;
-}
-
-@keyframes artifact-acquisition-slit {
+   `steps(6, jump-start)` is the whole idea — a continuous dissolve reads as a fade, six discrete
+   passes read as a plate being struck, and `jump-start` spends the first frame on pass one rather
+   than on nothing. The grid walks as it prints: `mask-position` steps with the coverage, so each
+   pass re-registers the dots somewhere new and the name breaks up differently every time instead
+   of one fixed screen filling in. Both the walk and the settle are multiples of `--motion-nudge`,
+   the token every decorative displacement is built from, so reduced motion zeroes them centrally
+   rather than needing entries of their own. */
+@keyframes artifact-acquisition-resolve {
   0% {
-    opacity: 0;
-    transform: translateX(calc(-2 * var(--motion-rule)));
+    --acquisition-coverage: 30%;
+
+    transform: translateY(var(--motion-nudge));
+    mask-position: 0 0;
   }
 
-  22% {
+  100% {
+    --acquisition-coverage: 100%;
+
+    transform: translateY(0);
+    mask-position: calc(3 * var(--motion-nudge)) calc(-2 * var(--motion-nudge));
+  }
+}
+
+/* The chassis reports the acquisition on itself; this reports it on the thing that actually
+   arrived. Only the blocks move — the header and its plate are the fixed frame the source rises
+   into, which is what makes it read as a document landing rather than the page sliding. */
+.artifact-document--acquired .artifact-document__blocks {
+  animation: artifact-acquisition-rise var(--motion-duration-acquire) var(--motion-easing) both;
+}
+
+/* Two decisions the reviewer would otherwise pay for. The rise is a multiple of `--motion-rule`,
+   so reduced motion zeroes it from the token list with every other decorative displacement instead
+   of needing an entry of its own. And the fade finishes at 35% — inside the standard 200ms bound —
+   because the gesture may take the acquire duration but the reading may not: past that point the
+   text is at full strength and merely still moving. `transform` is unset in between so it
+   interpolates across the whole duration rather than arriving with the opacity. */
+@keyframes artifact-acquisition-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(calc(2 * var(--motion-rule)));
+  }
+
+  35% {
     opacity: 1;
   }
 
   100% {
-    opacity: 0;
-    transform: translateX(calc(5 * var(--motion-rule)));
-  }
-}
-
-@keyframes artifact-acquisition-register {
-  0% {
-    opacity: 0;
-    clip-path: inset(0 100% 0 0);
-  }
-
-  55% {
-    opacity: 0.8;
-    clip-path: inset(0);
-  }
-
-  100% {
-    opacity: 0;
-    clip-path: inset(0);
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -1649,7 +1746,7 @@
   flex: 0 0 1.75rem;
   border: var(--hairline) solid var(--event-color, var(--focus-ink));
   border-radius: 50%;
-  animation: artifact-coordinate-lock var(--motion-duration) var(--motion-easing) both;
+  animation: artifact-coordinate-lock var(--motion-duration-acquire) var(--motion-easing) both;
   view-transition-name: artifact-lock;
 }
 
@@ -1721,8 +1818,8 @@
    portrait, which `cover` resolves by slicing the head off at both ends. On a stage wide enough to
    spare it the reading column is bounded and the artwork takes the remainder as a plate deeper than
    it is wide, so the crop runs horizontally across a source whose subject is centred and the face
-   survives. 45rem is the bound because the widest ASCII diagram in this repository is 86 columns,
-   and 45rem is what stops that diagram scrolling.
+   survives. 45rem is the floor of that bound because the widest ASCII diagram in this repository is
+   86 columns, and 45rem is what stops that diagram scrolling.
 
    The plate is taller than the header, and the header stops clipping it, so it bleeds down past the
    header rule into the space beside the first blocks and dissolves there — the same bleed-and-fade
@@ -1737,6 +1834,23 @@
    unused — and buys line breaks that never move. Headings are in this branch for that reason and
    not in the measure rule above: 100% is a fixed width only while the column is bounded. */
 @media (min-width: 110rem) {
+  /* A fixed 45rem is the right bound at the bottom of this branch and dead space at the top of it:
+     the stage grows with the viewport, the rails do not, so every pixel past ~1760 lands in this
+     one column and a fixed measure spends all of it on void below the plate. Scaling the measure
+     hands that growth back to the document and the plate in proportion. The floor is the old fixed
+     value, so nothing moves at the breakpoint itself; the ceiling is where a reading column stops
+     being a reading column, and past it the growth goes to the plate as before. */
+  .artifact-document {
+    --document-measure: min(100%, clamp(45rem, 36vw, 58rem));
+    /* The prose measure moves with the column for the same reason: widening the block box alone
+       relocates the void rather than removing it, leaving section rules running past where the
+       text stops. 66ch is where a line stops being readable, so on the widest stages the block box
+       overshoots the prose again — by a margin, not by half the column. The rail-collapse hazard
+       the base value guards against is not in this branch: every column here is already wider than
+       either measure, so the crossing between `100%` and the measure cannot happen. */
+    --prose-measure: 66ch;
+  }
+
   .artifact-document__blocks {
     width: var(--document-measure);
   }
@@ -1856,11 +1970,8 @@
   outline-offset: calc(-1 * var(--space-half));
 }
 
-/* The measure must stay below the narrowest document column any desktop layout produces
-   (~487px at the 58rem breakpoint with the conversation rail expanded). Above that, collapsing
-   the rail crosses the boundary between `100%` and the measure and re-wraps every paragraph. */
 .review-block__content {
-  width: min(100%, 48ch);
+  width: min(100%, var(--prose-measure));
   min-width: 0;
   color: var(--bone);
   font-size: 0.98rem;
@@ -1869,8 +1980,8 @@
 }
 
 /* The measure is a prose measure, and neither of these is prose. A table needs its columns and an
-   ASCII diagram needs its columns to line up, and neither survives being folded into 48
-   characters. A fence never re-wraps whatever width it is given; a table's cells do, which is the
+   ASCII diagram needs its columns to line up, and neither survives being folded into the prose
+   measure. A fence never re-wraps whatever width it is given; a table's cells do, which is the
    one place this stage lets a column change reflow something. */
 .review-block__content:has(:is(pre, table)) {
   width: 100%;
@@ -2803,11 +2914,6 @@ textarea::placeholder {
 }
 
 @media (max-width: 37.5rem) {
-  .scope-workbench {
-    padding: var(--space-1);
-    padding-bottom: 7rem;
-  }
-
   .scope-header__identity,
   .scope-header__state {
     padding: var(--space-2);
@@ -2899,20 +3005,111 @@ textarea::placeholder {
 }
 
 /* Native transition owns only named coordinates. Root snapshots switch immediately so complete
-   documents and conversations never ghost over one another during artifact replacement. */
-::view-transition-old(root) {
+   documents and conversations never ghost over one another during artifact replacement — which is
+   the case this was written for, and now the only case it applies to. Declared globally it also
+   caught route changes between two entirely different pages, which is not a situation it was
+   reasoning about and was the largest single cause of the hard cut between index and scope. */
+html:not([data-view-transition="route"])::view-transition-old(root) {
   opacity: 0;
   animation: none;
 }
 
-::view-transition-new(root) {
+html:not([data-view-transition="route"])::view-transition-new(root) {
   animation: none;
 }
 
-::view-transition-group(scope-coordinate),
+/* Registered for the same reason as the coverage above it: a gradient stop written as a plain
+   custom property is an unparsed token to the animation engine, which then jumps the whole mask. */
+@property --route-coverage {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
+}
+
+/* A route change is a plate being struck, not two pages crossfading: the outgoing page is eaten by
+   the dot grid and the incoming one prints out of it, in discrete passes, in the same texture the
+   observation plates are built from. The grid re-registers between passes so each pass breaks the
+   page up somewhere new.
+
+   The route duration, not the acquire one. A route change is a route entering, which the motion
+   requirement bounds at 100–200ms; only the coordinate acquisition is granted more. It was tried at
+   the acquire duration, and 400ms of full-page halftone reads as lag rather than as an instrument.
+
+   The cell is 18px rather than the 6px the identity resolve uses. Grain size is a function of how
+   far the eye is from it: a 6px screen on a title held at reading distance is texture, and the same
+   screen across a 2560px page is a flat wash that resolves before it registers as passes at all.
+   Four passes at 50ms in an 18px cell is a plate being struck; the same four in a 6px cell was a
+   flicker. */
+html[data-view-transition="route"]::view-transition-old(root) {
+  animation: route-halftone-clear var(--motion-duration-route) steps(4, jump-start) both;
+  mask-image: radial-gradient(
+    circle at center,
+    #000 0 var(--route-coverage),
+    #0000 var(--route-coverage)
+  );
+  mask-repeat: repeat;
+  mask-size: 18px 18px;
+}
+
+html[data-view-transition="route"]::view-transition-new(root) {
+  animation: route-halftone-print var(--motion-duration-route) steps(4, jump-start) both;
+  mask-image: radial-gradient(
+    circle at center,
+    #000 0 var(--route-coverage),
+    #0000 var(--route-coverage)
+  );
+  mask-repeat: repeat;
+  mask-size: 18px 18px;
+}
+
+/* The walk is half a cell over the gesture, so the grid lands somewhere new on every pass and the
+   page breaks up differently each time instead of one fixed screen thinning out. Multiples of
+   `--motion-nudge`, so reduced motion zeroes it centrally. */
+@keyframes route-halftone-clear {
+  from {
+    --route-coverage: 100%;
+
+    mask-position: 0 0;
+  }
+
+  to {
+    --route-coverage: 0%;
+
+    mask-position: calc(-5 * var(--motion-nudge)) calc(4 * var(--motion-nudge));
+  }
+}
+
+/* Printing starts at 30% rather than at nothing: the destination is already partly there when the
+   gesture opens, so its legibility only improves while the gesture runs. Deep enough that the first
+   pass reads as a screen over the page rather than as a page already arrived. */
+@keyframes route-halftone-print {
+  from {
+    --route-coverage: 30%;
+
+    mask-position: calc(5 * var(--motion-nudge)) calc(-4 * var(--motion-nudge));
+  }
+
+  to {
+    --route-coverage: 100%;
+
+    mask-position: 0 0;
+  }
+}
+
+::view-transition-group(scope-coordinate) {
+  animation-duration: var(--motion-duration);
+  animation-timing-function: var(--motion-easing);
+}
+
+/* The coordinate transfer runs the acquire duration so it moves with the rise it hands the document
+   to, and the reviewer pays a measured price for that: a native transition replaces the live DOM
+   with a root snapshot for as long as its animations run, so the page cannot be clicked for ~440ms
+   after every artifact selection. The pseudo-element tree offers no way out — `pointer-events: none`
+   on `::view-transition` and dropping the root capture both leave hit testing exactly as dead.
+   Duration is the only lever, and it is spent here deliberately. */
 ::view-transition-group(artifact-coordinate),
 ::view-transition-group(artifact-lock) {
-  animation-duration: var(--motion-duration);
+  animation-duration: var(--motion-duration-acquire);
   animation-timing-function: var(--motion-easing);
 }
 
@@ -2926,19 +3123,19 @@ textarea::placeholder {
 }
 
 ::view-transition-old(artifact-coordinate) {
-  animation: artifact-coordinate-depart var(--motion-duration) var(--motion-easing) both;
+  animation: artifact-coordinate-depart var(--motion-duration-acquire) var(--motion-easing) both;
 }
 
 ::view-transition-new(artifact-coordinate) {
-  animation: artifact-coordinate-arrive var(--motion-duration) var(--motion-easing) both;
+  animation: artifact-coordinate-arrive var(--motion-duration-acquire) var(--motion-easing) both;
 }
 
 ::view-transition-old(artifact-lock) {
-  animation: artifact-lock-depart var(--motion-duration) var(--motion-easing) both;
+  animation: artifact-lock-depart var(--motion-duration-acquire) var(--motion-easing) both;
 }
 
 ::view-transition-new(artifact-lock) {
-  animation: artifact-lock-arrive var(--motion-duration) var(--motion-easing) both;
+  animation: artifact-lock-arrive var(--motion-duration-acquire) var(--motion-easing) both;
 }
 
 @keyframes artifact-coordinate-depart {
@@ -3005,6 +3202,9 @@ textarea::placeholder {
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-duration: 0ms;
+    --motion-duration-route: 0ms;
+    --motion-duration-acquire: 0ms;
+    --motion-duration-resolve: 0ms;
     --motion-nudge: 0px;
     --motion-rule: 0px;
     --motion-lock: 0px;

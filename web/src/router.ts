@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+import { installRouteTransitions } from '@/lib/route-transition'
 import IndexView from '@/views/IndexView.vue'
 import ScopeView from '@/views/ScopeView.vue'
 
@@ -11,3 +12,5 @@ export const router = createRouter({
     { path: '/changes/:name', name: 'change', component: ScopeView },
   ],
 })
+
+installRouteTransitions(router)

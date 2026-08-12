@@ -1,0 +1,457 @@
+//! Finding the dashboard that serves a project, and starting one when none does.
+//!
+//! Two questions look like one and are not:
+//!
+//! | Question | Answered by |
+//! | --- | --- |
+//! | Is a dashboard already serving this root? | the network, always |
+//! | Which port should this project's dashboard prefer? | a recorded hint |
+//!
+//! The first is asked of the network and never read off a disk. The obvious
+//! alternative — a `.openspec-doc/serve.json` recording host, port and pid — is
+//! rejected: it has to be gitignored, so `git clean -xdf` and `rm -rf
+//! .openspec-doc` delete it while its server keeps running, and every such
+//! deletion produces another dashboard that is alive, undiscoverable, and
+//! unkillable by anything this project could ship. Probing survives file
+//! deletion, reboot, and `SIGKILL`.
+
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
+use openspec_doc_core::Project;
+use openspec_doc_core::dashboard::{self, Identity};
+
+use crate::error::Error;
+
+/// The interface a dashboard is reached on. The port range is localhost's, and
+/// the registry records a port because a host is not what varies.
+pub const HOST: &str = "127.0.0.1";
+
+/// A dashboard's output, kept so a start that fails can explain itself.
+const LOG_FILE: &str = ".openspec-doc/serve.log";
+
+/// Short enough that a hung port cannot stall a hook: a probe runs inside a
+/// turn boundary, up to thirty-two times.
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(150);
+const READ_TIMEOUT: Duration = Duration::from_millis(250);
+
+/// How long a freshly started dashboard has to answer, and how often it is asked.
+const START_TIMEOUT: Duration = Duration::from_secs(2);
+const START_POLL: Duration = Duration::from_millis(50);
+
+/// A response longer than this is not an identity, and reading it is not this
+/// probe's job.
+const MAX_RESPONSE: u64 = 8 * 1024;
+
+/// The port this project's dashboard prefers, assigning one the first time the
+/// root is seen.
+///
+/// A registry that cannot be read is reported and continued past with no
+/// assignment, following the precedent `report_promotion` sets: a session must
+/// not lose its review feedback to an unrelated failure. The caller then falls
+/// through to the sweep, which is what finds a dashboard whether or not anything
+/// remembered where it should be.
+pub fn preferred(project: &Project) -> Option<u16> {
+    match dashboard::assign(&project.root) {
+        Ok(port) => Some(port),
+        Err(error) => {
+            crate::report(
+                "could not read this project's assigned port; continuing without an assignment",
+            );
+            crate::eprint_chain(&error);
+            None
+        }
+    }
+}
+
+/// The port a dashboard for `root` is serving on, or `None` when none is.
+pub fn find(root: &Path, assigned: Option<u16>) -> Option<u16> {
+    find_in(root, assigned, &range())
+}
+
+/// Make sure a dashboard is serving `project`, starting one if none is, and
+/// return the port it is serving on.
+pub fn ensure(project: &Project) -> Result<u16, Error> {
+    ensure_in(project, &range())
+}
+
+/// The ports a sweep covers. Taken as an argument so a test can hand in ports the
+/// operating system says are free: the real range is where the developer's own
+/// dashboards are sitting, and a test that assumes it is empty fails on the one
+/// machine that matters.
+fn range() -> Vec<u16> {
+    dashboard::RANGE.collect()
+}
+
+/// As [`find`], over `range`.
+///
+/// `assigned` is probed first because it is nearly always right; the rest follows
+/// in ascending order. Anything answering with another root, or with something
+/// that is not a dashboard, is left alone.
+fn find_in(root: &Path, assigned: Option<u16>, range: &[u16]) -> Option<u16> {
+    assigned
+        .into_iter()
+        .chain(range.iter().copied().filter(|port| Some(*port) != assigned))
+        .find(|&port| probe(port).is_some_and(|identity| identity.root == root))
+}
+
+/// As [`ensure`], over `range`.
+fn ensure_in(project: &Project, range: &[u16]) -> Result<u16, Error> {
+    let assigned = preferred(project);
+
+    // Never bind on the strength of the registry alone. The whole range is swept
+    // for this root before anything is started, and that sweep is what makes the
+    // registry safe to lose: delete it, corrupt it, restore an old copy, and the
+    // running dashboard is still found and still reused. An implementation that
+    // trusts the entry and skips the sweep has rebuilt the rejected
+    // `serve.json` design with extra steps, and fails the same way — one deleted
+    // file becomes one duplicate server, and repeated deletions a fleet of them.
+    if let Some(port) = find_in(&project.root, assigned, range) {
+        if Some(port) != assigned {
+            // Found somewhere other than its assignment: repair the entry, or the
+            // project's URL stays wrong until the dashboard next restarts.
+            dashboard::record(&project.root, port)?;
+        }
+
+        return Ok(port);
+    }
+
+    start(project, assigned, range)
+}
+
+/// Start a detached dashboard for `project` and wait for one to answer.
+fn start(project: &Project, assigned: Option<u16>, range: &[u16]) -> Result<u16, Error> {
+    let log_path = project.root.join(LOG_FILE);
+    let log = open_log(&log_path)?;
+    let executable = std::env::current_exe().map_err(|source| Error::CurrentExe { source })?;
+
+    let mut command = Command::new(executable);
+    command
+        .arg("--root")
+        .arg(&project.root)
+        .args(["serve", "--host", HOST, "--no-open", "--idle-exit"])
+        .stdin(Stdio::null())
+        // Not `/dev/null`: a server that cannot bind would then be a start that
+        // appears to succeed, a poll that times out, and no way to learn why —
+        // and the next turn boundary would repeat it identically, forever.
+        .stdout(log.try_clone().map_err(|source| Error::Log {
+            path: log_path.clone(),
+            source,
+        })?)
+        .stderr(log);
+    detach(&mut command);
+
+    command.spawn().map_err(|source| Error::Spawn { source })?;
+
+    // Poll for *a dashboard for this root*, not for our own child. Two sessions
+    // ending at the same instant both start one; one loses the bind and exits
+    // into its own log, and the survivor serves both. Checking that a dashboard
+    // is there makes the loser of that race a non-event instead of an error path.
+    let deadline = Instant::now() + START_TIMEOUT;
+    loop {
+        if let Some(port) = find_in(&project.root, assigned, range) {
+            if Some(port) != assigned {
+                dashboard::record(&project.root, port)?;
+            }
+
+            return Ok(port);
+        }
+
+        if Instant::now() >= deadline {
+            return Err(Error::DashboardDidNotStart {
+                seconds: START_TIMEOUT.as_secs(),
+                log: log_path,
+            });
+        }
+
+        std::thread::sleep(START_POLL);
+    }
+}
+
+fn open_log(path: &Path) -> Result<std::fs::File, Error> {
+    let dir = path.parent().expect("the log path has a parent");
+    std::fs::create_dir_all(dir).map_err(|source| Error::Log {
+        path: dir.to_owned(),
+        source,
+    })?;
+
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|source| Error::Log {
+            path: path.to_owned(),
+            source,
+        })
+}
+
+/// Put the dashboard outside this process's process group.
+///
+/// An agent kills a hook that overruns its timeout, and a child in the hook's
+/// process group is killed with it. This is the difference between a dashboard
+/// that works perfectly when tested by hand and one that survives a real hook
+/// invocation.
+#[cfg(unix)]
+fn detach(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+
+    // In std, so no `libc` dependency for `setsid`.
+    command.process_group(0);
+}
+
+#[cfg(windows)]
+fn detach(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+
+    command.creation_flags(DETACHED_PROCESS);
+}
+
+/// Ask `port` what it is.
+///
+/// A fixed `GET` over `TcpStream`, hand-rolled on purpose. The CLI has no HTTP
+/// client, and one request to one known route on localhost does not justify
+/// adding one — nor should the `dirs` dependency the port registry needed be read
+/// as licence to add more. Do not "fix" this into an HTTP client.
+fn probe(port: u16) -> Option<Identity> {
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let mut stream = TcpStream::connect_timeout(&address, CONNECT_TIMEOUT).ok()?;
+    stream.set_read_timeout(Some(READ_TIMEOUT)).ok()?;
+    stream.set_write_timeout(Some(READ_TIMEOUT)).ok()?;
+
+    // HTTP/1.0 so the server closes the connection after answering, which is what
+    // ends the read on the normal path.
+    stream
+        .write_all(
+            format!(
+                "GET {} HTTP/1.0\r\nHost: {HOST}\r\n\r\n",
+                dashboard::IDENTITY_PATH
+            )
+            .as_bytes(),
+        )
+        .ok()?;
+
+    // The read outcome is deliberately ignored. A port that accepts a connection
+    // and never answers is ended by the read timeout, and the only question this
+    // asks is whether an identity arrived — not whether the socket closed
+    // tidily.
+    let mut response = Vec::new();
+    let _ = stream.take(MAX_RESPONSE).read_to_end(&mut response);
+
+    dashboard::identity_in(&String::from_utf8_lossy(&response))
+}
+
+/// Where a failed start explains itself, for a caller reporting one.
+pub fn log_path(project: &Project) -> PathBuf {
+    project.root.join(LOG_FILE)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::BufRead;
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+
+    /// A listener on a port the operating system says is free.
+    ///
+    /// Tests take their ports from the OS rather than assuming the real range is
+    /// free on the machine running the suite: the developer's own dashboards are
+    /// sitting in it.
+    fn listener() -> (TcpListener, u16) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("local addr").port();
+        (listener, port)
+    }
+
+    /// Answer identity probes with `root` until the test is done.
+    fn identity_server(root: &Path) -> u16 {
+        let (listener, port) = listener();
+        let body = format!(
+            "{{\"root\":\"{}\",\"pid\":{}}}",
+            root.display(),
+            std::process::id()
+        );
+        std::thread::spawn(move || {
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut request = String::new();
+                let _ = std::io::BufReader::new(&stream).read_line(&mut request);
+                let _ = stream.write_all(
+                    format!(
+                        "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                );
+            }
+        });
+        port
+    }
+
+    /// A state directory and a project root nothing else is writing to.
+    ///
+    /// The override is process-wide, so the tests that touch the registry take a
+    /// turn each rather than racing over one environment variable.
+    struct Fixture {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        _state: tempfile::TempDir,
+        _root: tempfile::TempDir,
+        project: Project,
+    }
+
+    fn fixture() -> Fixture {
+        static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+        let guard = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let state = tempfile::TempDir::new().expect("state dir");
+        // SAFETY: `ENV` makes this the only test touching the variable.
+        unsafe { std::env::set_var(dashboard::STATE_DIR_ENV, state.path()) };
+
+        let root = tempfile::TempDir::new().expect("project root");
+        std::fs::create_dir_all(root.path().join("openspec")).expect("create openspec dir");
+        std::fs::write(root.path().join("openspec/config.yaml"), "").expect("write config");
+        let project = openspec_doc_core::project_at(root.path()).expect("project");
+
+        Fixture {
+            _guard: guard,
+            _state: state,
+            _root: root,
+            project,
+        }
+    }
+
+    #[test]
+    fn a_dashboard_for_this_root_is_found_on_its_assignment() {
+        let root = PathBuf::from("/repos/a");
+        let port = identity_server(&root);
+
+        assert_eq!(find(&root, Some(port)), Some(port));
+    }
+
+    /// A dashboard serving somebody else is left alone.
+    #[test]
+    fn a_foreign_root_is_not_mistaken_for_this_one() {
+        let port = identity_server(Path::new("/repos/other"));
+
+        assert_eq!(find(Path::new("/repos/a"), Some(port)), None);
+    }
+
+    #[test]
+    fn a_listener_that_is_not_a_dashboard_is_skipped() {
+        let (_listener, port) = listener();
+
+        assert_eq!(find(Path::new("/repos/a"), Some(port)), None);
+    }
+
+    /// A hook runs inside a turn boundary, so a port that accepts and never
+    /// answers has to end the probe rather than hold it.
+    #[test]
+    fn a_port_that_never_responds_times_out_rather_than_hanging() {
+        let (listener, port) = listener();
+        let (accepted, held) = mpsc::channel();
+        std::thread::spawn(move || {
+            let connection = listener.accept().expect("accept");
+            accepted.send(()).expect("report the accept");
+            // Held open, answering nothing, until the test is done with it.
+            std::thread::sleep(Duration::from_secs(5));
+            drop(connection);
+        });
+
+        let started = Instant::now();
+        let found = find(Path::new("/repos/a"), Some(port));
+        let elapsed = started.elapsed();
+
+        held.recv_timeout(Duration::from_secs(1))
+            .expect("the probe never connected");
+        assert_eq!(found, None);
+        assert!(
+            elapsed < Duration::from_secs(4),
+            "the probe hung for {elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn nothing_listening_is_not_a_dashboard() {
+        let (listener, port) = listener();
+        drop(listener);
+
+        assert_eq!(find(Path::new("/repos/a"), Some(port)), None);
+    }
+
+    #[test]
+    fn a_dashboard_on_this_projects_assignment_is_reused() {
+        let fixture = fixture();
+        let port = identity_server(&fixture.project.root);
+        dashboard::record(&fixture.project.root, port).expect("record");
+
+        let found = ensure_in(&fixture.project, &[port]).expect("ensure");
+
+        assert_eq!(found, port);
+        assert_eq!(
+            dashboard::assigned(&fixture.project.root).expect("read back"),
+            Some(port),
+            "an assignment that was already right must not be rewritten to something else"
+        );
+    }
+
+    /// The registry is a hint. A dashboard somewhere else is still this project's
+    /// dashboard, and the entry is the thing that was wrong.
+    #[test]
+    fn a_dashboard_found_off_its_assignment_is_reused_and_the_entry_repaired() {
+        let fixture = fixture();
+        let (elsewhere, stale) = listener();
+        drop(elsewhere);
+        let actual = identity_server(&fixture.project.root);
+        dashboard::record(&fixture.project.root, stale).expect("record the stale entry");
+
+        let found = ensure_in(&fixture.project, &[stale, actual]).expect("ensure");
+
+        assert_eq!(found, actual);
+        assert_eq!(
+            dashboard::assigned(&fixture.project.root).expect("read back"),
+            Some(actual),
+            "the entry must be repaired, or the project's URL stays wrong"
+        );
+    }
+
+    /// The case the rejected `serve.json` design fails: the record is gone and the
+    /// server is still running. The sweep is what makes losing the record cost
+    /// stability and never correctness.
+    #[test]
+    fn a_deleted_registry_still_finds_a_running_dashboard_and_starts_nothing() {
+        let fixture = fixture();
+        let running = identity_server(&fixture.project.root);
+        assert_eq!(
+            dashboard::assigned(&fixture.project.root).expect("read"),
+            None,
+            "this test is about a project the registry has never heard of"
+        );
+
+        let found = ensure_in(&fixture.project, &[running]).expect("ensure");
+
+        assert_eq!(found, running, "the running dashboard was not adopted");
+        assert!(
+            !log_path(&fixture.project).exists(),
+            "a dashboard was started when one was already serving"
+        );
+    }
+
+    /// A dashboard for somebody else on the assignment does not stop this project's
+    /// own being found further along the sweep.
+    #[test]
+    fn a_squatting_dashboard_on_the_assignment_is_swept_past() {
+        let fixture = fixture();
+        let squatter = identity_server(Path::new("/repos/someone-else"));
+        let mine = identity_server(&fixture.project.root);
+        dashboard::record(&fixture.project.root, squatter).expect("record");
+
+        let found = ensure_in(&fixture.project, &[squatter, mine]).expect("ensure");
+
+        assert_eq!(found, mine);
+    }
+}

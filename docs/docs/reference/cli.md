@@ -5,6 +5,7 @@ openspec-doc [--root <PATH>] <COMMAND>
 
   summary                      print the resolved project root, its changes, and its specs
   serve [--host] [--port]      serve the dashboard; --no-open prints the URL instead of opening a browser
+  serve url                    print this project's dashboard URL and whether one is serving it
   hook stop --agent <claude|pi>
   hook explore --agent <claude|pi>
   comment add|list|reply|resolve
@@ -22,11 +23,39 @@ is working.
 ## serve
 
 ```bash
-openspec-doc serve                          # binds 127.0.0.1 on a free port, opens a browser
-openspec-doc serve --port 8080 --no-open    # fixed port, prints the URL instead
+openspec-doc serve                          # binds this project's assigned port, opens a browser
+openspec-doc serve --port 8080 --no-open    # exactly that port, prints the URL instead
+openspec-doc serve url                      # the URL, and whether a dashboard is serving it
 ```
 
-`--host` defaults to `127.0.0.1`. `--port` defaults to `0`, which selects an available port.
+`--host` defaults to `127.0.0.1`.
+
+With no `--port`, `serve` binds **the port assigned to this project**: the lowest free port in `4321`–`4352`
+the first time the project's canonical root is seen, recorded machine-wide in
+`$XDG_STATE_HOME/openspec-doc/ports.json` (defaulting to `~/.local/state`, and the local data directory on
+macOS and Windows). The same project therefore binds the same port on every later run, whatever order your
+checkouts started in. If something else already holds that port, `serve` falls forward to another port in
+the range and records where it landed, so the project is stable there from then on; a range with no free
+port at all is an error naming the range. Set `OPENSPEC_DOC_STATE_DIR` to keep the record somewhere else.
+
+An explicit `--port` neither reads nor writes that record: it binds exactly the port you named and fails
+rather than binding a different one. Naming a port is a statement about this invocation, not about where
+the project lives.
+
+`--idle-exit` makes the server exit after thirty minutes with no page subscribed to it *and* no external
+activity registered against it. The turn-end hook passes it; nothing else does, because a server a person
+started in a terminal must not vanish under them.
+
+### serve url
+
+Prints the project's dashboard URL and whether a dashboard is currently serving it — correctly when
+nothing is running, which is what the port assignment exists to make possible. A dashboard found on some
+other port in the range is reported where it actually is.
+
+```
+http://127.0.0.1:4323 (not running)
+http://127.0.0.1:4323 (serving)
+```
 
 ## comment
 

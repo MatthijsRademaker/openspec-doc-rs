@@ -48,11 +48,11 @@ The system SHALL render open, addressed, resolved, verdict, delivery, reviewer, 
 
 ### Requirement: Celestial artwork frames rather than obscures review content
 
-The system SHALL use celestial, orbital, crosshair, scan-line, and stipple motifs only as atmosphere or wayfinding around content. Artwork SHALL NOT reduce readability, cover controls, intercept interaction, or sit beneath primary document prose or instrumentation text. An artwork's legible extent SHALL be a function of the space its container's content leaves free, and SHALL NOT be a fixed fraction of the viewport that content can grow into. Artwork MAY extend behind the content above it only through a declared fade, and SHALL reach full strength only in free space.
+The system SHALL use celestial, orbital, crosshair, scan-line, and stipple motifs only as atmosphere or wayfinding around content. Artwork SHALL NOT reduce readability, cover controls, intercept interaction, or sit beneath primary document prose or instrumentation text. An artwork's legible extent SHALL be a function of the space its container's content leaves free, and SHALL NOT be a fixed fraction of the viewport that content can grow into. Artwork MAY extend behind the content above it only through a declared fade, and SHALL reach full strength only in free space. Artwork MAY additionally continue behind a fully opaque panel, because the panel and not the artwork is what the text sits on; that continuation SHALL be through the same declared fade, SHALL reach the panel already attenuated, and SHALL NOT be used to place any text on a translucent or partially transparent surface.
 
 Bounding artwork by the viewport works only while the content beside it stays short. A rail whose list grows with the number of artifacts will eventually reach into a region sized without reference to it, and the resulting overlap appears as a function of fixture size — visible with six artifacts, invisible with three, and therefore invisible to a suite that keeps its fixtures small.
 
-The fade is the distinction that matters. Atmosphere rising behind the foot of a list is what the rails are composed around; stipple at full strength under a mono path is the defect. Making the fade a declared distance rather than a judgement call keeps the second testable without banning the first.
+The fade is the distinction that matters. Atmosphere rising behind the foot of a list is what the rails are composed around; stipple at full strength under a mono path is the defect. Making the fade a declared distance rather than a judgement call keeps the second testable without banning the first. Opacity of the panel is the same kind of distinction: a field continuing behind a solid register is composition, and the same field behind a translucent one is the defect, because only in the second case is anything read through it.
 
 #### Scenario: Artwork yields to document content
 
@@ -63,6 +63,11 @@ The fade is the distinction that matters. Atmosphere rising behind the foot of a
 
 - **WHEN** a rail's instrumentation content grows to occupy the region an artwork would otherwise fill
 - **THEN** the artwork's legible region SHALL shrink or disappear, and no identifier, path, state, or label SHALL be rendered over any part of the artwork outside its declared fade
+
+#### Scenario: A field continuing behind a panel keeps text off it
+
+- **WHEN** an observation field continues behind a content panel
+- **THEN** that panel SHALL be fully opaque, the field SHALL be attenuated by its declared fade before it reaches the panel, and no text, identifier, state, link, or focus indicator SHALL be rendered against the field itself
 
 #### Scenario: Narrow layout removes atmosphere first
 
@@ -87,12 +92,24 @@ A control that collapses a rail exists to get the rail out of the way. If collap
 
 ### Requirement: Layout remains dense, calm, and responsive
 
-The system SHALL compose information on an 8px rhythm with hairline separation and readable document measure. At narrow widths it SHALL preserve content, identifiers, states, and controls in one logical flow without horizontal page scrolling.
+The system SHALL compose information on an 8px rhythm with hairline separation and readable document measure. Every route SHALL occupy the full viewport width from one shared shell declaration rather than holding its own width ceiling, so that no route renders as a centred column beside one that fills the display. Readable measure SHALL be held by the document's own measure rules rather than by capping the page. At narrow widths the system SHALL preserve content, identifiers, states, and controls in one logical flow without horizontal page scrolling.
+
+Two routes each stating their own width is how the index came to stop at 1440px while the scope workbench ran edge to edge — the same decision written twice, free to drift, and drifted. Stating it once is what stops the next route disagreeing with both.
 
 #### Scenario: Desktop preserves hierarchy
 
 - **WHEN** the dashboard is rendered at 1280 CSS pixels or wider
 - **THEN** product instrumentation, primary content, metadata, and review state SHALL be visually distinct without reducing the primary content to a narrow card column
+
+#### Scenario: Every route occupies the display it is given
+
+- **WHEN** the index and a scope route are each rendered at 2560 CSS pixels wide
+- **THEN** both SHALL use the full viewport width at the same shell padding, neither SHALL reserve symmetric empty canvas by capping its own width, and the two SHALL read as the same product at the same scale
+
+#### Scenario: Shell width is declared once
+
+- **WHEN** a route's outer shell width or padding is set
+- **THEN** it SHALL be read from the shared shell declaration rather than restated locally, and a route restating its own ceiling SHALL be treated as a defect
 
 #### Scenario: Narrow view preserves information
 
@@ -101,14 +118,23 @@ The system SHALL compose information on an 8px rhythm with hairline separation a
 
 ### Requirement: Motion explains state without becoming spectacle
 
-The system SHALL express dashboard motion as a short event-driven instrument language for acquiring coordinates, triangulating linked content, transmitting reviewer intent, receiving content, resolving semantic state, and reconfiguring interface chrome. Motion SHALL be tied to real navigation, mutation, state, or remote-update events; SHALL complete standard transitions within 100–200 milliseconds; and SHALL NOT delay access to content or controls. The system SHALL NOT use decorative perpetual motion, parallax, pointer-following fields, cursor trails, sound, whole-page glitch effects, spring spectacle, or animated loading ornament.
+The system SHALL express dashboard motion as a short event-driven instrument language for acquiring coordinates, triangulating linked content, transmitting reviewer intent, receiving content, resolving semantic state, and reconfiguring interface chrome. Motion SHALL be tied to real navigation, mutation, state, or remote-update events; SHALL complete standard transitions within 100–200 milliseconds; and SHALL complete coordinate acquisition, the sole exception to that bound, within 600 milliseconds, of which the coordinate transfer and the source's rise SHALL share one shorter duration and the identity's halftone resolve MAY take the whole.
 
-Motion MAY use opacity, slight position, registration-line growth, hard masks, clipping, or glyph and line-geometry changes when those effects explain the event and leave no decorative movement after settling. A mark reporting an arrival MAY remain visible longer than a transition takes to complete, and SHALL decay on its own rather than persisting as a state the interface must later clear. The duration bound governs how long a transition takes to finish and how long content is withheld; it does not require a nonblocking notice to vanish before it has been seen.
+Motion MAY hold a navigation before it commits, where holding it is what lets the gesture terminate at a real destination instead of at scaffolding. A hold SHALL leave the origin fully rendered and interactive for its whole duration, SHALL end at a declared ceiling after which the navigation commits without the gesture, and SHALL commit the navigation immediately if what it waits for fails. Motion SHALL NOT hold a navigation for decoration that would look the same without the wait, SHALL NOT hold one without a declared end, and SHALL NOT leave a reviewer's action unanswered. The system SHALL NOT use decorative perpetual motion, parallax, pointer-following fields, cursor trails, sound, whole-page glitch effects, spring spectacle, or animated loading ornament.
+
+A blanket rule that motion may never delay content reads as discipline and is not. It was written against decoration that makes a reviewer wait for nothing, but it also forbids the one case where waiting is the difference between a gesture that lands on the thing the reviewer selected and one that lands on a placeholder — and the dashboard shipped the placeholder version under it. What matters is not whether a wait exists but whether it is bounded, whether the reviewer is stranded during it, and whether anything is actually withheld: an origin page that stays live withholds nothing.
+
+Motion MAY use opacity, slight position, registration-line growth, hard masks, clipping, halftone reveals in the plates' own texture, or glyph and line-geometry changes when those effects explain the event and leave no decorative movement after settling. A mark reporting an arrival MAY remain visible longer than a transition takes to complete, and SHALL decay on its own rather than persisting as a state the interface must later clear. The duration bound governs how long a transition takes to finish; a bounded hold before a navigation commits is governed by its own declared ceiling, and neither requires a nonblocking notice to vanish before it has been seen.
 
 #### Scenario: Navigation acquires a real coordinate
 
 - **WHEN** a reviewer navigates to a scope, artifact, or linked thread destination
-- **THEN** any acquisition motion SHALL originate from a real selected coordinate or control, SHALL terminate at the real destination, and SHALL NOT delay route, history, focus, or content updates until decoration finishes
+- **THEN** any acquisition motion SHALL originate from a real selected coordinate or control and SHALL terminate at the real destination rather than at a loading placeholder, and route, history, focus, and content updates SHALL NOT be held back to let decoration finish once the navigation has committed
+
+#### Scenario: A navigation hold is bounded and answers the action
+
+- **WHEN** a navigation is held so its gesture can terminate at a destination that does not exist yet
+- **THEN** the origin SHALL remain rendered and interactive throughout, the hold SHALL end at a declared ceiling after which the route commits without the gesture, a failed load SHALL commit the route so the destination reports its own failure, and what the hold waited for SHALL be handed to the destination rather than fetched again
 
 #### Scenario: Transmission follows real request state
 
@@ -130,6 +156,31 @@ Motion MAY use opacity, slight position, registration-line growth, hard masks, c
 - **WHEN** a panel, route, review state, or instrument event enters or changes
 - **THEN** each standard transition SHALL complete within 100–200 milliseconds and SHALL leave the interface still after the event settles
 
+#### Scenario: Acquiring a coordinate is bounded above the standard transition
+
+- **WHEN** a reviewer selects an artifact coordinate, the coordinate transfers from the rail to the document header, and the document reports its own arrival
+- **THEN** the transfer and the source's rise SHALL run one duration so the movement reads as a single gesture, the identity's halftone resolve MAY outlast them because it is watched rather than read through, no part SHALL exceed 600 milliseconds, this SHALL be the only motion granted more than the standard bound, and the channel that gates them SHALL dwell no less than the longest of them so the reviewer sees every gesture the interface declares
+
+#### Scenario: A suspended-input window is bounded and costs no reviewer action
+
+- **WHEN** a coordinate transfer runs, replacing the live document with a snapshot so that the interface cannot be clicked while it does
+- **THEN** that window SHALL last no longer than the acquisition duration, SHALL never exceed it by growing a treatment the snapshot does not need, and SHALL cost only pointer targeting: by the time it opens, the reviewer's originating action SHALL have taken effect, and route, history, focus, semantic text, and the selected content SHALL already have updated — for a navigation this means the window opens after the route has committed, never during a hold that precedes it
+
+#### Scenario: Acquired identity resolves in the plate's own texture
+
+- **WHEN** the acquisition gesture reports an artifact or scope whose source has replaced the previous one
+- **THEN** the identity SHALL resolve through the halftone the observatory plates are built from, advancing in discrete passes rather than as a continuous fade, the dot grid SHALL re-register between passes so the name breaks up differently each time rather than one fixed screen filling in, the resolve SHALL start deep enough that the name reads as texture rather than as text behind a screen, and it SHALL NOT be reported instead by lit bars travelling across the header or across an index entry, which describe nothing about the surface they cross
+
+#### Scenario: Acquired source rises into a fixed frame
+
+- **WHEN** the identity resolves
+- **THEN** the source blocks MAY rise into place from a displacement bounded by the shared displacement token, the identity and its plate SHALL stay fixed as the frame that displacement resolves against, the source SHALL reach full legibility within the standard transition bound rather than the gesture's, and neither mask nor offset SHALL survive the gesture
+
+#### Scenario: A resolving surface is eaten, never withheld
+
+- **WHEN** either surface is part-way through the gesture
+- **THEN** it SHALL already be rendered at partial coverage rather than absent, its legibility SHALL only improve as the gesture runs, and the reviewer SHALL be able to read, select, and comment on it throughout
+
 #### Scenario: An arrival mark decays without blocking
 
 - **WHEN** the interface marks content that arrived without the reviewer acting
@@ -148,7 +199,7 @@ Motion MAY use opacity, slight position, registration-line growth, hard masks, c
 #### Scenario: Reduced motion is immediate
 
 - **WHEN** the reviewer requests reduced motion
-- **THEN** native view transitions, smooth scrolling, transforms, masks, clipping transitions, and decorative displacement SHALL be removed or made immediate, while text, focus, semantic state, and final geometry remain understandable
+- **THEN** native view transitions, smooth scrolling, transforms, masks, clipping transitions, decorative displacement, and navigation holds SHALL be removed or made immediate, while text, focus, semantic state, and final geometry remain understandable
 
 #### Scenario: Reduced motion covers effects added later
 
@@ -159,6 +210,35 @@ Motion MAY use opacity, slight position, registration-line growth, hard masks, c
 
 - **WHEN** orbital, face, stipple, scan-line, or star-system artwork frames an interaction
 - **THEN** the artwork SHALL remain static unless a bounded non-interactive overlay reports a real event, and it SHALL NOT track the pointer or animate perpetually
+
+### Requirement: Coordinate acquisition is the reference gesture for dashboard motion
+
+Motion rules stated as prohibitions produce treatments that break none of them and mean nothing. The system SHALL therefore treat coordinate acquisition — the identity resolving through the plate's halftone, the source rising into that fixed frame, and the coordinate transferring from rail to header — as the worked example of dashboard motion, and any new treatment SHALL be justified against the rules it demonstrates rather than against the prohibition list alone. Each rule below is drawn from a treatment this dashboard shipped and then replaced, not from taste: acquisition previously reported itself with a lit bar travelling across the artwork under two registration rules, which broke no prohibition and still had to go.
+
+#### Scenario: A treatment says what the surface is made of
+
+- **WHEN** a treatment is chosen to report an event on a surface
+- **THEN** it SHALL be drawn from what that surface is — its texture, its geometry, or the instrument it represents — rather than from generic interface movement that would look the same on any surface, and a treatment that merely travels across a surface SHALL be rejected in favour of one that resolves it
+
+#### Scenario: Instrument motion is quantized, not continuous
+
+- **WHEN** a treatment reveals, resolves, or replaces content over time
+- **THEN** it SHOULD advance in discrete passes rather than as a continuous ramp, because a continuous version of the same geometry reads as an ordinary fade and reports nothing about the instrument performing it
+
+#### Scenario: A surface under treatment is eaten, never withheld
+
+- **WHEN** a treatment operates on content the reviewer came to read
+- **THEN** that content SHALL already be rendered when the treatment starts, its legibility SHALL only improve as the treatment runs, and the reviewer SHALL be able to read, select, and act on it throughout
+
+#### Scenario: Duration is chosen against the mechanism, not the feel
+
+- **WHEN** a duration is chosen for a treatment
+- **THEN** a treatment carried by a mechanism that suspends interaction SHALL have its duration read as a latency budget and stay within the standard bound, a treatment carried by real elements MAY run longer because it costs the reviewer nothing, and the two SHALL be allowed to differ rather than being unified into one number
+
+#### Scenario: Whatever gates a treatment outlasts it
+
+- **WHEN** a treatment is gated by a class, channel, or state that is cleared on a timer
+- **THEN** that gate SHALL persist at least as long as the longest treatment it gates, and a declared duration longer than its gate SHALL be treated as a defect, because the interface then never shows the motion its own source declares
 
 ### Requirement: Design references are not runtime payload
 
@@ -176,12 +256,24 @@ The system SHALL keep visual source references outside the frontend runtime asse
 
 ### Requirement: The index uses an authored image-led observation composition
 
-The system SHALL make the index artwork a load-bearing part of its observatory composition through a dominant asymmetric observation field and a lower strip of hard-cropped visual plates. It SHALL preserve black negative space, halftone texture, clipped celestial geometry, and hairline alignment from the approved visual sources, and SHALL NOT reduce those sources to generic image cards or use them as wallpaper beneath content.
+The system SHALL make the index artwork a load-bearing part of its observatory composition through a dominant asymmetric observation field and a lower strip of hard-cropped visual plates. It SHALL preserve black negative space, halftone texture, clipped celestial geometry, and hairline alignment from the approved visual sources, and SHALL NOT reduce those sources to generic image cards. The observation field SHALL continue past the hero as the ground the scope panelling sits on, through the declared fade, and SHALL NOT be rendered at full strength beneath that panelling or used as undifferentiated wallpaper.
+
+The index hero SHALL hold its composition proportionally at every width: the panel, the divider, and the artwork crop SHALL be expressed in the same units, so that widening the display enlarges the composition rather than opening a gap inside it. A panel bounded by a fixed length while the divider beside it is bounded by a percentage agrees only over the narrow range where the two happen to coincide.
 
 #### Scenario: Main observation field uses the approved face and orbit source
 
 - **WHEN** the index renders at desktop width
 - **THEN** it SHALL render an optimized derivative of `designs/visual-language/main-panel-background.png` with the face and orbital field entering asymmetrically from the right and with the source's baked-in far-left pseudo-control rail excluded from the runtime crop
+
+#### Scenario: The hero holds its proportions at any width
+
+- **WHEN** the index is rendered at 1280 and at 2560 CSS pixels wide
+- **THEN** the hero panel, its divider, and the artwork crop SHALL occupy the same proportions of the page at both widths, and no band of bare canvas SHALL open between the panel's edge and the artwork at either
+
+#### Scenario: The observation field grounds the panelling below the hero
+
+- **WHEN** the index renders its change and session registers at desktop width
+- **THEN** the observation field SHALL continue behind them as attenuated ground visible around and between the opaque registers, SHALL reach full strength only in the hero's free space, and SHALL end above the lower plate strip rather than compounding with it
 
 #### Scenario: Lower plates use the approved abstract sources
 
@@ -191,12 +283,12 @@ The system SHALL make the index artwork a load-bearing part of its observatory c
 #### Scenario: Artwork and content occupy distinct planes
 
 - **WHEN** the index observation field or lower plates appear near scope content
-- **THEN** artwork SHALL remain non-interactive and absent from the accessibility tree, and SHALL NOT sit beneath text, links, focus indicators, loading messages, failure messages, or state labels
+- **THEN** artwork SHALL remain non-interactive and absent from the accessibility tree, and no text, link, focus indicator, loading message, failure message, or state label SHALL be rendered against artwork rather than against an opaque surface
 
 #### Scenario: Index atmosphere yields at narrow width
 
 - **WHEN** the index is rendered at 390 CSS pixels wide
-- **THEN** the main artwork SHALL reduce to a bounded crop and the lower plate strip SHALL disappear before any scope identity, metadata, state, or link is hidden or clipped
+- **THEN** the main artwork SHALL reduce to a bounded crop, the field SHALL stop continuing behind the panelling, and the lower plate strip SHALL disappear before any scope identity, metadata, state, or link is hidden or clipped
 
 ### Requirement: The index runtime artwork is an exact optimized derivative set
 

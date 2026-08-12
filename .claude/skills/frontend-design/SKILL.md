@@ -39,7 +39,11 @@ chrome, rounded card grids, stock dashboard sidebars, and detached chat layouts.
   essential content hidden to preserve a card silhouette.
 - Provide landmarks, logical headings, accessible names, visible focus, text plus icon/state
   meaning, and `prefers-reduced-motion` behavior.
-- Motion explains state changes and stays short; no decorative loading animation.
+- Motion explains state changes and stays short; no decorative loading animation. Before adding
+  any, read "Acquire is the worked example" in `designs/dashboard-review-workbench.md` — the
+  acquisition gesture is the reference implementation, and its five rules are what a new treatment
+  is judged against. Short is a floor, not the goal: a treatment that says nothing about the
+  surface it runs on fails the bar however brief it is.
 
 ## Verification
 

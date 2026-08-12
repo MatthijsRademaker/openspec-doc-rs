@@ -20,8 +20,8 @@ pub use record::{
     Comment, Edit, Event, Relocation, Reply, ReplyAuthor, Status, StatusUpdate, Thread,
 };
 pub use sidecar::{
-    add, add_unanchored, counts, edit, read, relocate, reply, reply_as, set_status, ScopeKey,
-    StatusCounts,
+    ScopeKey, StatusCounts, add, add_unanchored, counts, edit, read, relocate, reply, reply_as,
+    set_status,
 };
 
 /// The sidecar directory holding every scope's comment stream.

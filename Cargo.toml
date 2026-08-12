@@ -13,6 +13,11 @@ chrono = { version = "0.4", default-features = false, features = [
   "std",
 ] }
 clap = { version = "4", features = ["derive"] }
+# Only for the platform state directory the port registry lives in. Weighed
+# against the hand-rolled probe in `crates/cli/src/discovery.rs`: a dependency
+# has to be smaller than the correctness risk of doing it by hand, and three
+# platforms' directory conventions fail that test where a fixed `GET` passes it.
+dirs = "6"
 notify = "8"
 openspec-doc-core = { path = "crates/core" }
 pulldown-cmark = "0.13"

@@ -23,17 +23,24 @@ pub enum Command {
 
     /// Serve the documentation dashboard over HTTP
     Serve {
+        #[command(subcommand)]
+        command: Option<ServeCommand>,
+
         /// Interface to bind
         #[arg(long, value_name = "HOST", default_value = "127.0.0.1")]
         host: String,
 
-        /// Port to bind; omitted or `0` selects an available port
-        #[arg(long, value_name = "PORT", default_value_t = 0)]
-        port: u16,
+        /// Port to bind exactly; omitted binds the port assigned to this project
+        #[arg(long, value_name = "PORT")]
+        port: Option<u16>,
 
         /// Print the URL without opening a browser
         #[arg(long)]
         no_open: bool,
+
+        /// Exit once no page is open and no hook has asked for the dashboard
+        #[arg(long)]
+        idle_exit: bool,
     },
 
     /// Bridge agent hook events into the documentation dashboard
@@ -53,6 +60,12 @@ pub enum Command {
         #[command(subcommand)]
         command: ScratchCommand,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ServeCommand {
+    /// Print this project's dashboard URL and whether a dashboard is serving it
+    Url,
 }
 
 #[derive(Debug, Subcommand)]
