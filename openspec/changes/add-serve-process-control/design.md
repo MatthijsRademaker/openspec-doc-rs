@@ -2,20 +2,45 @@
 
 ## The whole change is one probe, run wide instead of narrow
 
-`add-dashboard-lifecycle` probes `4321`–`4330` looking for *one* answer: a dashboard whose canonical root matches mine. It stops at the first match and reuses it.
+`add-dashboard-lifecycle` probes `4321`–`4352` looking for *one* answer: a dashboard whose canonical root matches mine. It stops at the first match and reuses it.
 
 This change runs the same loop and keeps every answer instead of the first matching one.
 
 ```
   ensure_dashboard(root)          serve list
         │                              │
-   probe 4321..4330              probe 4321..4330
+   probe 4321..4352              probe 4321..4352
         │                              │
    first match wins  ──►          collect all  ──►  port | root | pid
    nothing found ⇒ spawn          nothing found ⇒ "no dashboards running"
 ```
 
 That is the entire mechanism. If implementing this requires a second probe, the shared function was scoped too narrowly and should be widened to return all identities, with `ensure` filtering — not copied.
+
+## Assignments are shown beside the running dashboards, never instead of them
+
+`add-dashboard-lifecycle` gives each project root a port it keeps, recorded in a machine-global registry. That changes what a useful `serve list` looks like, and it is worth being exact about how, because the obvious reading of "read the registry" is the mistake that change spent a section rejecting.
+
+The registry answers *which port does this project own*. The probe answers *what is running*. `serve list` prints the join, and the second column is never inferred from the first:
+
+```
+  PORT   ROOT                          PID     STATE
+  4321   ~/repos/openspec-doc-rs       84213   running
+  4322   ~/repos/acme-api              91004   running
+  4323   ~/repos/old-spike             —       assigned, not running
+  4327   ~/checkouts/scratch           88771   running, not its assignment
+  ↑ probed 4321–4352
+```
+
+Three things fall out of that table that a probe-only list could not show. A project that owns a port but has nothing running is visible, which is the "where would this checkout appear" question. A dashboard sitting somewhere other than its assignment is visible as an anomaly rather than looking normal — that is the state `ensure` repairs on its next run, and seeing it is how an operator notices the repair path is not firing. And a row with no assignment at all is a dashboard started by hand with `--port`, which is worth distinguishing from one the hooks placed.
+
+A row is only ever marked running because a probe of that port answered. Losing the registry costs this table its assigned-not-running rows and nothing else.
+
+## `serve forget` exists because assignment can fail
+
+The range is finite, and `add-dashboard-lifecycle` fails loudly rather than colliding when every port is assigned to a root that still exists on disk. That error names `serve forget` as the way out. An error that names a command which does not exist is worse than the collision it prevented, so the two have to land together in spirit even though they land in different changes — whichever is implemented second checks that the error text and the command agree.
+
+It takes a root, not a port: the operator's question is "I do not use that checkout any more", and answering it by port requires them to look the port up first. Forgetting a root whose dashboard is currently running is refused rather than allowed — the assignment would be handed to another project while a server still sits on it, and the next `ensure` for the forgotten root would find its own dashboard on a port belonging to someone else. Stop it first.
 
 ## Why a target is required
 
@@ -52,6 +77,6 @@ Exit non-zero only when the probe itself could not run.
 
 ## The out-of-range blind spot is stated, not solved
 
-A dashboard on `--port 9999` does not answer within `4321`–`4330` and will not appear. Every alternative that closes this gap reintroduces something worse: scanning all 65535 ports is slow and hostile; reading `/proc` or `ps` is platform-specific and matches on a command string, which is the `pkill` approach this command exists to replace; a state file is rejected at length in `add-dashboard-lifecycle`'s design.
+A dashboard on `--port 9999` does not answer within `4321`–`4352` and will not appear. Every alternative that closes this gap reintroduces something worse: scanning all 65535 ports is slow and hostile; reading `/proc` or `ps` is platform-specific and matches on a command string, which is the `pkill` approach this command exists to replace; a state file is rejected at length in `add-dashboard-lifecycle`'s design.
 
 So it is a documented limit. `serve list` names the range it searched in its output, so an operator who does not find what they expect can see immediately why rather than concluding the tool is broken.

@@ -1,8 +1,19 @@
 # Design
 
-## Discovery is stateless, and that is the load-bearing decision
+## The network is the authority. The registry is only a hint.
 
-The obvious design is a state file: the server writes `.openspec-doc/serve.json` with its host, port and pid, and a later hook reads it to decide whether to start one. This was the first recommendation during exploration, and it is wrong.
+Two questions look like one and are not, and keeping them apart is what makes this design work:
+
+| | Question | Answered by | Cost of a wrong answer |
+| --- | --- | --- | --- |
+| Liveness | *Is a dashboard already serving this root?* | the network, always | a duplicate or orphaned server |
+| Assignment | *Which port should this project's dashboard prefer?* | a recorded hint | one restart's worth of instability |
+
+The first question is answered by asking the network and never by reading a file. The second is answered by a small recorded table, because the alternative is that a project's port depends on the order in which checkouts happened to start — and a port that moves is a bookmark that silently points at another repository's review queue.
+
+### The state file that is rejected, and why it is not this one
+
+The obvious design is a state file answering the *first* question: the server writes `.openspec-doc/serve.json` with its host, port and pid, and a later hook reads it to decide whether to start one. This was the first recommendation during exploration, and it is wrong.
 
 `serve.json` is machine-local runtime state, and `.openspec-doc/` is otherwise durable review history that belongs in the repo — so the file has to be gitignored. **Which means `git clean -xdf` deletes it while its server keeps running.** So does `rm -rf .openspec-doc`, which this project's own verification does routinely.
 
@@ -22,37 +33,89 @@ The obvious design is a state file: the server writes `.openspec-doc/serve.json`
 
 A single lingering process is a nuisance. A fleet of undiscoverable ones is a defect, and the state file manufactures it: it exists to answer "is one already running" and answers wrongly in exactly the case where the answer matters.
 
-So discovery asks the network instead:
+So liveness is asked of the network, and the answer is never read off a disk:
 
 ```
   ensure_dashboard(root)
         │
-        ├─ for port in 4321..=4330:
-        │     GET /identity  (250ms timeout)
-        │       │
-        │       ├─ answers with MY canonical root  ──►  reuse it, done
-        │       ├─ answers with another root       ──►  another checkout, next port
-        │       ├─ answers something else          ──►  not ours, next port
-        │       └─ nothing listening               ──►  spawn here
+        │  ── fast path: the registry says this project is 4323 ──
+        ├─ GET /identity on 4323  (250ms timeout)
+        │       ├─ MY canonical root   ──►  reuse it. done.        ◄── ~always
+        │       ├─ another root        ──►  a squatter or a stale entry
+        │       └─ nothing listening   ──►  probably mine to bind
         │
-        └─ after spawning: poll /identity until it answers (~2s)
-                 │
-              still nothing  ──►  report the failure, name serve.log
+        │  ── repair path: never bind without asking the whole range ──
+        ├─ sweep 4321..=4352 for MY root
+        │       └─ found on 4327  ──►  adopt it, rewrite my entry to 4327. done.
+        │
+        │  ── bind path ──
+        └─ bind 4323
+                ├─ bound        ──►  poll /identity until it answers (~2s)
+                │                      still nothing ──► report, name serve.log
+                └─ lost the race ──►  fall forward, rewrite my entry to where I landed
 ```
 
-Nothing to lose to `git clean`, `rm -rf`, a reboot, or a `SIGKILL`. `Project::at` already canonicalises the root, so the comparison is exact rather than heuristic.
+The sweep before binding is what makes the registry safe to lose. Delete it, corrupt it, restore an old backup of it — the sweep still finds the running dashboard, still reuses it, and writes back what it just learned. **Losing the registry costs stability, never correctness.** That is exactly the test `serve.json` fails: it was consulted *instead of* the network, so losing it produced a second server, and losing it repeatedly produced a fleet.
 
-The cost is that `--port` can no longer default to `0`. An OS-chosen ephemeral port is undiscoverable by a later process by construction, which is precisely the property that broke the state-file design. `4321` is the base because `.pi/prompts/opsx-review.md` already uses it. The range is bounded at ten; exhausting it is a loud, diagnosable error, which is the correct outcome — unlike a silent eleventh duplicate.
+It also makes the first-sight race a non-event. Two projects seen for the first time in the same instant may both be assigned 4322; one loses the bind, falls forward, and records where it actually landed. A hint that is re-derived on every use does not need a lock file, and a torn write costs one restart's worth of stability. The rule generalises: **anything derived from the registry must be verified against the network before it is acted on, and repaired when it disagrees.** An implementation that trusts the entry and skips the sweep has rebuilt `serve.json` with extra steps.
 
-### Listing and killing dashboards needs no state either, and that is why it was wrongly excluded
+`Project::at` already canonicalises the root, so both the probe comparison and the registry key are exact rather than heuristic.
 
-The original scope line excluded "no state file recording the port or pid, no `serve stop`" as one item. That conflated two things. The state file is rejected on the argument above and stays rejected. A list-and-kill command is a different proposition, because everything it needs is already being built here:
+### Where the registry lives, and why a dependency is added here but refused elsewhere
+
+The registry is a JSON object mapping canonical project root to port. It lives in `crates/core`: which port belongs to which root is a domain rule, core already carries `serde_json`, and the CLI does not — adding `serde_json` to the CLI to write one file would put the rule in the wrong crate to save a line in a manifest.
+
+It does **not** live under `.openspec-doc/`. That is the whole point: assignments are machine-global because ports are machine-global, and a per-project file is reachable by the `git clean -xdf` and `rm -rf .openspec-doc` that this project's own verification runs. It goes in the platform state directory where one exists — `$XDG_STATE_HOME/openspec-doc/ports.json`, defaulting to `~/.local/state` — and the local data directory on macOS and Windows, which have no state-directory convention.
+
+This adds the `dirs` crate, and that needs justifying, because two sections below this same design refuses to add an HTTP client and hand-rolls a `GET` over `TcpStream` instead. The rule being applied is not *never add a dependency*. It is that **a dependency must be smaller than the correctness risk of doing it by hand**, and the two cases fall on opposite sides of it:
+
+| | Hand-rolled | Risk of getting it wrong |
+| --- | --- | --- |
+| A fixed `GET` to `127.0.0.1` | ~20 lines, no parsing beyond a status line and a body | visible immediately, on the developer's own machine |
+| Three platforms' config conventions | ~3 lines and a `cfg` tree | invisible until it runs on a machine the author does not own |
+
+Hand-rolling the second is how a tool ends up writing to `~/Library/Application Support` on Linux, or to the wrong `%LOCALAPPDATA%` subtree, and nobody notices because the author develops on one platform.
+
+**The state directory must be overridable by an environment variable, and that is a correctness requirement rather than a convenience.** Without it the test suite writes real port assignments into the developer's own registry, and two concurrent `cargo test` runs corrupt each other's. The same reasoning applies to the port range: a test must never assume the real range is free, because the developer's own dashboards are sitting in it.
+
+Reading a registry that is missing is normal and silent — every project is unseen once. Reading one that is corrupt is **reported loudly and then continued past**, with no assignment, falling through to the sweep. This is not a silent fallback: the failure is on stderr and in the hook's report channel, and the operator is told which file to delete. It follows the precedent this change already sets for a dashboard that fails to ensure, where the session must not lose its review feedback to an unrelated failure.
+
+### Assignment, reclamation, and what happens when the range fills
+
+An unseen root is assigned **the lowest port in the range not already assigned**. That yields 4321, 4322, 4323 in the order projects were first opened, which is the readable, guessable numbering the request asked for. The next number is *derived* from the recorded values rather than stored as a counter, because a stored counter is a second source of truth that can drift from the table it describes.
+
+The range is `4321`–`4352`. It stays bounded because `add-serve-process-control` enumerates dashboards by probing the whole range, and an unbounded range cannot be enumerated. Thirty-two rather than ten because an assignment is consumed by every project *ever opened*, not by every project running, and a working machine passes ten checkouts inside a year.
+
+Reclamation is deliberately the least clever mechanism that works:
+
+- **Lazily** — only when assigning a port and the range is full. Eager collection churns assignments for no benefit.
+- **On an observable fact** — only entries whose canonical root no longer exists on disk. "The directory is gone" is a fact anyone can check. "Least recently used" is a heuristic, and it would smuggle the order-dependence back in at exactly the boundary this change exists to remove.
+- **Loudly when it cannot** — a full range of live roots is an error naming the registry file and `serve forget`, not a wraparound onto someone else's port.
+
+One cost, stated rather than discovered: an unmounted drive makes a live project look deleted, so its entry can be reclaimed. That costs stability and never correctness, because the sweep still finds any dashboard actually running for that root.
+
+A root that moves on disk is a new project and gets a new number. The alternative — keying on something inside the repository — makes two worktrees of the same repository collide, and two worktrees are precisely the case this has to get right.
+
+### What determinism buys that discovery alone does not
+
+Worth being exact about, because the identity probe already makes a running dashboard *findable*, and it would be easy to build this for a benefit that was already free:
+
+- A bookmark that stays correct across restarts. Findable is not the same as stable.
+- **A URL that can be stated before the server exists.** This is the one that pays for the registry. Under fall-forward the port is a property of a running process, so nothing can name it until something has bound it. Under assignment it is a property of the project, so `hook explore` can print it in the same breath as the note path — a full turn before the dashboard is started at the first turn boundary — and `serve url` can answer with nothing running at all.
+
+That second point closes a gap in this change's own design that was not otherwise noticed: `hook explore` deliberately starts nothing, so at the moment the reviewer types `/opsx:explore` there was no URL to hand them and no way to produce one.
+
+`--port` given explicitly bypasses the registry entirely — not read, not written, no fall-forward. Someone who names a port wants that port, and an explicit port is not a statement about where this project lives.
+
+### Listing and killing dashboards reads no liveness state either, and that is why it was wrongly excluded
+
+The original scope line excluded "no state file recording the port or pid, no `serve stop`" as one item. That conflated two things. A file consulted *instead of* the network is rejected on the argument above and stays rejected. A list-and-kill command is a different proposition, because everything it needs is already being built here:
 
 - `/identity` reports the canonical root and the pid. The root is the working directory an operator wants to see; the pid is what makes stopping one possible.
-- The port range is bounded and **global to the machine** — `4321`–`4330` on localhost is not per-project — so probing all ten enumerates every dashboard running anywhere, which is exactly what "list them all" means.
+- The port range is bounded and **global to the machine** — `4321`–`4352` on localhost is not per-project — so probing all thirty-two enumerates every dashboard running anywhere, which is exactly what "list them all" means.
 - The probe is the same fixed localhost `GET` this change has to write regardless.
 
-So `serve list` is ten probes and a table, and `serve kill` is that plus a signal. Nothing on disk, nothing to lose to `git clean`, correct after a reboot or a `SIGKILL`. It is the complement of stateless discovery rather than an exception to it.
+So `serve list` is thirty-two probes and a table, and `serve kill` is that plus a signal. Neither reads the registry to decide what is running, so both stay correct after a reboot, a `SIGKILL`, or a deleted registry. The registry gives that change one addition rather than a dependency: an assigned-but-not-running project is worth showing next to the running ones, and `serve forget` is what makes a full range recoverable by hand.
 
 Two limits it inherits and must state rather than hide: a dashboard started by hand outside the range — `--port 9999` — is invisible to it; and a pid learned over a socket races a dying process, so the command must re-probe and report what is actually gone rather than inferring success from having sent a signal.
 
@@ -172,5 +235,13 @@ The hook re-spawns itself via `std::env::current_exe()`, which also keeps the de
 The `move-to-proposal` verdict arrived with empty notes, leaving three questions from the exploration unanswered. Each is decided here and each is cheap to reverse:
 
 1. **Autostart is built**, rather than the Rule 2 minimum of probing and printing the command for the owner to run. The manual step is the step that gets forgotten, which is what motivated the request; the do-nothing option was offered explicitly during exploration and not taken.
-2. **A browser opens only from `hook explore`, only on an actual start.** Argued above.
+2. **A browser opens once per session, from `hook stop`, at the turn boundary that first registers it.** Argued at length above. This item previously read "only from `hook explore`, only on an actual start", which was the superseded first version of the table and contradicted the rest of this document.
 3. **The idle window is 30 minutes, with no flag.** Long enough to cover a reviewer reading a page whose tab a browser may have frozen; short enough that an abandoned dashboard does not outlive the working day. A flag to tune it is speculative until something wants a different value.
+
+## Decisions taken in the port-determinism revision
+
+A later exploration replaced fall-forward-by-start-order with registry-backed assignment. Three sub-questions were delegated back with "prefer correctness and maintainability, time is no constraint", and were decided as follows. All three are argued above; they are collected here so a reader can see what was chosen rather than reverse-engineering it.
+
+1. **The registry lives in the platform state directory via `dirs`, keyed on the canonical root, owned by `crates/core`** — with an environment override, because without one the test suite writes into the developer's real assignments.
+2. **The range widens to `4321`–`4352`, with lazy reclamation of entries whose root no longer exists, and a loud failure when a full range is all live.** No LRU, no wraparound.
+3. **All three URL carriers are built** — `serve url`, the URL in `hook explore`'s output, and a line in `AGENTS.md`. `serve url` belongs to this change rather than to `add-serve-process-control`, because `hook explore` needs the same primitive in the same change, and shipping deterministic ports without the command that states the URL delivers everything except the thing that was asked for.

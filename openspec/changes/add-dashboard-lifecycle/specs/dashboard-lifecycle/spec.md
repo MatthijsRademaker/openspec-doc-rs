@@ -1,13 +1,23 @@
 ## ADDED Requirements
 
 ### Requirement: A running dashboard is discovered by probing, not by reading recorded state
-The system SHALL determine whether a dashboard is already serving a project root by probing a bounded range of local ports for an identity response, and SHALL NOT depend on any recorded file naming the running dashboard's port or process.
+The system SHALL determine whether a dashboard is already serving a project root by probing a bounded range of local ports for an identity response, and SHALL NOT treat any recorded file as evidence that a dashboard is running, on which port, or under which process id. Before starting a dashboard it SHALL probe the whole range for its own root, whatever any recorded port assignment says.
 
 Runtime state recorded under `.openspec-doc/` has to be excluded from version control, which means `git clean -xdf` and `rm -rf .openspec-doc` delete it while the server it describes keeps running. Every such deletion would then produce another dashboard that is alive, undiscoverable, and unkillable by any command this project could offer. Probing has no equivalent failure: it survives file deletion, reboot, and `SIGKILL`.
+
+The recorded port assignment is not an exception to this. It says where a dashboard for a root *should prefer to live*, never whether one is running there, and it is checked against the network before anything is done with it. Acting on the assignment without the sweep would reintroduce exactly the failure above.
 
 #### Scenario: A dashboard already serving this root is reused
 - **WHEN** the system is asked to ensure a dashboard for a project root and a dashboard for that same canonical root answers on a probed port
 - **THEN** the system SHALL reuse it and SHALL NOT start another
+
+#### Scenario: A dashboard found somewhere other than its assignment is reused, not duplicated
+- **WHEN** a dashboard for a root is running on a port other than the one recorded as that root's assignment
+- **THEN** the system SHALL reuse the running dashboard, SHALL NOT start a second one, and SHALL correct the recorded assignment to the port it is actually on
+
+#### Scenario: A deleted port assignment does not produce a duplicate
+- **WHEN** the recorded port assignments are deleted while a dashboard for a root is running, and the system is then asked to ensure a dashboard for that root
+- **THEN** the system SHALL discover the running dashboard and SHALL NOT start a second one
 
 #### Scenario: A dashboard serving a different root is not mistaken for this one
 - **WHEN** a probed port answers with an identity naming a different canonical project root
@@ -20,6 +30,67 @@ Runtime state recorded under `.openspec-doc/` has to be excluded from version co
 #### Scenario: Deleted runtime state does not produce a duplicate
 - **WHEN** everything under `.openspec-doc/` is deleted while a dashboard for that root is running, and the system is then asked to ensure a dashboard
 - **THEN** the system SHALL discover the running dashboard and SHALL NOT start a second one
+
+### Requirement: Each project root keeps its own port
+The system SHALL record an assignment from canonical project root to a port within a bounded range, SHALL assign the lowest port in the range not already assigned the first time a root is seen, and SHALL give that root the same port on every later occasion. The record SHALL live outside the project directory, so that deleting the project's own runtime state does not disturb it.
+
+Without an assignment a project's port is decided by which checkout happened to start first. Nothing is then able to name a project's URL without probing for it: a saved bookmark points at whichever dashboard now holds that port, which is another repository's review queue rendered in a page that looks correct. Assigning in ascending order, rather than by hashing the root, is what makes the numbering readable and collision-free.
+
+The record lives outside the project because ports are global to the machine while `.openspec-doc/` is per-project and routinely deleted — by `git clean -xdf`, by `rm -rf .openspec-doc`, and by this project's own verification.
+
+#### Scenario: A newly seen project takes the lowest unassigned port
+- **WHEN** a dashboard is ensured for a canonical root with no recorded assignment
+- **THEN** the system SHALL assign it the lowest port in the range not assigned to another root, and SHALL record that assignment
+
+#### Scenario: An assignment survives the project's runtime state being deleted
+- **WHEN** everything under a project's `.openspec-doc/` is deleted and a dashboard is then ensured for that root
+- **THEN** the system SHALL use the port already assigned to that root
+
+#### Scenario: A relocated project root is a new project
+- **WHEN** a dashboard is ensured for a project whose directory has been moved, so that its canonical root differs from the recorded one
+- **THEN** the system SHALL treat it as a root with no assignment
+
+#### Scenario: An unreadable record is reported and does not stop the dashboard
+- **WHEN** the recorded assignments cannot be read or parsed
+- **THEN** the system SHALL report the failure naming the file, SHALL continue without an assignment, and SHALL still discover or start a dashboard
+
+### Requirement: A full port range is reclaimed on an observable fact or fails loudly
+When every port in the range is assigned and a new root needs one, the system SHALL reclaim assignments whose canonical root no longer exists on disk, and SHALL fail with an error naming the record and how to forget an entry when no assignment can be reclaimed. It SHALL NOT reuse a port already assigned to a root that still exists, and SHALL NOT reclaim while unassigned ports remain.
+
+An assignment is consumed by every project ever opened, not by every project running, so the range fills eventually on a working machine. "The directory is gone" is a fact any operator can check and reproduce. Reclaiming the least recently used assignment instead would put a project's port back at the mercy of the order things happened in, which is the property this whole mechanism exists to remove.
+
+#### Scenario: A gone project's port is reclaimed only when the range is full
+- **WHEN** a new root needs an assignment, every port in the range is assigned, and some assignment names a root that no longer exists on disk
+- **THEN** the system SHALL reclaim that assignment for the new root
+
+#### Scenario: Assignments are stable while ports remain
+- **WHEN** a new root needs an assignment and at least one port in the range is unassigned
+- **THEN** the system SHALL take an unassigned port and SHALL leave every existing assignment unchanged, including assignments whose root no longer exists
+
+#### Scenario: A full range of live projects fails rather than colliding
+- **WHEN** a new root needs an assignment, every port is assigned, and every assigned root still exists on disk
+- **THEN** the system SHALL fail with an error naming the record of assignments and the command that forgets one, and SHALL NOT assign a port already held by another root
+
+### Requirement: A project's dashboard URL can be stated before a dashboard exists
+The system SHALL provide a command that prints the URL of the current project's dashboard together with whether a dashboard is currently serving it, and SHALL print that URL correctly when no dashboard is running. The turn-end and exploration hooks SHALL surface the same URL so that an agent working in the project can report it.
+
+The URL is a property of the project rather than of a running process, which is what the assignment buys. Before it, nothing could name a project's URL until something had bound a port — so the exploration hook, which deliberately starts no dashboard, had no URL to give the reviewer at the moment they asked to be shown one.
+
+#### Scenario: The URL is printed with no dashboard running
+- **WHEN** the URL command runs in a project with no dashboard serving it
+- **THEN** the system SHALL print the URL of that project's assigned port and SHALL report that nothing is serving it
+
+#### Scenario: A running dashboard is reported as running
+- **WHEN** the URL command runs in a project whose dashboard is serving
+- **THEN** the system SHALL print the URL it is serving on and SHALL report it as running
+
+#### Scenario: A dashboard on a port other than the assignment is reported where it actually is
+- **WHEN** the URL command runs in a project whose dashboard is serving on a port other than its assignment
+- **THEN** the system SHALL print the URL the dashboard is actually serving on
+
+#### Scenario: Starting an exploration reports where the review will appear
+- **WHEN** an exploration starts, before any dashboard has been started for that project
+- **THEN** the system SHALL print the project's dashboard URL alongside the location of the note
 
 ### Requirement: The dashboard reports the root it serves and its process
 The system SHALL expose, on the dashboard's HTTP surface, a route reporting the canonical project root that dashboard is serving and its process id.

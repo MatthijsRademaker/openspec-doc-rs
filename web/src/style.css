@@ -1461,6 +1461,10 @@
    would cover it. The stage is taller than the viewport, so what the reviewer actually sees is its
    two vertical edges — legible from any scroll position, and it intercepts nothing. */
 .artifact-document {
+  /* Where the reading column ends is where the artwork plate begins, so both read one declaration:
+     a plate 1rem out of step is 1rem of block background painted over the artwork. */
+  --document-measure: min(100%, 45rem);
+
   position: relative;
 }
 
@@ -1712,14 +1716,76 @@
   pointer-events: none;
 }
 
+/* Two faults with one cause: prose stops at its measure, so a wide column is 40% document and 60%
+   void, and the artwork was squeezed into that void's short top band — a 2.3:1 box over a 5:3
+   portrait, which `cover` resolves by slicing the head off at both ends. On a stage wide enough to
+   spare it the reading column is bounded and the artwork takes the remainder as a plate deeper than
+   it is wide, so the crop runs horizontally across a source whose subject is centred and the face
+   survives. 45rem is the bound because the widest ASCII diagram in this repository is 86 columns,
+   and 45rem is what stops that diagram scrolling.
+
+   The plate is taller than the header, and the header stops clipping it, so it bleeds down past the
+   header rule into the space beside the first blocks and dissolves there — the same bleed-and-fade
+   the utility and conversation artwork use. The rule under the header now ends where the reading
+   column ends instead of crossing the portrait.
+
+   Keyed on the viewport and not on the column, even though the column is what the layout cares
+   about: collapsing the conversation rail widens this column by ~360px, so a container query would
+   put the boundary between the bounded and unbounded column inside a control the reviewer clicks,
+   and a heading filling a bounded column would re-wrap every time they clicked it. A viewport query
+   costs the plate a stage it could have had — a collapsed rail below this width leaves the room
+   unused — and buys line breaks that never move. Headings are in this branch for that reason and
+   not in the measure rule above: 100% is a fixed width only while the column is bounded. */
+@media (min-width: 110rem) {
+  .artifact-document__blocks {
+    width: var(--document-measure);
+  }
+
+  /* Display type, not reading text: 48 characters of body measure wraps a title into four lines of
+     4rem serif, which reads as the document being cut off at 40% of its column. */
+  .review-block__content:has(:is(h1, h2, h3, h4, h5, h6)) {
+    width: 100%;
+  }
+
+  .artifact-document__header {
+    overflow: visible;
+  }
+
+  .artifact-document__arrival-art {
+    /* A definite height with both insets set, rather than an aspect ratio: an aspect ratio plus a
+       maximum height over-constrains an absolutely positioned box, and what gives way is the right
+       inset, so a collapsed rail left the plate short of the stage edge. Height fixed and width
+       taking the remainder also means the bleed past the header is the same at every stage width. */
+    inset: 0 0 auto var(--document-measure);
+    height: min(44rem, 82vh);
+    clip-path: none;
+    /* Proportional rather than a rem: at the low end of this branch the plate is short, and a fixed
+       fade that outran its height would dissolve the portrait before the header rule reached it. */
+    mask-image: linear-gradient(to bottom, black 62%, transparent 100%);
+  }
+
+  .artifact-document__arrival-image {
+    object-position: 66% center;
+  }
+}
+
 .artifact-document__blocks {
   display: grid;
+}
+
+/* A heading and its prose are one section, so the hairline falls between sections rather than
+   between every block. Within a section the blocks only need enough padding to be hoverable and to
+   carry their own comment gutter. */
+.review-section {
+  display: grid;
+  min-width: 0;
+  padding-block: var(--space-2);
+  border-bottom: var(--hairline) solid var(--border-ink);
 }
 
 .review-block-row {
   display: grid;
   min-width: 0;
-  border-bottom: var(--hairline) solid var(--border-ink);
 }
 
 .review-block {
@@ -1728,7 +1794,7 @@
   grid-template-columns: minmax(0, 1fr) 2.75rem;
   column-gap: var(--space-1);
   min-width: 0;
-  padding: var(--space-2) var(--space-1) var(--space-2) clamp(var(--space-2), 3vw, var(--space-4));
+  padding: var(--space-1) var(--space-1) var(--space-1) clamp(var(--space-2), 3vw, var(--space-4));
   border-left: 2px solid transparent;
   background: var(--canvas);
   transition:
@@ -1802,13 +1868,19 @@
   overflow-wrap: anywhere;
 }
 
-.review-block__content > :first-child,
-.review-block__content > div > :first-child {
+/* The measure is a prose measure, and neither of these is prose. A table needs its columns and an
+   ASCII diagram needs its columns to line up, and neither survives being folded into 48
+   characters. A fence never re-wraps whatever width it is given; a table's cells do, which is the
+   one place this stage lets a column change reflow something. */
+.review-block__content:has(:is(pre, table)) {
+  width: 100%;
+}
+
+.review-block__content > :first-child {
   margin-top: 0;
 }
 
-.review-block__content > :last-child,
-.review-block__content > div > :last-child {
+.review-block__content > :last-child {
   margin-bottom: 0;
 }
 
@@ -1863,13 +1935,15 @@
   padding: var(--space-1);
   border: var(--hairline) solid var(--border-ink);
   background: var(--surface);
+  line-height: 1.45;
+  tab-size: 4;
 }
 
 .review-block__content a {
   color: var(--focus-ink);
 }
 
-.review-block__table {
+.review-block__content table {
   display: block;
   width: 100%;
   max-width: 100%;
@@ -1877,10 +1951,15 @@
   border-collapse: collapse;
 }
 
-.review-block__table :is(th, td) {
+.review-block__content :is(th, td) {
   padding: var(--space-1);
   border: var(--hairline) solid var(--border-ink);
   text-align: left;
+  vertical-align: top;
+  /* The prose measure's `anywhere` splits a heading word across two lines in a narrow column. A
+     cell wraps at spaces and the table scrolls, because a column is a comparison and a broken word
+     is not. */
+  overflow-wrap: normal;
 }
 
 .review-block__controls {

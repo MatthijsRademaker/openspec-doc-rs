@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { proposalSource, repeatedBlock } from './fixture-source'
+import { diagramSource, proposalSource, repeatedBlock } from './fixture-source'
 
 const moduleRoot = fileURLToPath(new URL('.', import.meta.url))
 const repoRoot = resolve(moduleRoot, '../..')
@@ -81,7 +81,8 @@ async function createFixture(): Promise<string> {
   const designPath = `openspec/changes/${fixtureChange}/design.md`
   const proposal = proposalSource
   const designTarget = 'Conversation follows exact selected artifact.'
-  const design = `# Fixture design\n\nA deterministic embedded-app fixture.\n\n${designTarget}\n`
+  // The diagram trails the anchored target so the comment's recorded offsets stay valid.
+  const design = `# Fixture design\n\nA deterministic embedded-app fixture.\n\n${designTarget}\n\n${diagramSource}\n`
   const secondRepeatedOffset = proposal.lastIndexOf(repeatedBlock)
   const designTargetOffset = design.indexOf(designTarget)
   const comments = [

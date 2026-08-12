@@ -42,6 +42,11 @@ const emit = defineEmits<{
   composer: [id: string, dirty: boolean]
 }>()
 
+interface Section {
+  id: string
+  blocks: Block[]
+}
+
 interface CommentTarget {
   artifactPath: string
   block: Block
@@ -69,6 +74,30 @@ watch(
     }
   },
 )
+
+// A heading and the blocks that follow it are one readable unit, so the document is grouped into
+// sections rather than printing one bordered row per block. Blocks stay individually anchorable;
+// only the separator moves outward, to the section boundary.
+const sections = computed<Section[]>(() => {
+  const grouped: Section[] = []
+  for (const block of props.artifact?.blocks ?? []) {
+    const current = grouped[grouped.length - 1]
+    if (!current || /^<h[1-6][\s>]/.test(block.html)) {
+      grouped.push({ id: block.id, blocks: [block] })
+    } else {
+      current.blocks.push(block)
+    }
+  }
+  return grouped
+})
+
+const blockNumbers = computed(() => {
+  const numbers = new Map<string, number>()
+  for (const [index, block] of (props.artifact?.blocks ?? []).entries()) {
+    numbers.set(block.id, index + 1)
+  }
+  return numbers
+})
 
 const commentsByBlock = computed(() => {
   const grouped = new Map<string, Thread[]>()
@@ -209,113 +238,113 @@ function submitComment() {
     </header>
 
     <div class="artifact-document__blocks">
-      <div v-for="(block, blockIndex) in artifact.blocks" :key="block.id" class="review-block-row">
-        <div
-          :ref="(element) => setBlockElement(block.id, element)"
-          class="review-block"
-          :class="{
-            'review-block--commented': blockThreads(block.id).length > 0,
-            'review-block--active': blockThreads(block.id).some(
-              (thread) => thread.comment.id === activeThreadId,
-            ),
-            'review-block--triangulation-origin': triangulationRole(block.id) === 'origin',
-            'review-block--triangulation-destination':
-              triangulationRole(block.id) === 'destination',
-          }"
-          :data-motion-event="triangulationRole(block.id) ? 'triangulate' : undefined"
-          :data-block-id="block.id"
-          tabindex="-1"
-          @mouseup="startSelectionComment($event, block)"
-        >
-          <div class="review-block__content">
+      <section v-for="section in sections" :key="section.id" class="review-section">
+        <div v-for="block in section.blocks" :key="block.id" class="review-block-row">
+          <div
+            :ref="(element) => setBlockElement(block.id, element)"
+            class="review-block"
+            :class="{
+              'review-block--commented': blockThreads(block.id).length > 0,
+              'review-block--active': blockThreads(block.id).some(
+                (thread) => thread.comment.id === activeThreadId,
+              ),
+              'review-block--triangulation-origin': triangulationRole(block.id) === 'origin',
+              'review-block--triangulation-destination':
+                triangulationRole(block.id) === 'destination',
+            }"
+            :data-motion-event="triangulationRole(block.id) ? 'triangulate' : undefined"
+            :data-block-id="block.id"
+            tabindex="-1"
+            @mouseup="startSelectionComment($event, block)"
+          >
             <!-- Rust sanitizes raw HTML before this rendered markdown reaches client. -->
-            <table v-if="block.html.startsWith('<tr>')" class="review-block__table">
-              <!-- pi-lens-ignore: javascript.vue.security.audit.xss.templates.avoid-v-html.avoid-v-html -->
-              <tbody v-html="block.html" />
-            </table>
             <!-- pi-lens-ignore: javascript.vue.security.audit.xss.templates.avoid-v-html.avoid-v-html -->
-            <div v-else v-html="block.html" />
-          </div>
+            <div class="review-block__content" v-html="block.html" />
 
-          <div class="review-block__controls">
-            <div v-if="blockThreads(block.id).length" class="review-block__markers" aria-label="Comments">
-              <button
-                v-for="(thread, threadIndex) in blockThreads(block.id)"
-                :key="thread.comment.id"
-                type="button"
-                class="review-block__marker"
-                :class="[
-                  `review-block__marker--${thread.status}`,
-                  { 'review-block__marker--active': thread.comment.id === activeThreadId },
-                ]"
-                :aria-current="thread.comment.id === activeThreadId ? 'true' : undefined"
-                :aria-controls="`artifact-thread-${thread.comment.id}`"
-                @click="emit('activateThread', thread.comment.id)"
+            <div class="review-block__controls">
+              <div
+                v-if="blockThreads(block.id).length"
+                class="review-block__markers"
+                aria-label="Comments"
               >
-                {{ threadIndex + 1 }}
-                <span class="sr-only">{{ thread.status }} comment</span>
-              </button>
-            </div>
-
-            <Button
-              type="button"
-              variant="instrument"
-              size="icon-sm"
-              class="review-block__comment-action"
-              :aria-label="`Comment on ${artifact.path}, block ${blockIndex + 1}`"
-              :disabled="busy"
-              @click="startBlockComment(block)"
-            >
-              +
-            </Button>
-          </div>
-        </div>
-
-        <!-- The slot exists so the composer can expand: it displaces the document by its own
-             height, and an interpolated row makes that read as the composer opening rather than as
-             the page jolting. -->
-        <Transition name="composer">
-          <div v-if="target?.block.id === block.id" class="review-block-row__composer-slot">
-            <form
-              class="review-block-row__composer"
-              :class="{ 'review-block-row__composer--transmitting': isTransmittingComment }"
-              :data-motion-event="isTransmittingComment ? 'transmit' : undefined"
-              :aria-busy="isTransmittingComment"
-              @submit.prevent="submitComment"
-            >
-              <label :for="`comment-${block.id}`">
-                {{ target.selected ? 'Comment on selected text' : 'Comment on block' }}
-              </label>
-              <blockquote>{{ target.selectedText }}</blockquote>
-              <textarea
-                :id="`comment-${block.id}`"
-                v-model="commentBody"
-                rows="4"
-                required
-                autofocus
-                :disabled="busy"
-              />
-              <div class="comment-thread__actions">
-                <Button type="submit" size="sm" :disabled="busy || !commentBody.trim()">
-                  {{ isTransmittingComment ? 'Transmitting comment…' : 'Record comment' }}
-                </Button>
-                <span v-if="isTransmittingComment" class="transmission-status" role="status">
-                  Transmitting comment to review record
-                </span>
-                <Button
+                <button
+                  v-for="(thread, threadIndex) in blockThreads(block.id)"
+                  :key="thread.comment.id"
                   type="button"
-                  variant="ghost"
-                  size="sm"
-                  :disabled="busy"
-                  @click="cancelComment"
+                  class="review-block__marker"
+                  :class="[
+                    `review-block__marker--${thread.status}`,
+                    { 'review-block__marker--active': thread.comment.id === activeThreadId },
+                  ]"
+                  :aria-current="thread.comment.id === activeThreadId ? 'true' : undefined"
+                  :aria-controls="`artifact-thread-${thread.comment.id}`"
+                  @click="emit('activateThread', thread.comment.id)"
                 >
-                  Cancel
-                </Button>
+                  {{ threadIndex + 1 }}
+                  <span class="sr-only">{{ thread.status }} comment</span>
+                </button>
               </div>
-            </form>
+
+              <Button
+                type="button"
+                variant="instrument"
+                size="icon-sm"
+                class="review-block__comment-action"
+                :aria-label="`Comment on ${artifact.path}, block ${blockNumbers.get(block.id)}`"
+                :disabled="busy"
+                @click="startBlockComment(block)"
+              >
+                +
+              </Button>
+            </div>
           </div>
-        </Transition>
-      </div>
+
+          <!-- The slot exists so the composer can expand: it displaces the document by its own
+               height, and an interpolated row makes that read as the composer opening rather than as
+               the page jolting. -->
+          <Transition name="composer">
+            <div v-if="target?.block.id === block.id" class="review-block-row__composer-slot">
+              <form
+                class="review-block-row__composer"
+                :class="{ 'review-block-row__composer--transmitting': isTransmittingComment }"
+                :data-motion-event="isTransmittingComment ? 'transmit' : undefined"
+                :aria-busy="isTransmittingComment"
+                @submit.prevent="submitComment"
+              >
+                <label :for="`comment-${block.id}`">
+                  {{ target.selected ? 'Comment on selected text' : 'Comment on block' }}
+                </label>
+                <blockquote>{{ target.selectedText }}</blockquote>
+                <textarea
+                  :id="`comment-${block.id}`"
+                  v-model="commentBody"
+                  rows="4"
+                  required
+                  autofocus
+                  :disabled="busy"
+                />
+                <div class="comment-thread__actions">
+                  <Button type="submit" size="sm" :disabled="busy || !commentBody.trim()">
+                    {{ isTransmittingComment ? 'Transmitting comment…' : 'Record comment' }}
+                  </Button>
+                  <span v-if="isTransmittingComment" class="transmission-status" role="status">
+                    Transmitting comment to review record
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    :disabled="busy"
+                    @click="cancelComment"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </Transition>
+        </div>
+      </section>
     </div>
   </section>
 

@@ -12,6 +12,23 @@ const scrollFiller = Array.from(
     `Scroll pressure block ${index + 1}. The obstruction lane needs this document taller than one desktop viewport.`,
 ).join('\n\n')
 
+/**
+ * The widest ASCII diagram in this project's own design documents is 86 columns, and the bound on
+ * the reading column exists to fit it. The row is sliced to exactly that width so the assertion
+ * measures the column against a real worst case rather than a hopeful one.
+ */
+export const diagramColumns = 86
+
+export const diagramSource = [
+  '```',
+  '  ├─ deterministic diagram row reaching the widest column this repository contains anywhere at all'.slice(
+    0,
+    diagramColumns,
+  ),
+  '  └─ narrower row',
+  '```',
+].join('\n')
+
 export const proposalSource =
   '# Observatory Design System Fixture\n\nBrowser lane must see this proposal.\n\n' +
   `${repeatedBlock}\n\nA bridge between repeated blocks.\n\n${repeatedBlock}\n\n` +

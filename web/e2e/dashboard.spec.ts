@@ -1,7 +1,7 @@
 import { expect, type Page, test } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { proposalSource } from './fixture-source'
+import { diagramColumns, proposalSource } from './fixture-source'
 import { expectClearOfAll, expectContained, expectNoOverlap } from './geometry'
 
 const fixtureChange = 'implement-observatory-design-system-with-a-realistically-long-identifier'
@@ -18,6 +18,8 @@ const htmlSpecPath = `${changeRoot}/specs/dashboard-html-views/spec.md`
 const visualSpecPath = `${changeRoot}/specs/dashboard-visual-system/spec.md`
 const fixturePaths = [proposalPath, designPath, tasksPath, htmlSpecPath, visualSpecPath]
 const desktopObstructionViewport = { width: 1280, height: 800 }
+// The plate branch needs a document column wider than 63rem, which the 1440 project never reaches.
+const wideDesktopViewport = { width: 1920, height: 1080 }
 
 function parseUrl(raw: string, context: string): URL {
   try {
@@ -468,6 +470,63 @@ test('keeps instrumentation rail artwork clear of artifact paths', async ({ page
     'conversation thread',
     { insetTop: bleed },
   )
+})
+
+/* Both halves of one decision, and neither is visible at the 1440 project: a wide column bounds the
+   reading measure and hands the remainder to the artwork plate. The two edges are one declaration,
+   so a drift between them shows up here as block background painted over the portrait. */
+test('bounds the reading column on a wide stage and bleeds the plate past the header', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop plate composition contract')
+  const health = observeBrowserHealth(page)
+  await page.setViewportSize(wideDesktopViewport)
+  await gotoArtifact(page, designPath)
+
+  const plate = page.locator('.artifact-document__arrival-art')
+  const edges = await page.evaluate(() => {
+    const box = (selector: string) => document.querySelector(selector)?.getBoundingClientRect()
+    const plateBox = box('.artifact-document__arrival-art')
+    const headerBox = box('.artifact-document__header')
+    const blocksBox = box('.artifact-document__blocks')
+    const stageBox = box('.artifact-document')
+    return {
+      plateLeft: plateBox?.left,
+      plateBottom: plateBox?.bottom,
+      headerBottom: headerBox?.bottom,
+      blocksRight: blocksBox?.right,
+      stageWidth: stageBox?.width,
+      blocksWidth: blocksBox?.width,
+    }
+  })
+
+  expect(edges.blocksWidth, 'a wide stage must bound the reading column').toBeLessThan(
+    edges.stageWidth ?? 0,
+  )
+  expect(
+    Math.round(edges.plateLeft ?? 0),
+    'the plate begins exactly where the reading column ends',
+  ).toBe(Math.round(edges.blocksRight ?? -1))
+  expect(edges.plateBottom ?? 0, 'the plate bleeds past the header rule').toBeGreaterThan(
+    edges.headerBottom ?? 0,
+  )
+  await expectClearOfAll(
+    plate,
+    'selected artifact plate',
+    page.locator('.review-block'),
+    'review block',
+  )
+
+  const fence = page.locator('.review-block__content pre').first()
+  const fenceWidths = await fence.evaluate((element) => ({
+    client: element.clientWidth,
+    scroll: element.scrollWidth,
+  }))
+  expect(
+    fenceWidths.scroll,
+    `a ${diagramColumns}-column diagram must not scroll inside the bounded reading column`,
+  ).toBeLessThanOrEqual(fenceWidths.client)
+  expectHealthy(health)
 })
 
 test('links persistent conversation to exact repeated source occurrence', async ({ page }) => {
