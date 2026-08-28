@@ -213,6 +213,24 @@ describe('observatory visual system', () => {
     }
   })
 
+  it('keeps observation artwork static and free of gaze plumbing', () => {
+    const style = stylesheet()
+    const source = (suffix: string) =>
+      Object.entries(sourceModules).find(([path]) => path.endsWith(suffix))?.[1]
+    const indexView = source('/views/IndexView.vue')
+    const artifactDocument = source('/review/ArtifactDocument.vue')
+    if (!indexView || !artifactDocument) throw new Error('observation sources must be indexed')
+
+    const combined = `${style}\n${indexView}\n${artifactDocument}`
+    expect(combined).not.toMatch(
+      /ObservationGaze|trackPointerField|field-gaze|observation-gaze|eyelid/i,
+    )
+    expect(indexView).toContain('/assets/images/observatory-field.webp')
+    expect(artifactDocument).toContain('/assets/images/observatory-field.webp')
+    expect(ruleBody(style, '.index-field__image')).toContain('object-fit: cover')
+    expect(ruleBody(style, '.artifact-document__arrival-image')).toContain('object-fit: cover')
+  })
+
   it('keeps raw state colors out of component-local styles', () => {
     const rawColor = /(?:#[\da-f]{3,8}\b|oklch\()/i
 

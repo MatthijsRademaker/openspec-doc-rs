@@ -259,6 +259,72 @@ test('holds the index hero in proportion at every width', async ({ page }, testI
   expectHealthy(health)
 })
 
+test('keeps observation artwork static and pointer-independent', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop static artwork contract')
+  const health = observeBrowserHealth(page)
+  const snapshot = (imageSelector: string, surfaceSelector: string) =>
+    page.evaluate(
+      ({ imageSelector: targetImage, surfaceSelector: targetSurface }) => {
+        const image = document.querySelector(targetImage)
+        const surface = document.querySelector(targetSurface)
+        if (!(image instanceof HTMLElement) || !(surface instanceof HTMLElement)) {
+          throw new Error(`static artwork inspection is missing ${targetImage} or ${targetSurface}`)
+        }
+        const rect = image.getBoundingClientRect()
+        const style = getComputedStyle(image)
+        return {
+          rect: {
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+          },
+          transform: style.transform,
+          objectFit: style.objectFit,
+          objectPosition: style.objectPosition,
+          surfaceStyle: surface.getAttribute('style') ?? '',
+          gazeX: surface.style.getPropertyValue('--field-gaze-x'),
+          gazeY: surface.style.getPropertyValue('--field-gaze-y'),
+        }
+      },
+      { imageSelector, surfaceSelector },
+    )
+
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Changes', level: 1 })).toBeVisible()
+  const indexImage = page.locator('.index-field__image')
+  await expect(indexImage).toHaveCount(1)
+  await expect(indexImage).toHaveAttribute('alt', '')
+  await expect(indexImage).toHaveAttribute('aria-hidden', 'true')
+  await expect(page.locator('.observation-gaze, .index-field__observation-gaze')).toHaveCount(0)
+  const indexRest = await snapshot('.index-field__image', '.index-field')
+  await page.mouse.move(8, 8)
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())))
+  expect(await snapshot('.index-field__image', '.index-field')).toEqual(indexRest)
+
+  await page.setViewportSize(wideDesktopViewport)
+  await gotoArtifact(page, designPath)
+  const artifactImage = page.locator('.artifact-document__arrival-image')
+  await expect(artifactImage).toHaveCount(1)
+  await expect(artifactImage).toHaveAttribute('alt', '')
+  await expect(artifactImage).toHaveAttribute('aria-hidden', 'true')
+  await expect(artifactImage).toHaveCSS('object-fit', 'cover')
+  await expect(
+    page.locator('.artifact-document__arrival-plate, .artifact-document__arrival-observation-gaze'),
+  ).toHaveCount(0)
+  const artifactRest = await snapshot(
+    '.artifact-document__arrival-image',
+    '.artifact-document__arrival-art',
+  )
+  await page.mouse.move(1912, 1072)
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())))
+  expect(
+    await snapshot('.artifact-document__arrival-image', '.artifact-document__arrival-art'),
+  ).toEqual(artifactRest)
+  expectHealthy(health)
+})
+
 /* The gesture used to end at the `<code>` inside the loading state, which the scope throws away the
    moment it loads. Holding the navigation is what lets it end at the header the reviewer selected,
    and the placeholder never appearing at all is what proves the hold did its job. */

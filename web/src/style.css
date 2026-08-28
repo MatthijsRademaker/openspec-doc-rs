@@ -176,8 +176,8 @@
   --motion-duration-route: 200ms;
   /* Acquisition is one movement across two mechanisms: a native view transition carries the
      coordinate from rail to header, and plain CSS on real elements reports the arrival at the
-     document — the identity printing out of halftone, the target lock, and the source rising into
-     the frame that identity sits in. Both run
+     document — the identity printing out of halftone and the source rising into the frame that
+     identity sits in. Both run
      this duration so they read as one gesture rather than a fast transfer followed by a slow
      landing. The view-transition half suspends hit testing while it runs, so this token is a
      latency budget as much as a motion one: raising it lengthens the window in which the interface
