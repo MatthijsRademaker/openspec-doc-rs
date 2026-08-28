@@ -701,6 +701,7 @@ dependencies = [
  "clap",
  "openspec-doc-core",
  "openspec-doc-server",
+ "serde_json",
  "tempfile",
  "thiserror",
 ]

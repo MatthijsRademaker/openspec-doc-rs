@@ -10,6 +10,8 @@ openspec-doc [--root <PATH>] <COMMAND>
   hook explore --agent <claude|pi>
   comment add|list|reply|resolve
   scratch claim --session <ID> --change <NAME>
+  init [--agent <claude|pi>] [--yes] [--skip-instructions]
+  doctor                       run the configured hooks and report whether they work
 ```
 
 `--root` skips project discovery and is accepted by every subcommand. Without it, the project root is
@@ -117,6 +119,37 @@ agent where to write. Only `session_id` is read, so it accepts any of the agent'
 
 Its **stdout is the payload** — for the events it is wired to, a hook's stdout is added to the model's
 context. See [Agent hooks](/reference/hooks.md).
+
+## doctor
+
+Runs each hook registered in `.claude/settings.json` and reports what came back, one line per check,
+exiting non-zero if any failed. `init` answers *is this written down correctly*; `doctor` answers *does it
+run* — a perfect settings file for a binary that is not on the agent's `PATH` is exactly as silent as a
+healthy one.
+
+```bash
+openspec-doc doctor
+```
+
+What it does, and why each part is the way it is:
+
+- **It executes the command string recorded in the settings file**, verbatim, through `sh -c`. Not the
+  canonical one: an entry pointing at a local build is what the agent runs, so that is what gets probed.
+- **Every probe runs against a throwaway project** in a temporary directory, never this one. `hook stop`
+  consumes a pending directive, so a probe against the real project would eat the reviewer's outstanding
+  feedback — `doctor` would cause the failure it exists to diagnose. An entry whose command names its own
+  `--root` is therefore reported as unchecked rather than run.
+- **Each hook must answer with the thing that hook exists to say**: a decision payload from `Stop`, a note
+  location from `UserPromptExpansion`, and — because `hook prompt` exits zero and prints nothing on failure
+  by design — the text of a directive seeded in the throwaway project for `UserPromptSubmit`. Silence
+  cannot be the pass condition for a hook built to fail silently.
+- **It reports the binary on `PATH` against the running one** and fails when they differ. The agent runs
+  whichever `PATH` resolves; a report about the other one is answering the wrong question.
+- **Anything it does not examine gets a line saying so**: pi.dev's extension, whether a dashboard is
+  serving this project, and the `UserPromptExpansion` matcher, which executing the command bypasses. A
+  green line for something never looked at is what this command exists to remove.
+
+`openspec-doc init` is the fixer. `doctor` names what is broken and never writes to the project.
 
 ## Agent wire formats
 

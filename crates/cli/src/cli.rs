@@ -55,6 +55,25 @@ pub enum Command {
         command: CommentCommand,
     },
 
+    /// Wire this project's agent hooks, extension, and instruction block up
+    Init {
+        /// Agent harness to configure, repeatable; any given replaces detection
+        /// outright [possible values: claude, pi]
+        #[arg(long, value_name = "AGENT")]
+        agent: Vec<Agent>,
+
+        /// Perform the planned writes; without it nothing is written
+        #[arg(long)]
+        yes: bool,
+
+        /// Leave AGENTS.md alone
+        #[arg(long)]
+        skip_instructions: bool,
+    },
+
+    /// Run this project's configured agent hooks and report whether they work
+    Doctor,
+
     /// Manage the exploration scratch note
     Scratch {
         #[command(subcommand)]

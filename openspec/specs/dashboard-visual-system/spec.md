@@ -209,7 +209,7 @@ Motion MAY use opacity, slight position, registration-line growth, hard masks, c
 #### Scenario: Celestial artwork remains still
 
 - **WHEN** orbital, face, stipple, scan-line, or star-system artwork frames an interaction
-- **THEN** the artwork SHALL remain static unless a bounded non-interactive overlay reports a real event, and it SHALL NOT track the pointer or animate perpetually
+- **THEN** the artwork SHALL remain static unless a bounded non-interactive overlay reports a real event, SHALL NOT be displaced by pointer position, and SHALL NOT animate perpetually
 
 ### Requirement: Coordinate acquisition is the reference gesture for dashboard motion
 
@@ -253,6 +253,25 @@ The system SHALL keep visual source references outside the frontend runtime asse
 
 - **WHEN** the production build's runtime raster images are measured
 - **THEN** every image SHALL be on the runtime allowlist and their combined size SHALL be at most 6 MiB
+
+### Requirement: Observation field artwork remains static
+
+The shared observation field and its artifact-arrival placement SHALL render only static decorative artwork. Neither placement SHALL contain a pointer-responsive eyelid, iris, pupil, gaze overlay, plate drift, or script-written bearing. Artwork SHALL remain outside the accessibility tree, reject pointer interaction, and yield to review content and responsive cropping.
+
+#### Scenario: Pointer movement leaves observation artwork unchanged
+
+- **WHEN** a reviewer moves a fine pointer across the index or a wide artifact route
+- **THEN** the observation image and its crop SHALL remain at their rest geometry, no `--field-gaze-*` value or equivalent bearing SHALL be written, and no gaze overlay SHALL be rendered
+
+#### Scenario: Both placements use the static source image
+
+- **WHEN** the index field or artifact arrival artwork is visible
+- **THEN** it SHALL render the shared static observation image with its existing responsive crop and SHALL contain no `ObservationGaze` or equivalent pointer-following component
+
+#### Scenario: Static artwork stays decorative and subordinate
+
+- **WHEN** observation artwork appears beside review content
+- **THEN** it SHALL be `aria-hidden`, have empty alternative text, reject pointer interaction, make no external request, and SHALL NOT obscure text, controls, focus indicators, paths, comments, or semantic state
 
 ### Requirement: The index uses an authored image-led observation composition
 

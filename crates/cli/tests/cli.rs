@@ -1250,13 +1250,221 @@ fn hook_explore_fails_loudly_on_a_payload_from_the_wrong_agent() {
     );
 }
 
+/// `init` end to end through the binary: the dry run writes nothing, `--yes`
+/// performs exactly what the dry run printed, and a second `--yes` is a no-op.
+#[test]
+fn init_plans_then_performs_then_leaves_the_project_alone() {
+    let fixture = project_fixture(&[".claude", ".pi"]);
+    let root = fixture.path();
+    fs::write(root.join("AGENTS.md"), "# House rules\n").expect("write AGENTS.md");
+
+    let dry = run_in(root, &["init"]);
+    assert!(dry.status.success(), "{}", stderr(&dry));
+    let plan = stdout(&dry);
+    assert!(plan.contains("harnesses: claude, pi"), "{plan}");
+    assert!(plan.contains("nothing written"), "{plan}");
+    assert!(!root.join(".claude/settings.json").exists());
+    assert_eq!(
+        fs::read_to_string(root.join("AGENTS.md")).expect("read"),
+        "# House rules\n"
+    );
+
+    let performed = run_in(root, &["init", "--yes"]);
+    assert!(performed.status.success(), "{}", stderr(&performed));
+    let written = stdout(&performed);
+    assert!(
+        written.contains("created   .claude/settings.json"),
+        "{written}"
+    );
+    assert!(
+        written.contains("created   .pi/extensions/openspec-doc-hook.ts"),
+        "{written}"
+    );
+    assert!(written.contains("modified  AGENTS.md"), "{written}");
+
+    let settings = fs::read_to_string(root.join(".claude/settings.json")).expect("read settings");
+    assert!(
+        settings.contains("openspec-doc hook stop --agent claude"),
+        "{settings}"
+    );
+    let instructions = fs::read_to_string(root.join("AGENTS.md")).expect("read AGENTS.md");
+    assert!(
+        instructions.starts_with("# House rules\n"),
+        "{instructions}"
+    );
+    assert!(
+        instructions.contains("<!-- openspec-doc:begin -->"),
+        "{instructions}"
+    );
+
+    let again = run_in(root, &["init", "--yes"]);
+    assert!(again.status.success(), "{}", stderr(&again));
+    assert_eq!(stdout(&again).matches("unchanged").count(), 6);
+    assert_eq!(
+        fs::read_to_string(root.join("AGENTS.md")).expect("read"),
+        instructions
+    );
+}
+
+#[test]
+fn init_without_a_harness_fails_naming_the_flag() {
+    let fixture = project_fixture(&[]);
+
+    let output = run_in(fixture.path(), &["init"]);
+
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("--agent <claude|pi>"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+/// A directory holding an `openspec-doc` that *is* the binary under test, for
+/// putting on the probes' `PATH`.
+///
+/// `doctor` fails when the binary the agent would run is not the one running the
+/// check, and in a test the one running the check is the one cargo just built. A
+/// symlink canonicalizes to the same file, so this is that binary reached by the
+/// bare name every hook command uses.
+#[cfg(unix)]
+fn path_with_binary() -> TempDir {
+    let temp = TempDir::new().expect("temp dir");
+    std::os::unix::fs::symlink(
+        env!("CARGO_BIN_EXE_openspec-doc"),
+        temp.path().join("openspec-doc"),
+    )
+    .expect("symlink the binary under test");
+
+    temp
+}
+
+/// `doctor` in `root`, with `bin` first on `PATH`.
+#[cfg(unix)]
+fn doctor(root: &Path, bin: &Path) -> Output {
+    binary()
+        .current_dir(root)
+        .arg("doctor")
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .output()
+        .expect("run openspec-doc doctor")
+}
+
+/// Every file under `dir`, by relative path and contents.
+fn tree(dir: &Path) -> Vec<(String, Vec<u8>)> {
+    let mut entries = Vec::new();
+    let Ok(children) = fs::read_dir(dir) else {
+        return entries;
+    };
+
+    for child in children {
+        let path = child.expect("read dir entry").path();
+        if path.is_dir() {
+            entries.extend(tree(&path));
+        } else {
+            entries.push((
+                path.display().to_string(),
+                fs::read(&path).expect("read file"),
+            ));
+        }
+    }
+
+    entries.sort();
+    entries
+}
+
+#[cfg(unix)]
+#[test]
+fn doctor_passes_a_wired_project_and_fails_naming_a_hook_that_is_not_registered() {
+    let fixture = project_fixture(&[".claude"]);
+    let root = fixture.path();
+    let bin = path_with_binary();
+    let wired = run_in(root, &["init", "--yes", "--skip-instructions"]);
+    assert!(wired.status.success(), "{}", stderr(&wired));
+
+    let healthy = doctor(root, bin.path());
+
+    assert!(
+        healthy.status.success(),
+        "{}{}",
+        stdout(&healthy),
+        stderr(&healthy)
+    );
+    let report = stdout(&healthy);
+    for event in ["Stop", "UserPromptSubmit", "UserPromptExpansion"] {
+        assert!(
+            report.contains(&format!("pass         {event} hook")),
+            "{report}"
+        );
+    }
+    assert!(report.contains("0 failed"), "{report}");
+
+    let settings = root.join(".claude/settings.json");
+    let mut wiring: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&settings).expect("read settings"))
+            .expect("parse settings");
+    wiring["hooks"]
+        .as_object_mut()
+        .expect("hooks object")
+        .remove("UserPromptSubmit");
+    fs::write(&settings, wiring.to_string()).expect("write settings");
+
+    let broken = doctor(root, bin.path());
+
+    assert!(!broken.status.success(), "{}", stdout(&broken));
+    let report = stdout(&broken);
+    assert!(
+        report.contains("UserPromptSubmit hook: no entry in .claude/settings.json"),
+        "{report}"
+    );
+    assert!(report.contains("openspec-doc init"), "{report}");
+    // The rest of the report is still there: one failure must not truncate it.
+    assert!(report.contains("pass         Stop hook"), "{report}");
+}
+
+/// The check must not cause the failure it exists to diagnose. `hook stop`
+/// consumes a pending directive, so a probe that resolved to this project would
+/// silently eat the reviewer's outstanding feedback.
+#[cfg(unix)]
+#[test]
+fn doctor_leaves_a_pending_directive_and_the_projects_own_review_state_alone() {
+    let fixture = project_fixture(&[".claude"]);
+    let root = fixture.path();
+    let bin = path_with_binary();
+    assert!(
+        run_in(root, &["init", "--yes", "--skip-instructions"])
+            .status
+            .success()
+    );
+    write_session_note(root, "# Exploration\n\nSomething to review.\n");
+    write_pending_directive(root, SESSION_ID, "Address the open comments.");
+    let before = tree(&root.join(".openspec-doc"));
+
+    let output = doctor(root, bin.path());
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    let directive =
+        fs::read_to_string(directive_path(root, SESSION_ID)).expect("read the directive");
+    assert!(
+        directive.contains(r#""pending":true"#),
+        "the reviewer's feedback was consumed by the check: {directive}"
+    );
+    assert_eq!(
+        tree(&root.join(".openspec-doc")),
+        before,
+        "the check left something behind in the project's own state"
+    );
+}
+
 #[test]
 fn top_level_help_lists_every_subcommand() {
     let output = run(&["--help"]);
 
     assert!(output.status.success());
     let stdout = stdout(&output);
-    for command in ["summary", "serve", "hook", "comment", "scratch"] {
+    for command in [
+        "summary", "serve", "hook", "comment", "scratch", "init", "doctor",
+    ] {
         assert!(
             stdout.contains(command),
             "`{command}` missing from:\n{stdout}"
@@ -1267,7 +1475,9 @@ fn top_level_help_lists_every_subcommand() {
 
 #[test]
 fn subcommand_help_does_not_execute_the_subcommand() {
-    for command in ["summary", "serve", "hook", "comment", "scratch"] {
+    for command in [
+        "summary", "serve", "hook", "comment", "scratch", "init", "doctor",
+    ] {
         let output = run(&[command, "--help"]);
 
         assert!(output.status.success(), "`{command} --help` should succeed");

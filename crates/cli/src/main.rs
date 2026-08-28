@@ -4,12 +4,15 @@
 mod cli;
 mod comment;
 mod discovery;
+mod doctor;
 mod error;
 mod hook;
+mod init;
 mod root;
 mod scratch;
 mod serve;
 mod summary;
+mod wiring;
 
 use std::process::ExitCode;
 
@@ -134,6 +137,12 @@ fn run(cli: Cli) -> Result<(), Error> {
                 comment::set_status(project, scope.key(), &comment, Status::Open)
             }
         },
+        Command::Init {
+            agent,
+            yes,
+            skip_instructions,
+        } => init::run(project, agent, yes, skip_instructions),
+        Command::Doctor => doctor::run(project),
         Command::Scratch { command } => match command {
             ScratchCommand::Claim { session, change } => scratch::claim(project, &session, &change),
         },

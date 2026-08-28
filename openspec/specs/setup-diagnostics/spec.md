@@ -1,26 +1,32 @@
-## ADDED Requirements
+# setup-diagnostics Specification
 
-### Requirement: A doctor subcommand reports whether the project is wired up
-The system SHALL provide a `doctor` subcommand that runs each setup check, prints one line per check identifying the check and its outcome, and exits non-zero when any check fails.
+## Purpose
 
-Without it, an unwired project is indistinguishable from an idle one: the dashboard serves, the pages render, and they are empty in both cases.
+The `doctor` subcommand: whether this project's wiring actually runs. `init` writes the configuration and reports whether it is written; nothing else reports whether the agent can run it, and a written configuration that does not run fails the way everything here fails — by the absence of an event, which is indistinguishable from an idle project. So every hook check executes the command string recorded in the settings file, verbatim, and requires the answer that hook exists to give. The hooks to check and the predicate that recognises them come from the same definition `init` writes from, because two definitions drift and the drift presents as `doctor` passing a project `init` would rewrite. Every probe runs against a throwaway project, never this one: the turn-boundary hook consumes a pending directive, and a check that ate the reviewer's outstanding feedback would cause the failure it exists to diagnose. Anything not examined gets a line saying so, because a green line for something never looked at is the failure mode this capability exists to remove.
 
-#### Scenario: A fully wired project passes
+## Requirements
+
+### Requirement: A doctor subcommand reports whether the configured hooks run
+The system SHALL provide a `doctor` subcommand that runs each configured hook, prints one line per check identifying the check and its outcome, and exits non-zero when any check fails.
+
+`init` reports whether the configuration is written. Nothing else reports whether it runs, and a written configuration that does not run fails the way everything here fails — by the absence of an event, which is indistinguishable from an idle project.
+
+#### Scenario: A working install passes
 - **WHEN** a user runs `openspec-doc doctor` in a project whose hooks are registered and whose binary responds
 - **THEN** the system SHALL print a passing line for each check and SHALL exit zero
 
-#### Scenario: A missing hook fails the command
-- **WHEN** a user runs `openspec-doc doctor` in a project with no `openspec-doc` hook entry in any settings file
-- **THEN** the system SHALL print a failing line naming each unregistered hook and SHALL exit non-zero
+#### Scenario: An unregistered hook fails the command
+- **WHEN** a user runs `openspec-doc doctor` in a project whose `.claude/settings.json` has no entry for one of the three hooks
+- **THEN** the system SHALL print a failing line naming that hook, stating that `openspec-doc init` registers it, and SHALL exit non-zero
 
 #### Scenario: Every check is reported, not only the failing ones
 - **WHEN** any check fails
-- **THEN** the system SHALL still print a line for every other check, so the report is a complete picture of the setup rather than the first problem found
+- **THEN** the system SHALL still print a line for every other check, so the report is a complete picture rather than the first problem found
 
 ### Requirement: A hook check is settled by running the hook
 The system SHALL check each registered hook by executing the command string recorded in settings and requiring a response specific to that hook, and SHALL NOT report a hook as working on the basis of its presence in a settings file alone.
 
-A settings entry proves the operator typed something. It does not prove `openspec-doc` resolves on `PATH`, that the resolved binary is recent enough to have the named subcommand, or that the command exits with a response an agent can use. Each of those leaves the configuration text exactly right and the loop dead.
+A settings entry proves something was written. It does not prove `openspec-doc` resolves on `PATH`, that the resolved binary is recent enough to have the named subcommand, or that the command exits with a response an agent can use. Each of those leaves the configuration text exactly right and the loop dead, and each is the part `init` cannot reach.
 
 #### Scenario: A registered hook whose binary is absent fails
 - **WHEN** a hook is registered in settings and its command cannot be executed or exits non-zero
@@ -44,6 +50,19 @@ A settings entry proves the operator typed something. It does not prove `openspe
 
 This hook exits zero and prints nothing when it fails, so that a broken hook can never refuse the reviewer's prompt. Silence therefore means both "healthy, nothing outstanding" and "entirely broken", and probing it with an empty session would pass on an install with no binary at all.
 
+### Requirement: The commands to probe come from the shared definition of a wired project
+The system SHALL enumerate the hooks to check from the same module `init` writes them from, SHALL recognise this tool's entries in `.claude/settings.json` by the same predicate `init` uses, and SHALL execute the command string as recorded there rather than the canonical one.
+
+One definition, read by both commands. Two copies drift, and the drift presents as `doctor` passing a project `init` would rewrite. The recorded string is what runs, not the canonical one: a developer pointing an entry at a local build is running that string, and probing the canonical form would check a binary the agent never invokes.
+
+#### Scenario: A locally built binary is probed as recorded
+- **WHEN** a registered hook's command names a binary by absolute path or is prefixed by an environment assignment
+- **THEN** the system SHALL execute that string as it stands and report on the binary it names
+
+#### Scenario: Every hook in the shared definition is enumerated
+- **WHEN** `doctor` runs
+- **THEN** the report SHALL cover every hook the shared definition contains, naming any of them that is not registered
+
 ### Requirement: The probe never touches the project's own state
 The system SHALL run every hook probe against a throwaway project root created for the check, with the probe's working directory set to that root, and SHALL NOT run a probe that resolves to the project being checked.
 
@@ -61,36 +80,6 @@ The turn-boundary hook registers sessions, runs the promotion check, and consume
 - **WHEN** a registered hook's command string contains a `--root` option
 - **THEN** the system SHALL report that hook as unchecked, SHALL state that probing it would run against the named project and consume a pending directive, and SHALL exit non-zero
 
-### Requirement: A hook is reported with the settings file it came from
-The system SHALL search the user-level, project, and local Claude Code settings files, and SHALL report each occurrence of an `openspec-doc` hook with the path of the file it was found in.
-
-Whether a hook lives only in a gitignored file is the finding, not a detail: that is the state a fresh clone arrives in, and it is what makes the setup lossy. Occurrences are listed rather than resolved into a single winner, because reproducing settings precedence exactly would produce a confidently wrong report when it is modelled wrong.
-
-#### Scenario: The origin of each hook is named
-- **WHEN** a hook is found in a settings file
-- **THEN** the system SHALL name that file's path alongside the hook in the report
-
-#### Scenario: A hook registered twice is reported twice
-- **WHEN** the same hook appears in more than one settings file
-- **THEN** the system SHALL report each occurrence with its own file path rather than reporting one
-
-#### Scenario: All three hooks are enumerated
-- **WHEN** `doctor` runs
-- **THEN** the report SHALL cover `Stop`, `UserPromptSubmit`, and `UserPromptExpansion`, naming any of them that is not registered
-
-### Requirement: The explore matcher is checked as text and labelled as such
-The system SHALL compare the `UserPromptExpansion` entry's matcher against the value the explore hook requires, and SHALL mark that finding in the report as a text comparison rather than an executed check.
-
-Running the command directly bypasses matcher dispatch, so no probe can reach the failure this check exists for: a matcher that is present and valid and never matches, whose hook then never runs and reports nothing. An operator who reads the result as "verified" concludes the loop is sound while the explore hook is dead — the original silent failure with a passing line in front of it.
-
-#### Scenario: A wrong matcher is reported as failing
-- **WHEN** the `UserPromptExpansion` entry's matcher does not match the required value
-- **THEN** the system SHALL report the matcher as failing, SHALL print both the configured and the required value, and SHALL exit non-zero
-
-#### Scenario: A correct matcher is not reported as executed
-- **WHEN** the matcher matches the required value
-- **THEN** the system SHALL report it as a text comparison and SHALL state that a matcher can only be confirmed to fire from a live session
-
 ### Requirement: The binary under check is identified
 The system SHALL report the path and version of the `openspec-doc` resolved on `PATH` and of the running executable, and SHALL report a failing check when they differ.
 
@@ -104,17 +93,6 @@ An operator working in this repository routinely has an installed copy on `PATH`
 - **WHEN** no `openspec-doc` resolves on `PATH`
 - **THEN** the system SHALL report that as a failing check, since every hook command depends on it
 
-### Requirement: Project root resolution is checked against the real project
-The system SHALL resolve the project root using the same discovery rules as every other subcommand and SHALL print the resolved path.
-
-#### Scenario: The resolved root is printed
-- **WHEN** `doctor` runs inside an OpenSpec project
-- **THEN** the system SHALL print the resolved project root
-
-#### Scenario: An unresolvable root fails the command
-- **WHEN** `doctor` runs where no ancestor directory contains `openspec/config.yaml` and no `--root` is given
-- **THEN** the system SHALL report the failure and exit non-zero
-
 ### Requirement: Anything not checked is reported as not checked
 The system SHALL print a line for each part of the setup it does not examine, stating that it was not checked, and SHALL NOT omit it or report it as passing.
 
@@ -122,8 +100,12 @@ A green line for something never examined is the exact failure this capability e
 
 #### Scenario: pi.dev is reported as unchecked
 - **WHEN** `doctor` runs
-- **THEN** the system SHALL report pi.dev's hook as not checked, stating that its turn boundary is an in-process extension rather than a settings entry
+- **THEN** the system SHALL report pi.dev's extension as not checked, stating that its delivery points are an in-process extension rather than a settings entry
 
 #### Scenario: The dashboard server is reported as unchecked
 - **WHEN** `doctor` runs
 - **THEN** the system SHALL report that it does not check whether `serve` is running
+
+#### Scenario: The explore matcher is reported as unchecked
+- **WHEN** `doctor` runs
+- **THEN** the system SHALL report that the `UserPromptExpansion` matcher was not exercised, stating that executing the command bypasses matcher dispatch and that `openspec-doc init` is what keeps the matcher correct

@@ -18,9 +18,17 @@ is coming.
 pi.dev has no command-expansion event, so it gets `prompt` and `stop` only; start an exploration there by
 writing the note yourself at `.openspec-doc/scratch/_session/$PI_SESSION_ID.md`.
 
+Wire all of this with `openspec-doc init`, which detects the harnesses a project uses and writes the
+entries below, pi's extension, and a block of standing instructions into `AGENTS.md`. It prints its plan
+and writes nothing without `--yes`. Then run `openspec-doc doctor`, which executes what `init` wrote:
+a settings file is a claim about what will happen, and `doctor` is what turns it into an observation. See
+[Quickstart](/quickstart.md).
+
 ## Claude Code
 
-`.claude/settings.json`, or `.claude/settings.local.json` if you would rather not commit it:
+`.claude/settings.json` at the project root — the file `init` writes, and the file to edit if you are
+wiring it by hand. Committed: every character of it is a fact about how the project is reviewed,
+identical on every machine that checks the project out, so a per-machine file is the wrong place for it.
 
 ```json
 {
@@ -75,14 +83,19 @@ page stays empty. That is indistinguishable from the bug this hook exists to fix
 than assuming.
 :::
 
-To verify, add a temporary probe with no matcher, which fires on every command expansion:
+`openspec-doc doctor` runs each registered hook and reports what came back, which settles everything about
+the wiring except this: it executes the command directly, and executing a command bypasses matcher
+dispatch. A matcher that matches nothing still probes clean.
 
-```json
-{ "type": "command", "command": "cat >> /tmp/openspec-doc-probe.jsonl" }
+The matcher is only confirmable from a live session. Type the command once and check that the note was
+readied:
+
+```bash
+ls .openspec-doc/scratch/_session/
 ```
 
-Then type the command once and read the file. The payload carries `command_name`, `command_args`,
-`expansion_type`, `command_source`, and the full `prompt`.
+Nothing there means the hook never fired. `openspec-doc init` writes the matcher from the same definition
+the binary carries, so the fix is to re-run it rather than to edit the value by hand.
 
 After changing settings, open `/hooks` once or restart — the config watcher only watches directories that
 had a settings file when the session started.
@@ -105,8 +118,9 @@ prompt in the session. Paste the command string rather than typing it until this
 ## pi.dev
 
 pi has no external-process hook; neither of its delivery points is reachable except from a TypeScript
-extension. This repo ships one at `.pi/extensions/openspec-doc-hook.ts`, auto-discovered once the project is
-trusted, which handles both:
+extension. One copy of it is embedded in the binary; `openspec-doc init --agent pi` writes it to
+`.pi/extensions/openspec-doc-hook.ts`, where pi auto-discovers it once the project is trusted. This
+repository's own copy is that same output. It handles both delivery points:
 
 - `before_agent_start` — fires after the prompt is submitted and before the agent loop, pi's equivalent of
   `UserPromptSubmit`. Shells out to `openspec-doc hook prompt --agent pi` and returns any directive as a
@@ -114,7 +128,22 @@ trusted, which handles both:
 - `agent_end` — shells out to `openspec-doc hook stop --agent pi` and re-injects any returned directive with
   `pi.sendUserMessage(…, { deliverAs: "followUp" })`.
 
+`init --agent pi` also reports what pi does **not** get: there is no command-expansion event, so nothing
+calls `hook explore`, so a pi session writes no note and is never registered for review.
+
 Set `OPENSPEC_DOC_BIN` to use a binary that is not on `PATH`, such as this repo's own `target/debug/openspec-doc`.
+
+### Verification status
+
+Proven end to end in a real interactive pi session: the directive was found at the turn boundary, injected
+as a user message, and the agent started a fresh turn acting on it. A real captured payload from the
+extension is the `PI_STOP` fixture in `crates/core/src/hook/adapter.rs`.
+
+Also proven from a single scripted `pi -p` run, against a verdict rather than a hand-written directive: the
+agent seeds a scratch note and a keep-exploring verdict for its own session via `$PI_SESSION_ID`, and at
+`agent_end` the hook translates that verdict, the directive comes back, and the agent answers the reviewer's
+question instead of the prompt it was given. No session resume is involved — injection happens in-process
+through `sendUserMessage`, so one invocation covers the whole loop.
 
 Two quirks that will cost you time if you script against it, both tied to the session flags:
 

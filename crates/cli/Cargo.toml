@@ -11,7 +11,9 @@ path = "src/main.rs"
 clap.workspace = true
 openspec-doc-core.workspace = true
 openspec-doc-server.workspace = true
+serde_json.workspace = true
+# The throwaway project `doctor` probes the hooks against, so no probe can
+# resolve to the project being checked.
+tempfile.workspace = true
 thiserror.workspace = true
 
-[dev-dependencies]
-tempfile.workspace = true

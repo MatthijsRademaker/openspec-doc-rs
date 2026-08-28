@@ -47,4 +47,54 @@ pub enum Error {
 
     #[error("no port is assigned to this project and no dashboard is serving it")]
     NoAssignedPort,
+
+    #[error(
+        "no agent harness was detected in this project: neither .claude/ nor .pi/ exists. \
+         Name one explicitly with --agent <claude|pi>"
+    )]
+    NoHarnessDetected,
+
+    #[error("failed to read {}", path.display())]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("failed to write {}", path.display())]
+    Write {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("{} is not valid JSON, so it cannot be merged into and will not be overwritten", path.display())]
+    Settings {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to create the throwaway project the hook probes run against")]
+    ProbeRoot {
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("failed to run `{command}`")]
+    Probe {
+        command: String,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("{failed} of {total} checks failed; the report above says which")]
+    DoctorFailed { failed: usize, total: usize },
+
+    #[error(
+        "{} carries one of the openspec-doc block markers and not the other; repair it by hand \
+         rather than letting init append a second block",
+        path.display()
+    )]
+    HalfDelimitedInstructions { path: PathBuf },
 }

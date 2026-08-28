@@ -1,0 +1,41 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "openspec-doc hook stop --agent claude",
+            "statusMessage": "Checking openspec-doc review feedback",
+            "timeout": 30,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptExpansion": [
+      {
+        "hooks": [
+          {
+            "command": "openspec-doc hook explore --agent claude",
+            "statusMessage": "Opening the openspec-doc exploration note",
+            "timeout": 30,
+            "type": "command"
+          }
+        ],
+        "matcher": "opsx:explore|openspec-explore"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "openspec-doc hook prompt --agent claude",
+            "statusMessage": "Checking openspec-doc review feedback",
+            "timeout": 30,
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

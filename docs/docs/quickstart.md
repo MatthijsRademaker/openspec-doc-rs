@@ -24,21 +24,91 @@ promotes onto.
 
 ## 2. Wire the hooks
 
-In the OpenSpec project you want to review, add to `.claude/settings.local.json`:
+In the OpenSpec project you want to review:
+
+```bash
+openspec-doc init         # prints everything it would do, and writes nothing
+openspec-doc init --yes   # performs it
+```
+
+`init` detects which agent harnesses the project uses — `.claude/` for Claude Code, `.pi/` for pi.dev —
+and writes, for the ones it finds, the three hook entries into `.claude/settings.json`, pi's extension
+into `.pi/extensions/openspec-doc-hook.ts`, and a delimited block of standing instructions into
+`AGENTS.md`. Everything else in those files is preserved, so re-running it on a project that is already
+correct produces no diff.
+
+Name harnesses explicitly with `--agent claude --agent pi`, which replaces detection rather than adding
+to it. `--skip-instructions` leaves `AGENTS.md` alone.
+
+Read the plan before you confirm it. `init` appends to an instruction file you own, and the dry run is
+the only chance to see that coming.
+
+Then **open `/hooks` once, or restart**. The config watcher only watches directories that already had a
+settings file when the session started, so a newly created one is not picked up mid-session.
+
+:::warning "the UserPromptExpansion hook will never fire"
+`init` warns when the project has no `opsx:explore` or `openspec-explore` command. The matcher dispatches
+on the bare command name, so with no such command it matches nothing and reports nothing — silence
+indistinguishable from an idle session. Fix it with `openspec init --tools claude`; those prompt files are
+upstream OpenSpec's, not this tool's.
+:::
+
+### Check that it runs
+
+```bash
+openspec-doc doctor
+```
+
+`init` reports what it wrote. `doctor` runs it: it executes each registered hook against a throwaway
+project and requires the answer that hook exists to give, so a settings file that is perfect for a binary
+your agent cannot resolve fails here instead of failing silently for a week. It exits non-zero if anything
+did, and prints a line for each part it does not examine — including the matcher, which executing the
+command bypasses.
+
+### Wiring it by hand instead
+
+`.claude/settings.json` at the project root. This is the same JSON `init` writes, and it is
+team-owned — the command strings hold nothing machine-specific, so there is nothing here to keep out of
+version control:
 
 ```json
 {
   "hooks": {
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "openspec-doc hook stop --agent claude", "timeout": 30 }] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openspec-doc hook stop --agent claude",
+            "timeout": 30,
+            "statusMessage": "Checking openspec-doc review feedback"
+          }
+        ]
+      }
     ],
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "openspec-doc hook prompt --agent claude", "timeout": 30 }] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openspec-doc hook prompt --agent claude",
+            "timeout": 30,
+            "statusMessage": "Checking openspec-doc review feedback"
+          }
+        ]
+      }
     ],
     "UserPromptExpansion": [
       {
         "matcher": "opsx:explore|openspec-explore",
-        "hooks": [{ "type": "command", "command": "openspec-doc hook explore --agent claude", "timeout": 30 }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openspec-doc hook explore --agent claude",
+            "timeout": 30,
+            "statusMessage": "Opening the openspec-doc exploration note"
+          }
+        ]
       }
     ]
   }
@@ -48,9 +118,6 @@ In the OpenSpec project you want to review, add to `.claude/settings.local.json`
 All three, not two. `UserPromptSubmit` is what puts a standing verdict in context at the *start* of the turn
 your prompt begins; `Stop` is the backstop that catches feedback when no prompt is coming. Wire only `Stop`
 and the loop still works, but every verdict arrives one turn late.
-
-Then **open `/hooks` once, or restart**. The config watcher only watches directories that already had a
-settings file when the session started, so a newly created one is not picked up mid-session.
 
 For pi.dev, and for verifying the matcher actually fires, see [Agent hooks](/reference/hooks.md).
 

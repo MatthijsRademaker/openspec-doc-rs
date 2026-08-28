@@ -14,4 +14,4 @@ pub use directive::{
 };
 pub use event::{Agent, HookDecision, HookEvent};
 pub use explore::start as start_explore;
-pub use translate::translate;
+pub use translate::{reason as directive_reason, translate};
