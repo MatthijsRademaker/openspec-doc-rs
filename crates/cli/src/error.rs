@@ -49,6 +49,13 @@ pub enum Error {
     NoAssignedPort,
 
     #[error(
+        "a dashboard for {} is serving on port {port}: stop it before forgetting its assignment, \
+         or the port is handed to another project with a server still on it",
+        root.display()
+    )]
+    DashboardServing { root: PathBuf, port: u16 },
+
+    #[error(
         "no agent harness was detected in this project: neither .claude/ nor .pi/ exists. \
          Name one explicitly with --agent <claude|pi>"
     )]

@@ -53,7 +53,11 @@ pub fn find_project(start: &Path) -> Result<Project, Error> {
     Err(Error::NoProjectFound { start })
 }
 
-fn canonicalize(path: &Path) -> Result<PathBuf, Error> {
+/// `path` as a project root is keyed by: the one spelling of a root that the port
+/// registry, the comment sidecars, and a dashboard's reported identity all agree
+/// on. A command naming a root by hand goes through here or it names something
+/// else than [`Project`] does.
+pub fn canonicalize(path: &Path) -> Result<PathBuf, Error> {
     path.canonicalize()
         .map_err(|source| Error::io(path, source))
 }

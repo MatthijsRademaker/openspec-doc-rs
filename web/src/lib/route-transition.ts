@@ -50,6 +50,66 @@ export function takeHeldScope(kind: ScopeKind, key: string): ScopeDetail | undef
   return detail
 }
 
+/**
+ * How long a speculative load stays spendable. Hover is what starts it and the click that follows
+ * is what spends it, so the window only has to span the gap between two gestures of one hand.
+ * Past it the entry is dropped and the hold fetches for itself: an agent rewrites this repository's
+ * artifacts and review state while the reviewer reads them, so answering a click with a payload
+ * read a minute ago would present a scope that has already moved.
+ */
+export const SPECULATION_TTL_MS = 10_000
+
+interface Speculation {
+  load: Promise<ScopeDetail>
+  startedAt: number
+}
+
+const speculations = new Map<string, Speculation>()
+
+function speculationId(kind: ScopeKind, key: string): string {
+  return `${kind}:${key}`
+}
+
+function fresh(speculation: Speculation): boolean {
+  return Date.now() - speculation.startedAt <= SPECULATION_TTL_MS
+}
+
+/**
+ * Starts, on the gesture that precedes a click, the load that click would start. The hold spends
+ * it, so a scope the reviewer pointed at before choosing it enters its transition without waiting
+ * on a round trip first.
+ *
+ * Nothing here reports failure. A speculative load that fails is discarded, and the click that
+ * follows fetches again — so the error reaches the reviewer through the destination's own failure
+ * state rather than as an alarm about a page they never asked for.
+ */
+export function speculate(kind: ScopeKind, key: string): void {
+  // Nothing else evicts: the reviewer sweeping a register of scopes must not leave a detail
+  // payload per entry parked here for the life of the page.
+  for (const [id, speculation] of speculations) {
+    if (!fresh(speculation)) speculations.delete(id)
+  }
+
+  const id = speculationId(kind, key)
+  if (speculations.has(id)) return
+
+  const speculation: Speculation = { load: fetchScope(kind, key), startedAt: Date.now() }
+  speculation.load.catch(() => {
+    if (speculations.get(id) === speculation) speculations.delete(id)
+  })
+  speculations.set(id, speculation)
+}
+
+/** Spent once. A second click on the same scope reads the scope again rather than a stored answer. */
+function takeSpeculation(kind: ScopeKind, key: string): Promise<ScopeDetail> | undefined {
+  const id = speculationId(kind, key)
+  const speculation = speculations.get(id)
+  if (!speculation) return undefined
+
+  speculations.delete(id)
+  return fresh(speculation) ? speculation.load : undefined
+}
+
 function scopeTarget(route: RouteLocationNormalized): ScopeTarget | undefined {
   const kind = typeof route.name === 'string' ? SCOPE_ROUTES[route.name] : undefined
   if (!kind) return undefined
@@ -68,9 +128,11 @@ async function hold(to: RouteLocationNormalized): Promise<void> {
   const generation = holdGeneration
   const target = scopeTarget(to)
   const load = target
-    ? fetchScope(target.kind, target.key).then((detail) => {
-        if (generation === holdGeneration) heldScope = { ...target, detail }
-      })
+    ? (takeSpeculation(target.kind, target.key) ?? fetchScope(target.kind, target.key)).then(
+        (detail) => {
+          if (generation === holdGeneration) heldScope = { ...target, detail }
+        },
+      )
     : fetchIndex().then((index) => {
         if (generation === holdGeneration) heldIndex = index
       })

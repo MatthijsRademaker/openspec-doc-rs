@@ -45,6 +45,31 @@ describe('ScopeRegister', () => {
     vi.useRealTimers()
   })
 
+  /* Pointing at a coordinate, or tabbing onto it, is the gesture before choosing it. The read the
+     choice would start begins there so the hold has nothing left to wait on. */
+  it('starts the scope read on hover and on keyboard focus', async () => {
+    const read = vi.fn(
+      async (url: RequestInfo | URL) =>
+        new Response(JSON.stringify({ key: String(url), artifacts: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    )
+    vi.stubGlobal('fetch', read)
+    const hovered = scope({ key: 'speculated-by-pointer' })
+    const focused = scope({ key: 'speculated-by-keyboard' })
+    renderRegister({ scopes: [hovered, focused], prefix: 'sessions', title: 'Sessions' })
+
+    await fireEvent.mouseEnter(screen.getByRole('link', { name: hovered.key }))
+    await fireEvent.focus(screen.getByRole('link', { name: focused.key }))
+
+    expect(read.mock.calls.map(([url]) => url)).toEqual([
+      `/api/sessions/${hovered.key}`,
+      `/api/sessions/${focused.key}`,
+    ])
+    vi.unstubAllGlobals()
+  })
+
   it('renders a named empty instrument', () => {
     renderRegister({ scopes: [], prefix: 'changes', title: 'Changes' })
 

@@ -128,8 +128,6 @@ pub enum Error {
         source: serde_json::Error,
     },
 
-    // `serve forget` lands in `add-serve-process-control`. This text and that
-    // command have to agree; whichever is touched second checks the other.
     #[error(
         "every port in {}-{} is assigned to a project that still exists: forget one with `openspec-doc serve forget`, or remove its entry from {}",
         crate::dashboard::RANGE.start(),

@@ -72,6 +72,16 @@ pub fn find(root: &Path, assigned: Option<u16>) -> Option<u16> {
     find_in(root, assigned, &range())
 }
 
+/// Every dashboard answering in the port range, ascending by port.
+///
+/// The same sweep [`find`] filters, with nothing thrown away. A dashboard on a
+/// port outside the range does not answer here and cannot: the range is what
+/// makes the sweep bounded, and a scan of all 65535 ports is not the trade this
+/// makes. A caller showing this to a person names the range it covered.
+pub fn enumerate() -> Vec<(u16, Identity)> {
+    enumerate_in(&range())
+}
+
 /// Make sure a dashboard is serving `project`, starting one if none is, and
 /// return the port it is serving on.
 pub fn ensure(project: &Project) -> Result<u16, Error> {
@@ -88,14 +98,46 @@ fn range() -> Vec<u16> {
 
 /// As [`find`], over `range`.
 ///
-/// `assigned` is probed first because it is nearly always right; the rest follows
-/// in ascending order. Anything answering with another root, or with something
-/// that is not a dashboard, is left alone.
+/// `assigned` is asked on its own first because it is nearly always right, so the
+/// common case costs one probe rather than a sweep. The sweep behind it is
+/// [`enumerate_in`]'s, filtered: anything answering with another root, or with
+/// something that is not a dashboard, is left alone.
 fn find_in(root: &Path, assigned: Option<u16>, range: &[u16]) -> Option<u16> {
-    assigned
+    if let Some(port) = assigned
+        && probe(port).is_some_and(|identity| identity.root == root)
+    {
+        return Some(port);
+    }
+
+    enumerate_in(range)
         .into_iter()
-        .chain(range.iter().copied().filter(|port| Some(*port) != assigned))
-        .find(|&port| probe(port).is_some_and(|identity| identity.root == root))
+        .find(|(_, identity)| identity.root == root)
+        .map(|(port, _)| port)
+}
+
+/// As [`enumerate`], over `range`.
+///
+/// A thread per port. Sequentially the worst case is a port that accepts a
+/// connection and never answers — `CONNECT_TIMEOUT + READ_TIMEOUT` each,
+/// thirty-two of them, twelve seconds of an interactive command doing nothing. That
+/// argument is `enumerate`'s: `find` short-circuits on the assignment and rarely
+/// gets here at all, and gets the concurrency because the sweep is shared rather
+/// than because it needed it.
+fn enumerate_in(range: &[u16]) -> Vec<(u16, Identity)> {
+    let mut found: Vec<(u16, Identity)> = std::thread::scope(|scope| {
+        let probes: Vec<_> = range
+            .iter()
+            .map(|&port| scope.spawn(move || probe(port).map(|identity| (port, identity))))
+            .collect();
+
+        probes
+            .into_iter()
+            .filter_map(|probe| probe.join().expect("a probe thread panicked"))
+            .collect()
+    });
+    found.sort_by_key(|(port, _)| *port);
+
+    found
 }
 
 /// As [`ensure`], over `range`.
@@ -381,6 +423,45 @@ mod tests {
         drop(listener);
 
         assert_eq!(find(Path::new("/repos/a"), Some(port)), None);
+    }
+
+    #[test]
+    fn every_dashboard_in_the_range_is_enumerated_in_port_order() {
+        let first = PathBuf::from("/repos/a");
+        let second = PathBuf::from("/repos/b");
+        let ports = [identity_server(&first), identity_server(&second)];
+        let roots = [first, second];
+
+        let found = enumerate_in(&ports);
+
+        assert_eq!(found.len(), 2, "{found:?}");
+        let mut expected: Vec<_> = ports.into_iter().zip(roots).collect();
+        expected.sort_by_key(|(port, _)| *port);
+        for ((port, identity), (expected_port, root)) in found.iter().zip(expected) {
+            assert_eq!(*port, expected_port);
+            assert_eq!(identity.root, root);
+            assert_eq!(identity.pid, std::process::id());
+        }
+    }
+
+    #[test]
+    fn enumeration_skips_a_listener_that_is_not_a_dashboard() {
+        let (_listener, occupied) = listener();
+        let dashboard = identity_server(Path::new("/repos/a"));
+
+        let found = enumerate_in(&[occupied, dashboard]);
+
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].0, dashboard);
+    }
+
+    /// No dashboards is the ordinary state of a machine, not a failure.
+    #[test]
+    fn enumerating_nothing_listening_is_an_empty_result() {
+        let (listener, port) = listener();
+        drop(listener);
+
+        assert_eq!(enumerate_in(&[port]), Vec::new());
     }
 
     #[test]

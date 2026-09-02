@@ -1,36 +1,37 @@
 ## Why
 
-Once `add-dashboard-lifecycle` lands, dashboards start themselves. Nothing lets the operator see them or stop them.
+`add-serve-inventory` lets an operator see every dashboard on the machine. Nothing lets them stop one.
 
-That is tolerable while every server is one you started by hand in a terminal you can still see. It stops being tolerable when hooks start them detached, in a fresh process group, across a range of thirty-two ports, for however many checkouts you happen to have open. A dashboard survives the hook that spawned it by design — that is the point of detaching — and the idle exit is a thirty-minute backstop, not a control. Between those two facts sits a half-hour window in which an operator can have several servers running, on ports they did not choose, for roots they may not remember, with no way to enumerate them and nothing to do about it but `pkill` and hope.
+That is tolerable while every server is one you started by hand in a terminal you can still see. It stops being tolerable when hooks start them detached, in a fresh process group, across a range of thirty-two ports, for however many checkouts you happen to have open. A dashboard survives the hook that spawned it by design — that is the point of detaching — and the idle exit is a thirty-minute backstop, not a control. Between those two facts sits a half-hour window in which an operator can have several servers running, on ports they did not choose, for roots they may not remember.
 
-This is not hypothetical. Developing this project, the author has repeatedly lost track of hand-started servers, resorted to `pkill -f 'openspec-doc serve'`, and killed the wrong thing — including, on one occasion, a shell.
-
-The gap is narrow and the fix is small, because `add-dashboard-lifecycle` already builds every part of it. `/identity` reports the canonical root and the pid. The port range is bounded and global to the machine rather than per-project, so probing it enumerates every dashboard running anywhere. The probe itself is already written. What is missing is a command that runs the probe across the range and prints the answer.
+The honest version of that complaint, now that the lifecycle change has landed: the window is bounded and the servers are enumerable, so this is no longer the fleet-of-undiscoverable-orphans problem the original proposal described. What is left is smaller and still real. `serve list` prints a pid and the only thing an operator can do with it is `kill` it themselves, which is the manual step the tool exists to remove, and which is one typo away from the `pkill -f 'openspec-doc serve'` that has already killed a shell during this project's development.
 
 ## What Changes
 
-- Adds `serve list`: probes the whole port range and prints every dashboard found, with its port, the canonical project root it serves, and its pid.
-- Adds `serve kill`, which **requires a target** — a project root, a port, or a pid — with `--all` for the deliberate case of stopping everything. A bare `serve kill` that stops every dashboard on the machine is the command someone runs by accident while a colleague's review is open on another checkout; the convenience is not worth the failure.
-- `serve kill` **re-probes after signalling** and reports what is actually gone, rather than inferring success from having sent a signal. The pid was learned over a socket, so it races a dying process and may already be stale.
-- Both commands report the limit rather than hiding it: a dashboard started by hand on a port outside the range is invisible to them. This is inherited from stateless discovery and is the honest trade for a design that survives `git clean`, a reboot, and a `SIGKILL`.
-- Neither command needs a project root. `serve list` run anywhere lists every dashboard on the machine, which is what makes it useful for the "which of these is which" problem.
-- `serve list` also shows **ports assigned to a project but not currently serving**, distinguished from the running ones. `add-dashboard-lifecycle` gives every project a port it keeps, so the question "which port is this checkout on" now has an answer whether or not anything is running, and an operator looking at a table of four running dashboards should be able to see that a fifth project owns a port too.
-- Adds `serve forget <root>`, which drops a project's port assignment. This exists because assignment can fail: the range is finite, and when every port is assigned to a root that still exists, `add-dashboard-lifecycle` fails loudly and names this command. Without it that error names no way out, which makes it a dead end rather than a diagnosis.
+- Adds `serve kill`, which **requires a target** — `--project`, `--port`, or `--all`. A bare `serve kill` that stops every dashboard on the machine is the command someone runs by accident while a colleague's review is open on another checkout; a bare `serve kill` that quietly stops *this* project's is a command whose behaviour depends on the working directory. Neither is allowed to be the default.
+- Adds a shutdown route to the dashboard, beside the identity route it already answers, and stops a dashboard **over HTTP on its own port rather than by signalling a pid**. This is the change's one real design decision and it deletes most of the difficulty: no pid to be reused, no `SIGTERM`, no new dependency, no Unix-only caveat.
+- `serve kill` **re-probes after asking** and reports what is actually gone, rather than inferring success from having sent a request.
+- Reports a target that matched nothing as matching nothing, not as success.
+- Leaves the port assignment alone. Stopping a dashboard says nothing about where that project belongs.
+- Replaces `add-serve-inventory`'s interim documentation, which currently tells an operator to find the pid with `serve list` and kill it by hand.
 
-Deliberately **not** in scope: no record of *what is running* — no port-and-pid file — for the reasons `add-dashboard-lifecycle`'s design sets out at length: a gitignored record of port and pid is deleted by `git clean -xdf` while its server keeps running, manufacturing the exact fleet of undiscoverable orphans this command exists to prevent. The port assignments these commands read are a different thing entirely, and neither `list` nor `kill` treats them as evidence that anything is running: both learn that from the network, every time. No `serve restart`, which is `kill` followed by the hooks doing what they already do. No management of dashboards on remote hosts.
+Deliberately **not** in scope: `--pid` as a target, and signals of any kind. A dashboard so wedged it no longer answers HTTP is the only case a signal reaches and HTTP does not, and no such dashboard has been observed. This is the same rule the predecessor design applied to `SIGKILL` escalation — do not build it until something is seen to need it — applied one level up. `serve list` prints the pid, so the manual escape hatch exists and is honest about being manual.
+
+Also not in scope: `serve restart`, which is `kill` followed by the hooks doing what they already do. No management of dashboards on remote hosts. No record of what is running, for the reasons `add-dashboard-lifecycle`'s design sets out at length.
 
 ## Capabilities
 
 ### Modified Capabilities
 
-- `dashboard-lifecycle`: gains the operator's half. The capability already covers when a dashboard starts, how a running one is discovered, how long it lives and when it exits on its own; this adds enumerating them and ending one on purpose. Same capability, because both halves are answers to "which dashboards exist and why" and both are built on the same identity probe — splitting them into two capabilities would put the probe's two consumers in different specs.
+- `dashboard-lifecycle`: gains the last of the operator's half. The capability already covers when a dashboard starts, how a running one is discovered, how it is enumerated, and when it exits on its own; this adds ending one on purpose, and the route it is ended through.
 
 ## Impact
 
-- `crates/cli/src/cli.rs` — `serve` gains two subcommands, which makes `serve` itself a command with children rather than a leaf. Check that a bare `openspec-doc serve` still starts a server rather than printing help, since every hook and every doc invokes it that way.
-- `crates/cli/src/serve.rs` — the two new commands.
-- The discovery module `add-dashboard-lifecycle` introduces — reused, not reimplemented. If this change finds itself writing a second probe, the seam is in the wrong place and that module should be widened instead.
-- `docs/docs/reference/cli.md`, `docs/docs/reference/hooks.md` — the new commands, and the out-of-range limit stated where someone hunting a stray server will read it.
+- `crates/server/src/routes.rs` — the shutdown route, beside `IDENTITY_PATH`.
+- `crates/server/src/lib.rs` — the graceful-shutdown future currently resolves only on the idle condition; it gains a second trigger. The two must not be able to double-shutdown.
+- `crates/core/src/dashboard.rs` — the route's path, beside `IDENTITY_PATH`, because the server and the CLI's hand-rolled client have to agree about it.
+- `crates/cli/src/discovery.rs` — a hand-rolled `POST` beside the hand-rolled `GET`. Do not add an HTTP client for it; the reasoning that kept one out for the probe is unchanged.
+- `crates/cli/src/serve.rs`, `crates/cli/src/cli.rs` — the command. Note that `--root` is **already a global flag** on `Cli`, so the project target cannot be spelled that way.
+- `docs/docs/reference/cli.md`, `docs/docs/reference/hooks.md`.
 
-**Depends on `add-dashboard-lifecycle`** and must be sequenced after it. Without the identity route there is nothing to probe, and without the fixed port range there is nothing to probe *across*: today's ephemeral `--port 0` default makes a running server undiscoverable by construction, which is the same property that rules out the state file.
+**Depends on `add-serve-inventory`** and must be sequenced after it. Resolving `--project` or `--all` to a set of ports is enumeration, and this change must not build a second one.

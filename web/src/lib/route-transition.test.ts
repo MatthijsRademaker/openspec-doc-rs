@@ -5,6 +5,8 @@ import {
   installRouteTransitions,
   NAVIGATION_HOLD_CEILING_MS,
   returningScopeKey,
+  SPECULATION_TTL_MS,
+  speculate,
   takeHeldScope,
 } from '@/lib/route-transition'
 
@@ -31,6 +33,17 @@ function stubViewTransition(observe?: () => void) {
   })
   Object.defineProperty(document, 'startViewTransition', { configurable: true, value: start })
   return start
+}
+
+/** A fresh Response per call: a body is readable once, and these keys are read twice. */
+function stubDetail(key: string) {
+  return vi.fn(
+    async () =>
+      new Response(JSON.stringify({ key, artifacts: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+  )
 }
 
 function makeRouter(): Router {
@@ -167,6 +180,79 @@ describe('router-owned route transitions', () => {
     expect(start).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
     expect(router.currentRoute.value.name).toBe('change')
+  })
+
+  /* Every speculation test uses a key of its own. The cache is module state, and a shared key
+     would let one test's stored payload answer the next test's click. */
+  it('spends a hover speculation instead of reading the scope again', async () => {
+    const key = 'speculated-on-hover'
+    vi.stubGlobal('fetch', stubDetail(key))
+    stubViewTransition()
+    const router = makeRouter()
+    await router.push('/')
+
+    speculate('change', key)
+    await router.push(`/changes/${key}`)
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(takeHeldScope('change', key)).toEqual({ key, artifacts: [] })
+  })
+
+  it('reads the scope again when the speculation has gone stale', async () => {
+    const key = 'speculated-too-long-ago'
+    vi.stubGlobal('fetch', stubDetail(key))
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+    stubViewTransition()
+    const router = makeRouter()
+    await router.push('/')
+
+    speculate('change', key)
+    clock.mockReturnValue(now + SPECULATION_TTL_MS + 1)
+    await router.push(`/changes/${key}`)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(takeHeldScope('change', key)).toEqual({ key, artifacts: [] })
+    clock.mockRestore()
+  })
+
+  /* A hover the reviewer never spends must not decide what their click reports. */
+  it('discards a failed speculation and lets the click fetch for itself', async () => {
+    const key = 'speculation-that-failed'
+    const detail = stubDetail(key)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValueOnce(new TypeError('fetch failed')).mockImplementation(detail),
+    )
+    stubViewTransition()
+    const router = makeRouter()
+    await router.push('/')
+
+    speculate('change', key)
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledTimes(1)
+    })
+    await router.push(`/changes/${key}`)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(takeHeldScope('change', key)).toEqual({ key, artifacts: [] })
+  })
+
+  it('starts one read for a scope pointed at repeatedly', async () => {
+    const key = 'pointed-at-twice'
+    vi.stubGlobal('fetch', stubDetail(key))
+
+    speculate('change', key)
+    speculate('change', key)
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    // Spend it, so the entry does not outlive this test.
+    stubViewTransition()
+    const router = makeRouter()
+    await router.push('/')
+    await router.push(`/changes/${key}`)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    takeHeldScope('change', key)
   })
 
   /* Artifact selection changes a query inside one route and owns its own paired-coordinate

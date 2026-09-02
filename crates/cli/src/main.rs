@@ -83,6 +83,22 @@ fn prompt_hook_intended() -> bool {
 }
 
 fn run(cli: Cli) -> Result<(), Error> {
+    // Two serve subcommands ask about every checkout on the machine rather than
+    // about one project, so they answer from outside any project at all — and
+    // resolving the root every other command needs would make them fail exactly
+    // where they are most useful.
+    match &cli.command {
+        Command::Serve {
+            command: Some(ServeCommand::List),
+            ..
+        } => return serve::list(),
+        Command::Serve {
+            command: Some(ServeCommand::Forget { root }),
+            ..
+        } => return serve::forget(root),
+        _ => {}
+    }
+
     let project = root::resolve(cli.root.as_deref())?;
 
     match cli.command {
@@ -91,6 +107,11 @@ fn run(cli: Cli) -> Result<(), Error> {
             command: Some(ServeCommand::Url),
             ..
         } => serve::url(project),
+        // Dispatched above, without a project root.
+        Command::Serve {
+            command: Some(command),
+            ..
+        } => unreachable!("{command:?} needs no project root"),
         Command::Serve {
             command: None,
             host,

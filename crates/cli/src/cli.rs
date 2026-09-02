@@ -85,6 +85,17 @@ pub enum Command {
 pub enum ServeCommand {
     /// Print this project's dashboard URL and whether a dashboard is serving it
     Url,
+
+    /// List every dashboard serving on the assignable port range, whatever
+    /// project it serves, beside the ports assigned with nothing serving them
+    List,
+
+    /// Drop a project root's port assignment, freeing its port for another
+    Forget {
+        /// Project root to forget, canonical or not
+        #[arg(value_name = "PATH")]
+        root: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]

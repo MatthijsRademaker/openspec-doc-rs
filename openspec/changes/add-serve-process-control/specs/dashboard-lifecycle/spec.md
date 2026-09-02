@@ -1,64 +1,30 @@
 ## ADDED Requirements
 
-### Requirement: Running dashboards can be enumerated
-The system SHALL provide a command that probes the whole dashboard port range and reports every dashboard found, with the port it is bound to, the canonical project root it serves, and its process id. The command SHALL NOT require a project root, and SHALL report the range it searched.
+### Requirement: A dashboard can be asked to stop over the port it serves
+The dashboard SHALL expose a route that begins its graceful shutdown, SHALL accept it only as a write request carrying a header a cross-origin form cannot set, SHALL require the caller to name the project root it believes it is stopping and refuse the request when that root is not the one being served, and SHALL answer the request before exiting.
 
-Dashboards are global to the machine and started detached by hooks, so an operator can have several running for roots they did not choose to remember. Enumerating them is the prerequisite for stopping the right one; naming the searched range is what lets an operator who does not find their server understand why rather than concluding the tool is broken.
+The port is the dashboard's identity in a way a process id is not: a pid may be reused between learning it and acting on it, while a port that stops answering is the evidence directly. Asking the server to stop itself also lets it check what it is, which closes the case where the target port changed hands between the enumeration and the request — a signal cannot ask that question. Requiring a non-simple header keeps a page in the operator's own browser from stopping a dashboard on a guessable local port. Answering first is what lets the caller distinguish a shutdown that started from a request that never arrived.
 
-#### Scenario: Every running dashboard is listed
-- **WHEN** the list command runs and dashboards are serving two different project roots
-- **THEN** the output SHALL include both, each with its port, canonical root, and process id
+#### Scenario: A shutdown request stops the dashboard
+- **WHEN** the shutdown route is called on a dashboard, naming the root that dashboard serves
+- **THEN** the dashboard SHALL answer the request and SHALL then shut down gracefully
 
-#### Scenario: Listing works outside a project
-- **WHEN** the list command runs from a directory that is not inside any OpenSpec project
-- **THEN** the system SHALL still report every dashboard found
+#### Scenario: A request naming another root is refused
+- **WHEN** the shutdown route is called naming a project root other than the one the dashboard serves
+- **THEN** the dashboard SHALL refuse the request and SHALL keep serving
 
-#### Scenario: No dashboards is not an error
-- **WHEN** the list command runs and no dashboard answers on any port in the range
-- **THEN** the system SHALL report that none are running and SHALL exit zero
+#### Scenario: A request a browser form could have sent is refused
+- **WHEN** the shutdown route is called without the required header
+- **THEN** the dashboard SHALL refuse the request and SHALL keep serving
 
-#### Scenario: A port outside the range is not found
-- **WHEN** a dashboard is serving on a port outside the searched range
-- **THEN** the system SHALL NOT list it, and the reported range SHALL make the omission explicable
-
-### Requirement: Assigned ports are listed beside running dashboards and never mistaken for them
-The list command SHALL also report ports assigned to a project root with no dashboard serving them, distinguished from the running ones, and SHALL determine that a dashboard is running only from a probe of that port. It SHALL distinguish a dashboard serving on a port other than its root's assignment.
-
-Every project root owns a port whether or not anything is serving it, so "where would this checkout appear" is a question the command can now answer, and an operator scanning the table should not have to know that a project is missing because it is idle rather than because it is unassigned. Reading a running state out of the recorded assignments instead of the network is the failure the whole discovery design exists to prevent, and this command must not be the place it re-enters.
-
-#### Scenario: An assigned project with nothing running is shown as such
-- **WHEN** the list command runs and a project root has a port assigned with no dashboard serving it
-- **THEN** the output SHALL include that root and port, marked as not running
-
-#### Scenario: A dashboard away from its assignment is distinguishable
-- **WHEN** the list command runs and a dashboard is serving a root on a port other than that root's assignment
-- **THEN** the output SHALL show the port it is actually serving on and SHALL distinguish it from a dashboard on its assigned port
-
-#### Scenario: A missing record of assignments does not affect the running dashboards
-- **WHEN** the list command runs with no recorded assignments available
-- **THEN** the system SHALL still report every running dashboard found by probing
-
-### Requirement: A port assignment can be dropped by naming its project
-The system SHALL provide a command that drops a project root's port assignment, SHALL require the root to be named, and SHALL refuse to drop an assignment while a dashboard is serving that root.
-
-The port range is finite, and assigning a port to a newly seen root fails rather than colliding when every port belongs to a root that still exists. That failure names this command, so without it the error describes a dead end rather than a way out. Dropping an assignment under a running dashboard would hand that port to another project while a server still occupies it, leaving the forgotten root to discover its own dashboard on a port that now belongs to someone else.
-
-#### Scenario: Forgetting a root frees its port
-- **WHEN** the forget command names a root with an assignment and no dashboard serving it
-- **THEN** the system SHALL drop that assignment, and the port SHALL become available to a newly seen root
-
-#### Scenario: Forgetting a served root is refused
-- **WHEN** the forget command names a root whose dashboard is currently serving
-- **THEN** the system SHALL drop nothing and SHALL report that the dashboard must be stopped first
-
-#### Scenario: Forgetting an unassigned root is reported
-- **WHEN** the forget command names a root with no assignment
-- **THEN** the system SHALL report that there was nothing to forget rather than reporting success
+#### Scenario: The idle exit still applies
+- **WHEN** a dashboard with the shutdown route available reaches its idle condition
+- **THEN** it SHALL exit as it did before, and a shutdown arriving alongside that exit SHALL NOT fail
 
 ### Requirement: Stopping a dashboard requires naming which one
-The system SHALL provide a command that stops a running dashboard, and SHALL require a target identifying it — a project root, a port, or a process id — or an explicit option meaning all of them. It SHALL NOT stop anything when invoked with no target.
+The system SHALL provide a command that stops a running dashboard, and SHALL require a target identifying it — an explicit option meaning the resolved project, a port, or an explicit option meaning all of them. It SHALL NOT stop anything when invoked with no target, and the option meaning the resolved project SHALL be given explicitly rather than applied as a default.
 
-Dashboards are machine-global while the operator's mental model is per-project, so the natural reading of an untargeted stop is "the one for this project" rather than "every one on this machine". A command whose destructive behaviour is the default is one an operator runs by accident while another checkout's review is open.
+Dashboards are machine-global while the operator's mental model is per-project, so the natural reading of an untargeted stop is "the one for this project" rather than "every one on this machine". A command whose destructive behaviour is the default is one an operator runs by accident while another checkout's review is open. Making the project target explicit is what keeps "stop this project's dashboard" from being indistinguishable from having named no target at all, since the project is what the system resolves when no root is given.
 
 #### Scenario: A targeted stop ends one dashboard
 - **WHEN** the stop command names one of several running dashboards
@@ -76,19 +42,23 @@ Dashboards are machine-global while the operator's mental model is per-project, 
 - **WHEN** the stop command names a target that no running dashboard matches
 - **THEN** the system SHALL report that nothing matched rather than reporting success
 
-### Requirement: A stop reports what is actually gone
-The system SHALL confirm the outcome of a stop by probing again after signalling, and SHALL report the dashboard as stopped only when it no longer answers. It SHALL NOT report success on the basis of having sent a signal.
+#### Scenario: Stopping a dashboard leaves its project's port assignment in place
+- **WHEN** a project's dashboard is stopped and a dashboard for that project is later ensured again
+- **THEN** it SHALL be served on the same assigned port
 
-The process id is read from a socket and is a snapshot: by the time the signal is sent the process may have exited on its own idle deadline, and its id may have been reused by something unrelated. Re-probing is what distinguishes "this dashboard is gone" from "a signal was delivered somewhere".
+### Requirement: A stop reports what is actually gone
+The system SHALL resolve its target by probing immediately before asking a dashboard to stop, SHALL confirm the outcome by probing again afterwards, and SHALL report the dashboard as stopped only when it no longer answers. It SHALL NOT report success on the basis of having sent a request.
+
+A resolved target is a snapshot: by the time the request is sent the dashboard may have exited on its own idle deadline, been stopped by someone else, or had its port taken by another project's dashboard falling forward onto it. Re-probing is what distinguishes "this dashboard is gone" from "a request was delivered somewhere".
 
 #### Scenario: A dashboard that stops is confirmed by its port going quiet
-- **WHEN** a dashboard is signalled and its port stops answering
+- **WHEN** a dashboard is asked to stop and its port stops answering
 - **THEN** the system SHALL report it stopped
 
-#### Scenario: A dashboard that survives the signal is reported as still running
-- **WHEN** a dashboard is signalled and its port still answers for the same root afterwards
+#### Scenario: A dashboard that survives the request is reported as still running
+- **WHEN** a dashboard is asked to stop and its port still answers for the same root afterwards
 - **THEN** the system SHALL report it as still running rather than as stopped
 
 #### Scenario: A dashboard that had already exited is not reported as killed
-- **WHEN** the target has already exited before it is signalled
+- **WHEN** the target has already exited before it is asked to stop
 - **THEN** the system SHALL report that it was not running rather than that it was stopped

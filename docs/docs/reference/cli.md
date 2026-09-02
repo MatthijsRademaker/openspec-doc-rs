@@ -6,6 +6,9 @@ openspec-doc [--root <PATH>] <COMMAND>
   summary                      print the resolved project root, its changes, and its specs
   serve [--host] [--port]      serve the dashboard; --no-open prints the URL instead of opening a browser
   serve url                    print this project's dashboard URL and whether one is serving it
+  serve list                   list every dashboard on the port range, and the ports assigned to
+                               a project with nothing serving them
+  serve forget <PATH>          drop a project root's port assignment
   hook stop --agent <claude|pi>
   hook explore --agent <claude|pi>
   comment add|list|reply|resolve
@@ -28,6 +31,8 @@ is working.
 openspec-doc serve                          # binds this project's assigned port, opens a browser
 openspec-doc serve --port 8080 --no-open    # exactly that port, prints the URL instead
 openspec-doc serve url                      # the URL, and whether a dashboard is serving it
+openspec-doc serve list                     # every dashboard on the machine, whatever it serves
+openspec-doc serve forget ../old-checkout   # give that project's port back
 ```
 
 `--host` defaults to `127.0.0.1`.
@@ -39,6 +44,11 @@ macOS and Windows). The same project therefore binds the same port on every late
 checkouts started in. If something else already holds that port, `serve` falls forward to another port in
 the range and records where it landed, so the project is stable there from then on; a range with no free
 port at all is an error naming the range. Set `OPENSPEC_DOC_STATE_DIR` to keep the record somewhere else.
+
+`serve forget <PATH>` drops a root's entry from that record, which is how a port is given back — the range
+is finite, an entry is spent by every project *ever opened*, and the only entries reclaimed automatically
+are those whose directory no longer exists. It is refused while a dashboard for that root is serving,
+because dropping it live hands the port to another project with a server still sitting on it.
 
 An explicit `--port` neither reads nor writes that record: it binds exactly the port you named and fails
 rather than binding a different one. Naming a port is a statement about this invocation, not about where
@@ -58,6 +68,51 @@ other port in the range is reported where it actually is.
 http://127.0.0.1:4323 (not running)
 http://127.0.0.1:4323 (serving)
 ```
+
+### serve list
+
+Every dashboard answering on the port range, whatever project it serves, beside the ports assigned to a
+project with nothing serving them. Needs no project root, so it answers from anywhere — dashboards are
+global to the machine and started detached by the turn-end hook, so this is a question about the machine
+rather than about the checkout you happen to be standing in.
+
+```
+PORT   ROOT                          PID     STATE
+4321   /Users/you/repos/acme-api     84213   running
+4322   /Users/you/repos/old-spike    -       assigned, not running
+4327   /Users/you/checkouts/scratch  88771   running, not its assignment
+probed ports 4321-4352 on 127.0.0.1
+```
+
+Whether a dashboard is running is decided by probing that port and nothing else. An entry in the port
+record says where a project's dashboard *belongs*, never that one is there, so `assigned, not running` is a
+project you would find at that port if it were up. `running, not its assignment` is a dashboard the next
+turn boundary will record where it actually is. `running, no assignment` is one started by hand with
+`--port`. No dashboards at all prints `no dashboards running` and exits zero: that is the ordinary state of
+a machine between review sessions, not a failure.
+
+:::warning A dashboard outside `4321`–`4352` cannot be listed
+The sweep is bounded, which is why the command names the range it searched. `openspec-doc serve --port 9999`
+answers nothing this command asks and will not appear — the alternatives are worse: scanning all 65535
+ports, or matching on a process name, which is the `pkill` guesswork this exists to replace. If a server is
+missing from the table, that is where to look for it.
+:::
+
+### Stopping a dashboard
+
+There is no `serve stop` yet. Find it with `serve list` and stop it by the pid that table prints:
+
+```bash
+openspec-doc serve list
+kill 84213
+```
+
+Do **not** reach for `pkill -f 'openspec-doc serve'`. It matches on a command string, and during this
+project's own development it took out an unrelated shell. The pid from `serve list` is the process that
+answered on that port, which is the one you meant.
+
+A dashboard the turn-end hook started exits on its own after thirty minutes with nothing subscribed and no
+hook asking for it, so most of them need no stopping at all. One you started in a terminal never does.
 
 ## comment
 

@@ -7,7 +7,8 @@ import StatusMark from '@/components/StatusMark.vue'
 import { Badge } from '@/components/ui/badge'
 import { age } from '@/lib/age'
 import { createLatestEventChannel, EVENT_ACQUIRE_MS } from '@/lib/event-channel'
-import { returningScopeKey } from '@/lib/route-transition'
+import { returningScopeKey, speculate } from '@/lib/route-transition'
+import type { ScopeKind } from '@/lib/scope-review'
 import type { Scope } from '@/lib/scopes'
 
 const props = withDefaults(
@@ -21,6 +22,7 @@ const props = withDefaults(
 )
 
 const headingId = computed(() => `${props.prefix}-register-title`)
+const scopeKind = computed<ScopeKind>(() => (props.prefix === 'sessions' ? 'session' : 'change'))
 const scopeCount = computed(
   () => `${props.scopes.length} ${props.scopes.length === 1 ? 'scope' : 'scopes'}`,
 )
@@ -80,7 +82,9 @@ function reportAcquisition(event: MouseEvent, key: string): void {
         >
           <div class="scope-entry__identity">
             <div class="scope-entry__title-line">
-              <!-- Exact identity owns Router navigation. Title remains mutable display text only. -->
+              <!-- Exact identity owns Router navigation. Title remains mutable display text only.
+                   Pointing at a coordinate is the gesture before choosing it, so it starts the read
+                   the choice would start; the hold then spends it instead of waiting on one. -->
               <RouterLink
                 :class="[
                   'scope-entry__link',
@@ -88,6 +92,8 @@ function reportAcquisition(event: MouseEvent, key: string): void {
                 ]"
                 :to="`/${props.prefix}/${scope.key}`"
                 @click="reportAcquisition($event, scope.key)"
+                @mouseenter="speculate(scopeKind, scope.key)"
+                @focus="speculate(scopeKind, scope.key)"
               >
                 {{ scope.title ?? scope.key }}
               </RouterLink>

@@ -1153,6 +1153,10 @@ fn assigned_url(root: &str) -> String {
 
 /// The capability the port assignment exists to provide: an answer with nothing
 /// running at all.
+///
+/// Also the "starts no server" assertion for every `serve` subcommand: each of
+/// them asks about dashboards and none of them may leave one behind, which is
+/// checked by the project still reporting nothing running afterwards.
 #[test]
 fn serve_url_names_the_assigned_port_with_no_dashboard_running() {
     let fixture = project_fixture(&[]);
@@ -1169,6 +1173,250 @@ fn serve_url_names_the_assigned_port_with_no_dashboard_running() {
         stdout,
         self::stdout(&run(&["serve", "url", "--root", &root]))
     );
+
+    for command in [
+        vec!["serve", "url", "--root", &root],
+        vec!["serve", "list"],
+        vec!["serve", "forget", &root],
+    ] {
+        let output = run(&command);
+        assert!(output.status.success(), "{}", stderr(&output));
+        let after = self::stdout(&run(&["serve", "url", "--root", &root]));
+        assert!(
+            after.contains("(not running)"),
+            "`{}` left a dashboard behind: {after}",
+            command.join(" ")
+        );
+    }
+}
+
+/// The whole point of enumeration: it answers about the machine, so it must
+/// answer from a directory that is not a project at all.
+#[test]
+fn serve_list_works_outside_any_project_and_names_the_range_it_searched() {
+    let outside = TempDir::new().expect("a directory that is not a project");
+
+    let output = run_in(outside.path(), &["serve", "list"]);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    let stdout = stdout(&output);
+    assert!(
+        stdout.contains("probed ports 4321-4352"),
+        "a dashboard outside the range is only explicable if the range is stated: {stdout}"
+    );
+}
+
+/// Nothing running is the ordinary state of a machine between review sessions,
+/// and an operator checking is getting the answer they asked for.
+#[test]
+fn serve_list_exits_zero_with_no_project_root_resolvable() {
+    let outside = TempDir::new().expect("a directory that is not a project");
+
+    let output = run_in(outside.path(), &["serve", "list", "--root", "/nonexistent"]);
+
+    assert!(
+        output.status.success(),
+        "an unresolvable root must not stop a machine-wide question: {}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn serve_forget_reports_an_unassigned_root_as_nothing_to_forget() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap().to_owned();
+
+    let output = run(&["serve", "forget", &root]);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stdout(&output).contains("nothing to forget"),
+        "{}",
+        stdout(&output)
+    );
+}
+
+/// A relative or symlinked spelling of a root must forget the entry the
+/// canonical one keyed, or `forget` frees a port that is still held.
+#[test]
+fn serve_forget_drops_the_assignment_a_non_canonical_path_names() {
+    let fixture = project_fixture(&[]);
+    let canonical = fixture.path().canonicalize().expect("canonicalize");
+    let assigned = assigned_url(fixture.path().to_str().unwrap());
+    // Names the same directory, spelled as nothing else in the registry is.
+    let indirect = fixture.path().join("openspec").join("..");
+
+    let output = run(&["serve", "forget", indirect.to_str().unwrap()]);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    let stdout = stdout(&output);
+    assert!(stdout.contains("forgot"), "{stdout}");
+    assert!(
+        stdout.contains(&canonical.display().to_string()),
+        "the canonical root is what was keyed: {stdout}"
+    );
+    assert!(
+        !assignments().contains_key(&canonical.display().to_string()),
+        "the entry survived: {assigned} still assigned"
+    );
+    assert!(
+        self::stdout(&run(&["serve", "forget", indirect.to_str().unwrap()]))
+            .contains("nothing to forget"),
+        "forgetting twice claimed to forget twice"
+    );
+}
+
+/// Dropping an assignment under a live dashboard hands its port to another
+/// project with a server still on it.
+#[test]
+fn serve_forget_is_refused_while_a_dashboard_is_serving_that_root() {
+    let fixture = project_fixture(&[]);
+    let canonical = fixture.path().canonicalize().expect("canonicalize");
+    let port = identity_server(&canonical);
+    write_assignment(&canonical, port);
+
+    let output = run(&["serve", "forget", fixture.path().to_str().unwrap()]);
+
+    assert!(!output.status.success(), "{}", stdout(&output));
+    let stderr = stderr(&output);
+    assert!(stderr.contains("stop it"), "{stderr}");
+    assert_eq!(
+        assignments().get(&canonical.display().to_string()),
+        Some(&serde_json::json!(port)),
+        "a refused forget dropped the entry anyway"
+    );
+}
+
+/// The error a full range produces names a way out, and this is the test that the
+/// way out exists: the named command is extracted from the message and run.
+#[test]
+fn an_exhausted_port_range_names_a_command_the_binary_accepts() {
+    let fixture = project_fixture(&[]);
+    let filler = TempDir::new().expect("filler roots");
+    // Every port held by a root that still exists, so nothing can be reclaimed.
+    for (index, port) in (4321..=4352u16).enumerate() {
+        let root = filler.path().join(format!("filler-{index}"));
+        fs::create_dir_all(&root).expect("create filler root");
+        write_assignment(&root, port);
+    }
+
+    let exhausted = run(&["serve", "url", "--root", fixture.path().to_str().unwrap()]);
+
+    let message = stderr(&exhausted);
+    let named = between(&message, "forget one with `", "`");
+    assert!(named.starts_with("openspec-doc "), "{message}");
+    let named: Vec<&str> = named.split_whitespace().skip(1).collect();
+    let mut args = named.clone();
+    args.push(fixture.path().to_str().unwrap());
+
+    let accepted = run(&args);
+
+    assert!(
+        accepted.status.success(),
+        "the full-range error names `{}`, which the binary does not run: {}",
+        named.join(" "),
+        stderr(&accepted)
+    );
+}
+
+/// `Option<ServeCommand>` is what makes a bare `serve` a server rather than a
+/// help screen, and two more subcommands must not spend that.
+#[test]
+fn a_bare_serve_starts_a_server_with_three_subcommands_present() {
+    let fixture = project_fixture(&[]);
+    let help = run(&["serve", "--help"]);
+    for command in ["url", "list", "forget"] {
+        assert!(
+            stdout(&help).contains(command),
+            "`serve {command}` missing from:\n{}",
+            stdout(&help)
+        );
+    }
+
+    // A port the test itself holds, so a bare `serve` fails at the bind — which
+    // is only reachable if it went to start a server instead of printing help.
+    let held = std::net::TcpListener::bind("127.0.0.1:0").expect("hold a port");
+    let port = held.local_addr().expect("local addr").port().to_string();
+    let output = run(&[
+        "serve",
+        "--root",
+        fixture.path().to_str().unwrap(),
+        "--port",
+        &port,
+        "--no-open",
+    ]);
+
+    assert!(!output.status.success(), "{}", stdout(&output));
+    assert!(
+        !stdout(&output).contains("Usage:"),
+        "a bare `serve` printed help instead of starting a server: {}",
+        stdout(&output)
+    );
+    assert!(
+        stderr(&output).contains(&port),
+        "the failure is not about the port it was told to bind: {}",
+        stderr(&output)
+    );
+}
+
+/// Answer identity probes with `root` for as long as the test binary runs.
+///
+/// The port is the operating system's, not one from the real range: the range is
+/// where the developer's own dashboards are sitting, and tests here run in
+/// parallel.
+fn identity_server(root: &Path) -> u16 {
+    use std::io::{BufRead, BufReader};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("local addr").port();
+    let body = format!(
+        "{{\"root\":\"{}\",\"pid\":{}}}",
+        root.display(),
+        std::process::id()
+    );
+    std::thread::spawn(move || {
+        for connection in listener.incoming() {
+            let Ok(mut stream) = connection else { break };
+            let mut request = String::new();
+            let _ = BufReader::new(&stream).read_line(&mut request);
+            let _ = stream.write_all(
+                format!(
+                    "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            );
+        }
+    });
+
+    port
+}
+
+/// This test's port registry, keyed the way the binary keys it.
+fn assignments() -> serde_json::Map<String, serde_json::Value> {
+    let path = state_dir().join("ports.json");
+    let Ok(contents) = fs::read_to_string(&path) else {
+        return serde_json::Map::new();
+    };
+    let registry: serde_json::Value = serde_json::from_str(&contents).expect("parse the registry");
+
+    registry["ports"]
+        .as_object()
+        .expect("the registry holds a port table")
+        .clone()
+}
+
+/// Assign `port` to `root` in this test's registry, the way an earlier run would
+/// have left it.
+fn write_assignment(root: &Path, port: u16) {
+    let mut ports = assignments();
+    ports.insert(root.display().to_string(), port.into());
+    fs::write(
+        state_dir().join("ports.json"),
+        serde_json::json!({ "ports": ports }).to_string(),
+    )
+    .expect("write the registry");
 }
 
 #[test]
@@ -1575,7 +1823,6 @@ fn identity_of(url: &str) -> String {
     response
 }
 
-#[cfg(unix)]
 fn between<'a>(haystack: &'a str, after: &str, before: &str) -> &'a str {
     let rest = haystack
         .split_once(after)

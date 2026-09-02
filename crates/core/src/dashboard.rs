@@ -171,6 +171,38 @@ pub fn record(root: &Path, port: u16) -> Result<(), Error> {
     store(&path, &registry)
 }
 
+/// Every assignment the registry holds, canonical root to port.
+///
+/// Assignments and nothing else: an entry says where a root's dashboard belongs,
+/// never that one is running there. A caller reporting what is running asks the
+/// network for that and joins this on top.
+pub fn assignments() -> Result<BTreeMap<PathBuf, u16>, Error> {
+    let registry = load(&registry_path()?)?;
+
+    Ok(registry
+        .ports
+        .into_iter()
+        .map(|(root, port)| (PathBuf::from(root), port))
+        .collect())
+}
+
+/// Drop `root`'s assignment, returning the port it held, or `None` when the root
+/// had none.
+///
+/// The way out of a full range: an assignment is consumed by every root ever
+/// opened, and lazy reclamation only frees the ones whose directory is gone.
+pub fn forget(root: &Path) -> Result<Option<u16>, Error> {
+    let path = registry_path()?;
+    let mut registry = load(&path)?;
+
+    let Some(port) = registry.ports.remove(&key(root)?) else {
+        return Ok(None);
+    };
+    store(&path, &registry)?;
+
+    Ok(Some(port))
+}
+
 /// The registry as it is on disk.
 ///
 /// A missing file is normal and silent — every project is unseen once. A file
@@ -427,6 +459,48 @@ mod tests {
             fs::read_to_string(fixture.registry()).expect("read back"),
             "{ not json",
             "a file that would not parse must not be rewritten"
+        );
+    }
+
+    /// The way out of a full range: the freed port is the one a newly seen root
+    /// then takes.
+    #[test]
+    fn forgetting_a_root_frees_its_port_for_a_newly_seen_one() {
+        let fixture = fixture();
+        let forgotten = fixture.root("forgotten");
+        let port = assign(&forgotten).expect("assign");
+        for index in 0..(RANGE.clone().count() - 1) {
+            assign(&fixture.root(&format!("filler-{index}"))).expect("assign filler");
+        }
+
+        assert_eq!(forget(&forgotten).expect("forget"), Some(port));
+
+        assert_eq!(assigned(&forgotten).expect("read back"), None);
+        assert_eq!(assign(&fixture.root("new")).expect("assign"), port);
+    }
+
+    #[test]
+    fn forgetting_an_unassigned_root_reports_that_there_was_nothing_to_forget() {
+        let fixture = fixture();
+
+        assert_eq!(forget(&fixture.root("unseen")).expect("forget"), None);
+        assert!(
+            !fixture.registry().exists(),
+            "forgetting nothing created the registry"
+        );
+    }
+
+    #[test]
+    fn every_assignment_is_readable_at_once() {
+        let fixture = fixture();
+        let first = fixture.root("a");
+        let second = fixture.root("b");
+        assign(&first).expect("assign");
+        assign(&second).expect("assign");
+
+        assert_eq!(
+            assignments().expect("assignments"),
+            BTreeMap::from([(first, 4321), (second, 4322)])
         );
     }
 

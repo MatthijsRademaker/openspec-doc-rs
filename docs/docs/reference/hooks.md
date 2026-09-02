@@ -24,6 +24,23 @@ and writes nothing without `--yes`. Then run `openspec-doc doctor`, which execut
 a settings file is a claim about what will happen, and `doctor` is what turns it into an observation. See
 [Quickstart](/quickstart.md).
 
+## The dashboard the hooks start
+
+`hook stop` brings a dashboard up at the first turn boundary of a session that has something to review, on
+[the port assigned to this project](/reference/cli.md#serve), and keeps it up at every later one. Nobody has
+to remember to start one, which also means a machine accumulates dashboards nobody chose to start.
+
+`openspec-doc serve list` is what enumerates them, from anywhere, with the pid of each. It works by probing
+`4321`–`4352` and **nothing outside that range answers it** — a server started by hand as
+`openspec-doc serve --port 9999` will not appear, however much it is running. That is the first thing to
+check when a dashboard you know is up is missing from the table.
+
+To stop one, take the pid from `serve list` and `kill` it; a hook-started dashboard also exits by itself
+after thirty minutes with no page subscribed and no turn boundary asking for it. Do not `pkill -f` on the
+command string — it has already killed the wrong process during this project's development.
+
+If a start fails, that server's output is in `.openspec-doc/serve.log` and the hook says so on stderr.
+
 ## Claude Code
 
 `.claude/settings.json` at the project root — the file `init` writes, and the file to edit if you are

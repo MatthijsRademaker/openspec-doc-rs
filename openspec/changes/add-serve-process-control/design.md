@@ -1,82 +1,76 @@
 # Design
 
-## The whole change is one probe, run wide instead of narrow
+## Stop it over HTTP, not with a signal
 
-`add-dashboard-lifecycle` probes `4321`–`4352` looking for *one* answer: a dashboard whose canonical root matches mine. It stops at the first match and reuses it.
+The original version of this design spent its longest section mitigating pid reuse, in three layers, and its third layer read: *prefer stopping by port over pid, because a port that stops answering is direct evidence while a vanished pid is consistent with the pid having been reused*. It then built the command on signals anyway, and mitigated the hazard it had just described as avoidable.
 
-This change runs the same loop and keeps every answer instead of the first matching one.
-
-```
-  ensure_dashboard(root)          serve list
-        │                              │
-   probe 4321..4352              probe 4321..4352
-        │                              │
-   first match wins  ──►          collect all  ──►  port | root | pid
-   nothing found ⇒ spawn          nothing found ⇒ "no dashboards running"
-```
-
-That is the entire mechanism. If implementing this requires a second probe, the shared function was scoped too narrowly and should be widened to return all identities, with `ensure` filtering — not copied.
-
-## Assignments are shown beside the running dashboards, never instead of them
-
-`add-dashboard-lifecycle` gives each project root a port it keeps, recorded in a machine-global registry. That changes what a useful `serve list` looks like, and it is worth being exact about how, because the obvious reading of "read the registry" is the mistake that change spent a section rejecting.
-
-The registry answers *which port does this project own*. The probe answers *what is running*. `serve list` prints the join, and the second column is never inferred from the first:
+The dashboard already answers HTTP on the port. Asking it to stop through that port is the same preference taken to its conclusion:
 
 ```
-  PORT   ROOT                          PID     STATE
-  4321   ~/repos/openspec-doc-rs       84213   running
-  4322   ~/repos/acme-api              91004   running
-  4323   ~/repos/old-spike             —       assigned, not running
-  4327   ~/checkouts/scratch           88771   running, not its assignment
-  ↑ probed 4321–4352
+   signal path                        HTTP path
+   ───────────                        ─────────
+   probe → learn pid                  probe → learn port
+   kill(pid, SIGTERM)                 POST <port>/api/shutdown
+   ↑ pid may already be reused        ↑ the port is the identity
+   ↑ needs libc / nix / rustix        ↑ hand-rolled POST, no dependency
+   ↑ no SIGTERM on Windows            ↑ identical on every platform
+   ↑ tells the process to stop        ↑ the process stops itself
+   re-probe → confirm                 re-probe → confirm
 ```
 
-Three things fall out of that table that a probe-only list could not show. A project that owns a port but has nothing running is visible, which is the "where would this checkout appear" question. A dashboard sitting somewhere other than its assignment is visible as an anomaly rather than looking normal — that is the state `ensure` repairs on its next run, and seeing it is how an operator notices the repair path is not firing. And a row with no assignment at all is a dashboard started by hand with `--port`, which is worth distinguishing from one the hooks placed.
+What it buys, in order:
 
-A row is only ever marked running because a probe of that port answered. Losing the registry costs this table its assigned-not-running rows and nothing else.
+- **The pid-reuse hazard does not exist.** It is not narrowed by probing late, it is absent, because no pid is ever used. Three paragraphs of mitigation become none.
+- **No new dependency.** Rust's std cannot send a signal; `SIGTERM` costs `libc`, `nix`, or `rustix`, and this workspace has an explicit written test for adding a crate — it must be smaller than the correctness risk of doing the thing by hand. `discovery.rs` already notes it reached for `process_group(0)` specifically because it is in std. A hand-rolled `POST` beside the hand-rolled `GET` costs nothing.
+- **Windows stops being a question.** The original task list carried an open item about what stopping means on a platform with no `SIGTERM`. There is no such item here.
+- **The server chooses when to stop.** `axum`'s graceful shutdown already exists for the idle exit; the route resolves the same future. That is a more direct route to a clean shutdown than a signal handler would be, and the clean shutdown path is already written and already exercised.
 
-## `serve forget` exists because assignment can fail
+The cost, stated rather than discovered: **a dashboard so wedged it no longer answers HTTP cannot be stopped this way**, and that is exactly the dashboard an operator most wants to kill. This design does not build a signal fallback for it, on the same rule the predecessor applied to `SIGKILL` escalation — speculative escalation for a failure mode nothing has been observed to hit. `serve list` prints the pid, so the manual escape hatch is one `kill` away and the docs say so. If a wedged dashboard is ever actually seen, `--pid` and a signal is the follow-up change, and it will be justified by an observation instead of an imagination.
 
-The range is finite, and `add-dashboard-lifecycle` fails loudly rather than colliding when every port is assigned to a root that still exists on disk. That error names `serve forget` as the way out. An error that names a command which does not exist is worse than the collision it prevented, so the two have to land together in spirit even though they land in different changes — whichever is implemented second checks that the error text and the command agree.
+Confidence: high that this is the right primary mechanism, moderate that no fallback is needed. The second one is the one to revisit.
 
-It takes a root, not a port: the operator's question is "I do not use that checkout any more", and answering it by port requires them to look the port up first. Forgetting a root whose dashboard is currently running is refused rather than allowed — the assignment would be handed to another project while a server still sits on it, and the next `ensure` for the forgotten root would find its own dashboard on a port belonging to someone else. Stop it first.
+## A local page must not be able to shut your dashboard down
 
-## Why a target is required
+A route that stops a process, reachable from a browser, on a fixed and predictable port, deserves one paragraph rather than none.
 
-`serve kill` with no argument is one keystroke from stopping a dashboard on a checkout you are not looking at. The dashboards are global to the machine and the operator's mental model is per-project, so the natural reading of a bare `serve kill` — "stop the one for *this* project" — is not the destructive one, which means the destructive behaviour would be a surprise rather than a choice.
+The bind is `127.0.0.1`, so nothing off the machine reaches it. What remains is a page in the operator's own browser: a plain HTML form can `POST` cross-origin without a preflight, and the port is guessable within thirty-two tries. The blast radius is a stopped dev dashboard — annoying, not dangerous — but it is free to close. Require a header on the shutdown request that a simple form cannot set, which forces the browser into a CORS preflight it will not get past. The CLI writes its own request bytes, so setting a header costs one line there.
 
-Three target forms, because the three ways an operator arrives at this command are different:
+Do not reach for a token or a nonce. That needs somewhere to keep the secret, and "somewhere to keep per-server state" is the design this whole line of work rejected.
+
+## Why a target is required, and what the targets are called
+
+`serve kill` with no argument is one keystroke from stopping a dashboard on a checkout you are not looking at. The dashboards are global to the machine while the operator's mental model is per-project, so the natural reading of a bare `serve kill` — "stop the one for *this* project" — is not the destructive one, which means the destructive behaviour would be a surprise rather than a choice.
+
+The original design listed `--root <path>` as the project target and left an open task asking whether a bare `--root` should default to the resolved project root. Both halves of that were wrong:
+
+**`--root` is already taken.** `Cli` declares it `global = true`, so `openspec-doc serve kill --root /repos/x` parses today, as the project-root override that every other subcommand honours. A per-subcommand `--root` cannot be added beside it.
+
+**And the global one already defaults to the resolved project.** That is what makes the open question unanswerable as posed: the convenient spelling the task was weighing is the one spelling indistinguishable from having given no target at all, which is the exact case the required-target rule exists to reject.
+
+So the project target is its own explicit switch, taking no value:
 
 | Target | The situation |
 | --- | --- |
-| `--root <path>` (or defaulting to the resolved project root) | "stop the one for this project" — the common case |
+| `--project` | "stop the one for this project" — the common case. Resolves the project the way every other command does, honouring a global `--root` if one is given. |
 | `--port <n>` | reading a `serve list` table |
-| `--pid <n>` | reading `ps`, or a stale pid from somewhere else |
 | `--all` | "I have lost track, stop everything" |
+
+`--project` is a flag rather than a default because typing it is the act of choosing. The behaviour still depends on the working directory, which is fine — so does every other command in this CLI — but it depends on it only once the operator has said "the project" out loud.
 
 `--all` exists because the honest answer to losing track is a command that admits it, rather than an operator running `pkill -f openspec-doc` and taking out whatever else matches. That has already happened in this project's own development.
 
-## Killing races the thing being killed
+## A stop reports what is gone, not what was sent
 
-The pid comes from a socket read, which is a snapshot. Between the probe and the signal the process may have exited on its own idle deadline, been killed by someone else, or — worst — exited and had its pid reused by an unrelated process.
+Even without pids, a target is a snapshot. Between the enumeration that resolved `--project` to a port and the request, the dashboard may have exited on its own idle deadline, or been stopped by someone else, or — the interesting one — that port may now hold a *different* project's dashboard, because the first one exited and an `ensure` elsewhere fell forward onto it.
 
-Pid reuse is the one that turns a convenience command into a hazard. Mitigation, in order of how much they buy:
+Three rules, in order of how much they buy:
 
-1. **Probe immediately before signalling**, not from a list the operator was shown some seconds ago. Narrows the window to milliseconds; does not close it.
-2. **Probe again after signalling** and report what is actually gone. This is what the command reports, rather than "sent SIGTERM to 12345".
-3. **Prefer stopping by port over pid where both are known.** A port that stops answering `/identity` is direct evidence the dashboard is gone; a pid that no longer exists is weaker evidence, because it is consistent with the pid having been reused.
+1. **Enumerate immediately before asking**, not from a list the operator was shown some seconds ago. Narrows the window to milliseconds; does not close it.
+2. **Send the root the request expects to be stopping**, and have the server refuse a shutdown naming a root it does not serve. This closes the fall-forward case outright, which the signal design could not do at any price: a pid is just a number, but a running server can check its own identity.
+3. **Probe again afterwards** and report what is actually gone. This is what the command reports, rather than "sent a shutdown request to 4321".
 
-`SIGTERM`, not `SIGKILL`. The server should get its shutdown path. A follow-up `SIGKILL` after a timeout is deliberately not built until something is observed to ignore the first signal — speculative escalation for a process that has never been seen to hang.
+Rule 2 is worth noticing as the second thing the HTTP path gets for free. The thing being stopped is the only participant that knows for certain what it is, and asking it is only possible because the mechanism is a conversation rather than a signal.
 
-## What `list` prints when there is nothing
+## What a stop does not touch
 
-"No dashboards running" and exit zero. Not an error: no dashboards is the ordinary state of a machine between review sessions, and an operator running `serve list` to check is getting the answer they asked for.
-
-Exit non-zero only when the probe itself could not run.
-
-## The out-of-range blind spot is stated, not solved
-
-A dashboard on `--port 9999` does not answer within `4321`–`4352` and will not appear. Every alternative that closes this gap reintroduces something worse: scanning all 65535 ports is slow and hostile; reading `/proc` or `ps` is platform-specific and matches on a command string, which is the `pkill` approach this command exists to replace; a state file is rejected at length in `add-dashboard-lifecycle`'s design.
-
-So it is a documented limit. `serve list` names the range it searched in its output, so an operator who does not find what they expect can see immediately why rather than concluding the tool is broken.
+The port assignment. Stopping a dashboard says nothing about where that project belongs, and a kill that also forgot the assignment would move the project on its next start — which is the instability this whole line of work removed. `serve forget` is the command for that, and it is deliberately a separate act.

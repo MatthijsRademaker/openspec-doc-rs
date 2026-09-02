@@ -23,5 +23,5 @@ pub mod verdict;
 mod test_fixture;
 
 pub use error::Error;
-pub use root::{Project, find_project, project_at};
+pub use root::{Project, canonicalize, find_project, project_at};
 pub use scan::{NamedDir, Scan, scan};
