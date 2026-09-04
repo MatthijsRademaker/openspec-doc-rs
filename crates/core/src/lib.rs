@@ -11,6 +11,9 @@
 //! dashboard belongs on ([`dashboard`]).
 
 pub mod approval;
+
+/// Temporary: deliberately misformatted to prove the lane fails on `cargo fmt --check`. Reverted immediately.
+pub fn   fmt_probe( ) ->  u8 {   1  }
 pub mod comments;
 pub mod dashboard;
 mod error;
