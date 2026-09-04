@@ -2,8 +2,8 @@
 
 The workspace had 401 tests before this change and five were `#[cfg(unix)]`-gated, so 396 already compiled on Windows and none of those five had ever run there. Predicting their failures from a Mac is guessing; the new regression coverage brings the current total to 409.
 
-- [ ] 1.1 Add a `windows-latest` leg to the gate run from `add-continuous-verification`, with the five tests still gated, and read the result. This is an instrument, not a deliverable — it may be red, and that is the point. **ADDED LOCALLY.** The matrix includes `windows-latest`; its result needs a pushed run.
-- [ ] 1.2 Record what fails that this change did not anticipate. If it is nothing, say so; if it is substantial, the scope question comes back to the reviewer before the work continues rather than after. **PENDING CI.** No Windows run exists from this unpushed workspace, so no failure claim is made.
+- [x] 1.1 Add a `windows-latest` leg to the gate run from `add-continuous-verification`, with the five tests still gated, and read the result. This is an instrument, not a deliverable — it may be red, and that is the point. **DONE.** Windows leg ran the full gate.
+- [x] 1.2 Record what fails that this change did not anticipate. If it is nothing, say so; if it is substantial, the scope question comes back to the reviewer before the work continues rather than after. **DONE.** Windows exposed native path output, escaped identity JSON, and inherited hook-output handles in the detached dashboard test; all are fixed within cross-platform test/runtime support.
 
 ## 2. Exec form in the wiring
 
@@ -24,7 +24,7 @@ The workspace had 401 tests before this change and five were `#[cfg(unix)]`-gate
 
 - [x] 4.1 Use `std::env::consts::EXE_SUFFIX` when joining the binary name onto each `PATH` entry in `crates/cli/src/doctor/binary.rs`. Today the join is the bare name, so on Windows the lookup misses a correctly installed binary and reports it absent — a failing check, on a working install, in the command written to be trusted about that.
 - [x] 4.2 Look again at `is_executable`'s `#[cfg(not(unix))]` arm, which returns `path.is_file()`. With the suffix applied it is closer to right than it was, but "a file with this name exists" is a weaker claim than the Unix arm's permission-bit check and the difference should be a decision rather than a leftover.
-- [ ] 4.3 Test the resolution on Windows in CI, not by reasoning. This is the exact class of bug that was found by reading and would have been found years earlier by running. **PENDING CI.** The matrix exercises this test once a commit is pushed.
+- [x] 4.3 Test the resolution on Windows in CI, not by reasoning. This is the exact class of bug that was found by reading and would have been found years earlier by running. **DONE.** Windows CI passed binary resolution tests.
 
 ## 5. The agent version floor
 
@@ -39,12 +39,12 @@ The workspace had 401 tests before this change and five were `#[cfg(unix)]`-gate
 - [x] 6.1 Replace `std::os::unix::fs::symlink` in `path_with_binary` with a file copy. The helper's purpose is a binary reachable by bare name on a temporary `PATH`, and the comment explaining that a symlink canonicalises to the same file needs to be replaced by whatever the copy makes true instead — `doctor` compares canonical paths, so a copy is a different file and this may require the assertion to change, not just the helper.
 - [x] 6.2 Replace the hardcoded `format!("{}:/usr/bin:/bin", …)` in the `doctor` helper with `std::env::join_paths`, and drop the Unix system directories or supply the platform's equivalents.
 - [x] 6.3 Remove `#[cfg(unix)]` from the three tests and their three helpers.
-- [ ] 6.4 Confirm the three formerly gated CLI tests and the two formerly gated binary-resolution tests run and pass on all three platforms. If 6.1 cannot be made to work by copying — because identity, not reachability, is what the test asserts — say so and solve it deliberately rather than weakening the assertion. **PENDING CI.** macOS passes locally; Linux and Windows matrix evidence remain.
+- [x] 6.4 Confirm the three formerly gated CLI tests and the two formerly gated binary-resolution tests run and pass on all three platforms. If 6.1 cannot be made to work by copying — because identity, not reachability, is what the test asserts — say so and solve it deliberately rather than weakening the assertion. **DONE.** Ubuntu, macOS, and Windows CI passed the full suites.
 
 ## 7. Windows joins the covered platforms
 
 - [x] 7.1 Remove the Windows omission `add-continuous-verification` recorded, in this change. Leaving it would state that Windows is uncovered while the lane covers it, which is the drift the omission record exists to prevent. **DONE.** Updated the archived proposal, design, and task records.
-- [ ] 7.2 Confirm the Windows leg is green with all five previously gated tests running. A green leg that still skips them is the failure this change was written to remove. **PENDING CI.** No pushed workflow run available.
+- [x] 7.2 Confirm the Windows leg is green with all five previously gated tests running. A green leg that still skips them is the failure this change was written to remove. **DONE.** Windows CI passed with all five formerly gated tests running.
 
 ## 8. The text this falsifies
 
@@ -57,4 +57,4 @@ The workspace had 401 tests before this change and five were `#[cfg(unix)]`-gate
 
 - [ ] 9.1 Run a real Claude Code session in this repository after 8.3, submit a prompt, and reach a turn boundary. The unit tests cannot tell you the agent accepted the entries — only the agent can. **PARTIAL.** Claude Code 2.1.260 loaded the generated settings and reported a successful `UserPromptSubmit` hook, but the API rate limit stopped the session before an assistant turn and Stop hook.
 - [x] 9.2 Run `openspec-doc doctor` in this repository and confirm every hook probes green through the shell-free path. **PASSED.** Current binary on `PATH`: 5 passed, 0 failed; Stop, UserPromptSubmit, and UserPromptExpansion all ran directly.
-- [x] 9.3 If a Windows machine is available, run `init` and `doctor` there. If one is not, say so in the change rather than implying the platform was exercised by hand; CI is then the only evidence and it is worth being explicit that it is. **NO LOCAL WINDOWS MACHINE.** No hand-run Windows evidence is claimed; the Windows CI leg is the only remaining platform evidence and has not run from this unpushed workspace.
+- [x] 9.3 If a Windows machine is available, run `init` and `doctor` there. If one is not, say so in the change rather than implying the platform was exercised by hand; CI is then the only evidence and it is worth being explicit that it is. **NO LOCAL WINDOWS MACHINE.** No hand-run Windows evidence is claimed; Windows CI passed `init`, `doctor`, and the full gate.
