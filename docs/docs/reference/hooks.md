@@ -35,9 +35,15 @@ to remember to start one, which also means a machine accumulates dashboards nobo
 `openspec-doc serve --port 9999` will not appear, however much it is running. That is the first thing to
 check when a dashboard you know is up is missing from the table.
 
-To stop one, take the pid from `serve list` and `kill` it; a hook-started dashboard also exits by itself
-after thirty minutes with no page subscribed and no turn boundary asking for it. Do not `pkill -f` on the
-command string — it has already killed the wrong process during this project's development.
+[`openspec-doc serve kill`](/reference/cli.md#serve-kill) is what stops one: `--project` for this checkout's,
+`--port <n>` for a port the table shows, `--all` for every one on the machine. A target is always required.
+A hook-started dashboard also exits by itself after thirty minutes with no page subscribed and no turn
+boundary asking for it, so most of them need no stopping at all.
+
+`serve kill` asks over HTTP, so it needs a dashboard still answering. One so wedged it no longer does cannot
+be stopped that way, and the pid in the `serve list` table is the manual escape hatch for it. Do not
+`pkill -f` on the command string — it has already killed the wrong process during this project's
+development.
 
 If a start fails, that server's output is in `.openspec-doc/serve.log` and the hook says so on stderr.
 

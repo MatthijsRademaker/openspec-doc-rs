@@ -137,6 +137,24 @@ pub fn reason(key: &ScopeKey, verdict: Verdict) -> Result<String, Error> {
              is done, which is yours to claim; whether it is right is the reviewer's to judge, \
              and closing the thread is theirs alone."
         )),
+        (ScopeKey::Change(name), Verdict::Approved) => Ok(format!(
+            "{ATTRIBUTION}: the reviewer approved change `{name}`. Unlike every other verdict \
+             this is not a request for work on the review — it is the one that clears work on \
+             the change: its artifacts under `openspec/changes/{name}/` are what was approved, \
+             and implementing what `openspec/changes/{name}/tasks.md` lists is now in scope. \
+             `openspec-doc approval state --change {name}` reports that clearance and exits \
+             non-zero while it does not hold, which is worth running before you start. Editing \
+             the proposal, the design or a spec delta after this makes the approval stale and \
+             the change needs approving again."
+        )),
+        (ScopeKey::Change(name), Verdict::ApprovalWithdrawn) => Ok(format!(
+            "{ATTRIBUTION}: the reviewer withdrew their approval of change `{name}`, so it is no \
+             longer cleared for implementation. Their reasoning, if they left any, is in \
+             `{comments}` — `openspec-doc comment list --change {name}` prints it — and \
+             `openspec-doc approval state --change {name}` reports the state as it now stands. \
+             Stop adding implementation for this change and say where you had got to, so the \
+             reviewer knows what exists against an approval that no longer holds."
+        )),
         // `verdict::add` refuses a verdict that does not belong to the kind of
         // scope it was filed under, so a sidecar holding one is corrupt.
         (key, verdict) => Err(Error::MisscopedVerdict {
@@ -166,6 +184,20 @@ mod tests {
             (session_key(), Verdict::KeepExploring),
             (session_key(), Verdict::MoveToProposal),
             (change_key(), Verdict::CommentResolution),
+            (change_key(), Verdict::Approved),
+            (change_key(), Verdict::ApprovalWithdrawn),
+        ]
+    }
+
+    /// The templates that exist to route the reviewer's own words back to the
+    /// agent. An approval routes no words — it reports a decision about the
+    /// change — so it is the one template with nothing in the sidecar to name.
+    fn feedback_templates() -> Vec<(ScopeKey, Verdict)> {
+        vec![
+            (session_key(), Verdict::KeepExploring),
+            (session_key(), Verdict::MoveToProposal),
+            (change_key(), Verdict::CommentResolution),
+            (change_key(), Verdict::ApprovalWithdrawn),
         ]
     }
 
@@ -460,14 +492,55 @@ mod tests {
                 "{verdict} does not say where it came from: {reason}"
             );
             assert!(
-                reason.contains(".openspec-doc/comments/"),
-                "{verdict} does not point at the comment sidecar: {reason}"
-            );
-            assert!(
                 !reason.contains(".openspec-doc/verdicts/"),
                 "{verdict} still promises feedback in verdict notes: {reason}"
             );
         }
+    }
+
+    #[test]
+    fn every_feedback_template_points_at_the_comment_sidecar() {
+        for (key, verdict) in feedback_templates() {
+            let reason = reason(&key, verdict).expect("reason");
+
+            assert!(
+                reason.contains(".openspec-doc/comments/"),
+                "{verdict} does not point at the comment sidecar: {reason}"
+            );
+        }
+    }
+
+    /// An approval is the one verdict that clears work rather than asking for
+    /// it, and the template has to say so or the agent reads it as another
+    /// request for a review pass.
+    #[test]
+    fn the_approval_template_says_the_change_is_cleared_and_names_the_precheck() {
+        let reason = reason(&change_key(), Verdict::Approved).expect("reason");
+
+        assert!(reason.contains("approved change `add-thing`"), "{reason}");
+        assert!(
+            reason.contains(&format!("openspec-doc approval state --change {CHANGE}")),
+            "{reason}"
+        );
+        assert!(
+            reason.contains(&format!("openspec/changes/{CHANGE}/tasks.md")),
+            "{reason}"
+        );
+        assert!(
+            reason.contains("stale"),
+            "the template has to say what un-clears it: {reason}"
+        );
+    }
+
+    #[test]
+    fn the_withdrawal_template_says_the_change_is_no_longer_cleared() {
+        let reason = reason(&change_key(), Verdict::ApprovalWithdrawn).expect("reason");
+
+        assert!(reason.contains("withdrew"), "{reason}");
+        assert!(
+            reason.contains(&format!("openspec-doc approval state --change {CHANGE}")),
+            "{reason}"
+        );
     }
 
     /// The refusal observed during `add-agent-hook-bridge` verification was of a
@@ -532,6 +605,8 @@ mod tests {
     fn a_verdict_filed_under_the_wrong_kind_of_scope_is_an_error() {
         for (key, verdict) in [
             (session_key(), Verdict::CommentResolution),
+            (session_key(), Verdict::Approved),
+            (session_key(), Verdict::ApprovalWithdrawn),
             (change_key(), Verdict::KeepExploring),
             (change_key(), Verdict::MoveToProposal),
         ] {

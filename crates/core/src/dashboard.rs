@@ -45,6 +45,31 @@ pub const STATE_DIR_ENV: &str = "OPENSPEC_DOC_STATE_DIR";
 /// Off the page namespace, so it cannot collide with a change or session name.
 pub const IDENTITY_PATH: &str = "/api/identity";
 
+/// The route a dashboard is asked to stop on.
+///
+/// Beside [`IDENTITY_PATH`] for the same reason that one is here: the server
+/// routes it and the CLI writes the request bytes by hand, so the two have to
+/// agree about the spelling and neither owns it.
+pub const SHUTDOWN_PATH: &str = "/api/shutdown";
+
+/// The header a shutdown request names the root it believes it is stopping in.
+///
+/// One header doing two jobs the design asks for separately.
+///
+/// It names the root, so the server — the only participant that knows for
+/// certain what it is — can refuse a request meant for a dashboard that has
+/// since been replaced on this port.
+///
+/// And it is a header no cross-origin HTML form can set, so a page in the
+/// operator's own browser cannot POST a dashboard down on a guessable local port
+/// without first clearing a CORS preflight it will not pass. No token and no
+/// nonce: a secret needs somewhere to live, and per-server state is the design
+/// this work rejected.
+///
+/// A header rather than a JSON body because the CLI writes these bytes by hand,
+/// and a header value carries a path with no body, no length, and no parser.
+pub const SHUTDOWN_ROOT_HEADER: &str = "x-openspec-doc-root";
+
 const APP_DIR: &str = "openspec-doc";
 const REGISTRY_FILE: &str = "ports.json";
 

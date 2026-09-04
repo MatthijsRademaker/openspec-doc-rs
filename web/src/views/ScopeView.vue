@@ -15,6 +15,7 @@ import {
   EVENT_TRANSITION_MS,
 } from '@/lib/event-channel'
 import {
+  type ApprovalAct,
   createComment,
   eventPath,
   fetchScope,
@@ -24,6 +25,7 @@ import {
   type ScopeDetail,
   type ScopeKind,
   setCommentStatus,
+  submitApproval,
   submitVerdict,
 } from '@/lib/scope-review'
 import type {
@@ -47,6 +49,10 @@ const router = useRouter()
 const scope = ref<ScopeDetail>()
 const failure = ref<string>()
 const actionFailure = ref<string>()
+// Kept apart from `actionFailure`: a refused approval and a bulk act whose
+// resolutions landed both belong beside the control that caused them, and
+// "Action not recorded" is the wrong sentence for the second.
+const approvalFailure = ref<string>()
 const busy = ref(false)
 const transmission = ref<TransmissionEvent>()
 const pendingArtifact = ref<ScopeDetail>()
@@ -163,6 +169,7 @@ function mergeReviewState(target: ScopeDetail, source: ScopeDetail): ScopeDetail
     commentCounts: source.commentCounts,
     verdicts: source.verdicts,
     standingVerdict: source.standingVerdict,
+    approval: source.approval,
   }
 }
 
@@ -214,7 +221,14 @@ async function replaceLiveState(
   const scrollTop = window.scrollY
   const scrollLeft = window.scrollX
   const next = artifactsChanged
-    ? { ...scope.value, artifacts: detail.artifacts, comments: detail.comments }
+    ? {
+        ...scope.value,
+        artifacts: detail.artifacts,
+        comments: detail.comments,
+        // Staleness is a fact about the artifacts, so an artifact edit is
+        // exactly what flips an approval without any review state changing.
+        approval: detail.approval,
+      }
     : scope.value
   scope.value = reviewStateChanged ? mergeReviewState(next, detail) : next
   if (reviewStateChanged && markRemoteReceipt) {
@@ -339,6 +353,7 @@ watch(
     scope.value = undefined
     failure.value = undefined
     actionFailure.value = undefined
+    approvalFailure.value = undefined
     busy.value = false
     transmission.value = undefined
     pendingArtifact.value = undefined
@@ -368,17 +383,23 @@ onBeforeUnmount(() => events?.close())
 async function mutate(
   nextTransmission: TransmissionEvent,
   operation: () => Promise<MutationOutcome>,
+  failure = actionFailure,
 ): Promise<void> {
   busy.value = true
   transmission.value = nextTransmission
   actionFailure.value = undefined
+  approvalFailure.value = undefined
   reviewReceipt.clear()
   try {
     const outcome = await operation()
     await refreshReviewState(loadGeneration, false)
     reviewReceipt.signal(receiptForOutcome(outcome))
   } catch (error) {
-    actionFailure.value = describe(error)
+    failure.value = describe(error)
+    // A refused approval leaves the change where it was and a partial one
+    // leaves the comments resolved; either way the rendered state is now wrong
+    // until it is read back.
+    await refreshReviewState(loadGeneration, false).catch(() => {})
   } finally {
     transmission.value = undefined
     busy.value = false
@@ -455,6 +476,18 @@ function setStatus(commentId: string, status: 'open' | 'resolved') {
     await setCommentStatus(kind.value, key.value, commentId, status)
     return { kind: 'changed-status', threadId: commentId, status }
   })
+}
+
+// Approve, withdraw, or resolve-all-and-approve, as one submission.
+function approve(act: ApprovalAct) {
+  return mutate(
+    { kind: 'verdict', target: 'standing-verdict' },
+    async () => {
+      await submitApproval(key.value, act)
+      return { kind: 'standing-verdict' }
+    },
+    approvalFailure,
+  )
 }
 
 function submit(verdict: Verdict, comment: string) {
@@ -619,9 +652,11 @@ function submit(verdict: Verdict, comment: string) {
               :transmission="transmission"
               :receipt="reviewReceipt.event.value"
               :busy="busy"
+              :approval-failure="approvalFailure"
               @submit="submit"
               @reply="reply"
               @status="setStatus"
+              @approval="approve"
               @composer="(id, dirty) => setComposerDirty(id, dirty)"
             />
           </div>

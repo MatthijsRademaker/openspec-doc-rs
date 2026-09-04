@@ -70,7 +70,7 @@ How it works:
 - **Each project has its own port and keeps it**, assigned in `4321`–`4352` the first time the root is seen and recorded in the machine's state directory (`$XDG_STATE_HOME/openspec-doc/ports.json`, or the local data directory on macOS and Windows). So this project's URL is a fact you can state before anything is running: `openspec-doc serve url` prints it plus whether a dashboard is live on it, and `hook explore` prints it beside the note path. **When the owner asks where the review is, answer with that URL** rather than telling them to start a server.
 - The owner reviews the exploration notes and change artifacts there, in a browser on `127.0.0.1`. A browser opens by itself once per session, at that session's own page, on the turn boundary that first registers it — not when the explore command runs, because at that moment the note does not exist yet and the page would have nothing on it.
 - A hook-started dashboard exits once nothing needs it: thirty minutes with no page subscribed *and* no turn boundary having asked for it. One started by hand does not, because a person asked for it. If a start fails, `.openspec-doc/serve.log` holds that server's output and the hook says so on stderr.
-- From that dashboard they leave comments — anchored to a passage, or scoped to the whole session or change when the feedback is not about one — and submit a phase verdict: keep exploring, move to proposal, or send the open comments back for work.
+- From that dashboard they leave comments — anchored to a passage, or scoped to the whole session or change when the feedback is not about one — and submit a phase verdict: keep exploring, move to proposal, send the open comments back for work, or approve the change. `approved` is the only one that clears work rather than requesting it: it says the change may be implemented, it goes stale the moment `proposal.md`, `design.md` or a spec delta is edited afterwards (and not when `tasks.md` is), and `openspec-doc approval state --change <name>` reports it and exits non-zero unless it holds. Run that before implementing; a turn that ticked tasks off an unapproved change gets a directive saying so at its end.
 - Whichever hook fires first turns the standing verdict into a directive and delivers it: `hook prompt` adds the directive's text to the context of the turn the owner's prompt starts, and `hook stop` blocks the turn end and feeds the text back into the session.
 - A directive is delivered exactly once across the two. Prompt-time delivery is the usual path, because the reviewer's own prompt is normally what follows a verdict — the Stop path is what stops you going idle while feedback is outstanding, and the only path that works when no prompt is coming.
 
@@ -84,6 +84,7 @@ Where the state lives, all under `.openspec-doc/` at the project root:
 | `comments/<change>.jsonl`, `comments/_session/<session-id>.jsonl` | Review comments, anchored to a passage or to the scope itself; `openspec-doc comment list --change <name>` prints them |
 | `verdicts/<change>.jsonl`, `verdicts/_session/<session-id>.jsonl` | The verdict stream, latest record last; the reviewer's notes are in it |
 | `scratch/<change>.md`, `scratch/_session/<session-id>.md` | The exploration note, before and after it is promoted to a change |
+| `approval/<change>.reported` | The unapproved state last raised at a turn boundary, so the same one is not raised again |
 | `serve.log` | A hook-started dashboard's own output, which is where a start that did not come up explains itself |
 
 Report back on a comment with `openspec-doc comment reply --change <name> --comment <id> --body <text>`, then mark it with `openspec-doc comment address --change <name> --comment <id>`. `addressed` is a claim that the work is done, which is yours to make. Do not resolve comments you were asked to address: resolving is the reviewer accepting the work, and reopening is them rejecting it — both are theirs.
@@ -149,9 +150,19 @@ guessing renames someone else's exploration onto your change. An unclaimed note 
 
 The owner reads the note and the change artifacts in a browser on `127.0.0.1`, leaves comments — anchored
 to a passage, or scoped to the whole session or change — and submits a phase verdict: keep exploring,
-move to proposal, or send the open comments back for work. That verdict becomes a directive, delivered
-exactly once: with the next prompt if one comes, and at the turn boundary if none does, which is what
-stops you going idle while feedback is outstanding.
+move to proposal, send the open comments back for work, or approve the change. That verdict becomes a
+directive, delivered exactly once: with the next prompt if one comes, and at the turn boundary if none
+does, which is what stops you going idle while feedback is outstanding.
+
+`approved` is the one that is not a request for work on the review. It says the change is cleared for
+implementation, and the artifacts under `openspec/changes/<name>/` are what was cleared — so on receiving
+it, implement what `tasks.md` lists. It also decays: editing `proposal.md`, `design.md` or a spec delta
+afterwards makes the approval **stale** and the change needs approving again, while ticking a checkbox in
+`tasks.md` does not. Run `openspec-doc approval state --change <name>` before you start; it exits non-zero
+unless the change is cleared, and at the end of a turn where tasks were ticked off without one, a
+directive says so. Nothing here *prevents* implementation — a turn-end hook runs after the work — so if
+you implement an unapproved change, say so rather than letting the report be the first the owner hears
+of it.
 
 Every directive is a **pointer, not an embed**: it says it came from this project's openspec-doc
 dashboard and names files in this repository to read. It will never ask for particular literal output.

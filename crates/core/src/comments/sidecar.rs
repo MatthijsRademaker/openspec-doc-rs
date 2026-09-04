@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::slice;
 
 use chrono::Utc;
 
@@ -201,6 +202,36 @@ pub fn set_status(
     Ok(status)
 }
 
+/// Move every comment in `key`'s sidecar that is not already resolved to
+/// `Resolved`, and report how many moved.
+///
+/// One append rather than one per comment. The dashboard's live-update channel
+/// reports the file that changed, so N separate writes would announce N times
+/// what the reviewer did once; and a comment already resolved is skipped rather
+/// than given a redundant record saying it stayed where it was.
+pub fn resolve_all(root: &Path, key: &ScopeKey) -> Result<usize, Error> {
+    let events: Vec<Event> = read(root, key)?
+        .into_iter()
+        .filter(|thread| thread.status != Status::Resolved)
+        .map(|thread| Event::Status {
+            status: StatusUpdate {
+                id: new_id(),
+                comment_id: thread.comment.id,
+                status: Status::Resolved,
+                created_at: Utc::now().to_rfc3339(),
+            },
+        })
+        .collect();
+
+    if events.is_empty() {
+        return Ok(0);
+    }
+
+    append_all(root, key, &events)?;
+
+    Ok(events.len())
+}
+
 /// Every comment in `key`'s sidecar with its current status and full history, in
 /// the order the comments were made. A scope with no sidecar has no comments.
 pub fn read(root: &Path, key: &ScopeKey) -> Result<Vec<Thread>, Error> {
@@ -325,15 +356,26 @@ pub fn relocate(
 
 /// Add one line to `key`'s sidecar, leaving every line already in it untouched.
 fn append(root: &Path, key: &ScopeKey, event: &Event) -> Result<(), Error> {
+    append_all(root, key, slice::from_ref(event))
+}
+
+/// Add one line per event to `key`'s sidecar in a single write, leaving every
+/// line already in it untouched.
+fn append_all(root: &Path, key: &ScopeKey, events: &[Event]) -> Result<(), Error> {
     let path = key.path(root)?;
 
     let dir = path.parent().expect("sidecar paths have a parent");
     fs::create_dir_all(dir).map_err(|source| Error::write(dir, source))?;
 
-    let line = serde_json::to_string(event).map_err(|source| Error::CommentSidecar {
-        path: path.clone(),
-        source,
-    })?;
+    let mut lines = String::new();
+    for event in events {
+        let line = serde_json::to_string(event).map_err(|source| Error::CommentSidecar {
+            path: path.clone(),
+            source,
+        })?;
+        lines.push_str(&line);
+        lines.push('\n');
+    }
 
     let mut file = OpenOptions::new()
         .create(true)
@@ -341,7 +383,8 @@ fn append(root: &Path, key: &ScopeKey, event: &Event) -> Result<(), Error> {
         .open(&path)
         .map_err(|source| Error::write(&path, source))?;
 
-    writeln!(file, "{line}").map_err(|source| Error::write(path, source))
+    file.write_all(lines.as_bytes())
+        .map_err(|source| Error::write(path, source))
 }
 
 /// Every event in the sidecar at `path`, in order. A missing file holds no

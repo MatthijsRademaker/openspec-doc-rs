@@ -14,6 +14,8 @@ database, and every file is readable and hand-editable.
   verdicts/_session/<session-id>.jsonl     append-only phase-verdict stream, session-keyed
   verdicts/<change-name>.jsonl             append-only phase-verdict stream, change-keyed
   verdicts/…<scope>.translated             id of the last verdict translated into a directive
+  approval/<change-name>.reported          the unapproved state last reported at a turn boundary,
+                                           so the same one is not raised again
 ```
 
 Session-keyed files sit one directory deeper than change-keyed ones, so a session id can never collide

@@ -171,7 +171,40 @@ curl -s -X POST "http://127.0.0.1:8791/api/sessions/$SID/verdict" \
 curl -s "http://127.0.0.1:8791/api/sessions/$SID" | jq '.standingVerdict'
 ```
 
-Change uses `comment-resolution`; session advancing control uses `move-to-proposal`. Wrong-scope verdict returns `400`.
+Change uses `comment-resolution`; session advancing control uses `move-to-proposal`. Wrong-scope verdict returns `400`, and so does `{"verdict":"approved"}` — an approval carries the fingerprint of what it approves, so it goes through §4.6 instead.
+
+### 4.6 Approval, staleness, and the bulk sweep
+
+Approving over outstanding feedback is refused with the counts that blocked it; sweeping and approving is one request:
+
+```bash
+curl -s -X POST "http://127.0.0.1:8791/api/changes/add-widget/approval" \
+  -H 'content-type: application/json' --data '{"act":"approve"}' | jq
+curl -s -X POST "http://127.0.0.1:8791/api/changes/add-widget/approval" \
+  -H 'content-type: application/json' --data '{"act":"resolve-all-and-approve"}' | jq -e '.approval.state == "approved"'
+curl -s "http://127.0.0.1:8791/api/changes/add-widget" | jq '.approval'
+```
+
+Then check what the fingerprint covers, which is the decision most easily got wrong:
+
+```bash
+# tasks.md is not part of what was approved
+printf -- '- [x] 1.1 Done\n' >> "$PROJ/openspec/changes/add-widget/tasks.md"
+"$BIN" --root "$PROJ" approval state --change add-widget; echo "exit $?"   # approved, exit 0
+
+# the proposal is
+printf '\nRevised.\n' >> "$PROJ/openspec/changes/add-widget/proposal.md"
+"$BIN" --root "$PROJ" approval state --change add-widget; echo "exit $?"   # stale, exit 1
+
+"$BIN" --root "$PROJ" approval state --change no-such-change; echo "exit $?"  # error, exit 1
+```
+
+An unknown change is an error, not an unapproved change: a precheck answering "not approved" for a typo reports it as a review problem.
+
+```bash
+curl -s -X POST "http://127.0.0.1:8791/api/changes/add-widget/approval" \
+  -H 'content-type: application/json' --data '{"act":"withdraw"}' | jq -e '.approval.state == "not-approved"'
+```
 
 ### 4.5 Live-update push
 
@@ -335,6 +368,10 @@ None of these can be faked from a terminal, and each has caught defects nothing 
   Beware one trap: a probe prompt like `Reply with only: OK` is obeyed literally even when the directive is
   in context, which looks exactly like a delivery failure and is not one. Use a neutral prompt such as
   `Say hello.` and check the directive file to see whether delivery actually happened.
+- **Does an unapproved implementation get noticed?** Tick a task on a change nobody approved and end a
+  turn. The turn should be blocked with a directive saying implementation ran ahead of the review, and the
+  next turn boundary with the same state should say nothing — the report is once per state, not once per
+  turn. Note what this does *not* do: it never stopped the work, and the directive says so itself.
 - **Does the criterion hold?** The whole point, and the only check that exercises it: leave anchored
   comments on an exploration, submit `move to proposal`, poke the session, and read the proposal the agent
   writes. It passes only if the comments shaped the proposal. A proposal that addresses them in a later

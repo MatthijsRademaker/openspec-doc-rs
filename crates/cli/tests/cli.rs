@@ -1320,12 +1320,12 @@ fn an_exhausted_port_range_names_a_command_the_binary_accepts() {
 }
 
 /// `Option<ServeCommand>` is what makes a bare `serve` a server rather than a
-/// help screen, and two more subcommands must not spend that.
+/// help screen, and further subcommands must not spend that.
 #[test]
-fn a_bare_serve_starts_a_server_with_three_subcommands_present() {
+fn a_bare_serve_starts_a_server_with_every_subcommand_present() {
     let fixture = project_fixture(&[]);
     let help = run(&["serve", "--help"]);
-    for command in ["url", "list", "forget"] {
+    for command in ["url", "list", "kill", "forget"] {
         assert!(
             stdout(&help).contains(command),
             "`serve {command}` missing from:\n{}",
@@ -1356,6 +1356,68 @@ fn a_bare_serve_starts_a_server_with_three_subcommands_present() {
         stderr(&output).contains(&port),
         "the failure is not about the port it was told to bind: {}",
         stderr(&output)
+    );
+}
+
+/// The destructive reading must never be what an operator gets for typing less.
+///
+/// Note what is *not* tested here, deliberately: no test in this file may run
+/// `serve kill --all` or a kill that matches anything. These drive the real
+/// binary, so the sweep is the real port range — which is where the developer's
+/// own dashboards are sitting. Killing is tested against fakes on ports the
+/// operating system hands out, in `kill::tests`.
+#[test]
+fn serve_kill_with_no_target_stops_nothing_and_says_a_target_is_required() {
+    let output = run(&["serve", "kill"]);
+
+    assert!(!output.status.success(), "{}", stdout(&output));
+    let message = stderr(&output);
+    for target in ["--project", "--port", "--all"] {
+        assert!(
+            message.contains(target),
+            "the refusal has to name the targets: {message}"
+        );
+    }
+}
+
+/// Nothing running for the named project is not a stop, and must not read as
+/// one — the dashboard the operator meant may have been reaped by the idle
+/// deadline, or may be on a port outside the range.
+#[test]
+fn serve_kill_reports_a_project_with_no_dashboard_as_nothing_matched() {
+    let fixture = project_fixture(&[]);
+    let root = fixture.path().to_str().unwrap();
+
+    let output = run(&["serve", "kill", "--project", "--root", root]);
+
+    assert!(
+        !output.status.success(),
+        "a kill that stopped nothing exited zero: {}",
+        stdout(&output)
+    );
+    let message = stderr(&output);
+    assert!(message.contains("nothing matched"), "{message}");
+}
+
+/// The port target answers about the machine, so it must answer from a
+/// directory that is not a project at all.
+#[test]
+fn serve_kill_by_port_works_outside_any_project() {
+    let outside = TempDir::new().expect("a directory that is not a project");
+    // A port the operating system says is free, so it is outside the range the
+    // sweep covers and cannot match anything of the developer's.
+    let free = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = free.local_addr().expect("local addr").port().to_string();
+    drop(free);
+
+    let output = run_in(outside.path(), &["serve", "kill", "--port", &port]);
+
+    assert!(!output.status.success(), "{}", stdout(&output));
+    let message = stderr(&output);
+    assert!(message.contains(&port), "{message}");
+    assert!(
+        !message.contains("openspec/config.yaml"),
+        "a machine-wide kill demanded a project root: {message}"
     );
 }
 
@@ -1831,4 +1893,151 @@ fn between<'a>(haystack: &'a str, after: &str, before: &str) -> &'a str {
     rest.split_once(before)
         .unwrap_or_else(|| panic!("no {before:?} after {after:?} in {haystack}"))
         .0
+}
+
+/// A change with the artifacts an approval covers, and no review history.
+fn approvable_project() -> TempDir {
+    let fixture = project_fixture(&["openspec/changes/add-thing"]);
+    let dir = fixture.path().join("openspec/changes/add-thing");
+    fs::write(dir.join("proposal.md"), "## Why\n\nBecause.\n").expect("write proposal");
+    fs::write(dir.join("tasks.md"), "- [ ] 1.1 Do it\n").expect("write tasks");
+    fixture
+}
+
+/// The precheck's own contract. Every caller reads the status code, so the one
+/// state that exits zero is the one that clears the work.
+#[test]
+fn approval_state_exits_zero_only_while_the_change_is_approved() {
+    let fixture = approvable_project();
+    let root = fixture.path().to_str().expect("utf-8 root");
+    let args = ["approval", "state", "--root", root, "--change", "add-thing"];
+
+    let before = run(&args);
+    assert!(
+        !before.status.success(),
+        "an unapproved change must not read as clearance: {}",
+        stdout(&before)
+    );
+    assert!(
+        stdout(&before).contains("add-thing is not approved"),
+        "{}",
+        stdout(&before)
+    );
+    assert!(
+        stdout(&before).contains("no approval"),
+        "the reason belongs beside the state: {}",
+        stdout(&before)
+    );
+
+    // Recorded the way the dashboard records it, since the bulk act and the
+    // approval control are browser-side by design.
+    let project = openspec_doc_core::project_at(fixture.path()).expect("project");
+    openspec_doc_core::approval::submit(&project, "add-thing").expect("approve");
+
+    let approved = run(&args);
+    assert!(approved.status.success(), "{}", stderr(&approved));
+    assert!(
+        stdout(&approved).contains("add-thing is approved"),
+        "{}",
+        stdout(&approved)
+    );
+
+    fs::write(
+        fixture
+            .path()
+            .join("openspec/changes/add-thing/proposal.md"),
+        "## Why\n\nA different reason.\n",
+    )
+    .expect("edit proposal");
+
+    let stale = run(&args);
+    assert!(
+        !stale.status.success(),
+        "a stale approval must not read as clearance: {}",
+        stdout(&stale)
+    );
+    assert!(
+        stdout(&stale).contains("add-thing is stale"),
+        "{}",
+        stdout(&stale)
+    );
+    assert!(
+        stdout(&stale).contains("proposal.md"),
+        "a stale state has to name what moved: {}",
+        stdout(&stale)
+    );
+}
+
+/// Ticking a checkbox rewrites `tasks.md` on essentially every turn of
+/// implementation. A precheck that failed on that would be ignored within
+/// minutes of anyone using it.
+#[test]
+fn approval_state_stays_approved_when_only_tasks_change() {
+    let fixture = approvable_project();
+    let root = fixture.path().to_str().expect("utf-8 root");
+    let project = openspec_doc_core::project_at(fixture.path()).expect("project");
+    openspec_doc_core::approval::submit(&project, "add-thing").expect("approve");
+
+    fs::write(
+        fixture.path().join("openspec/changes/add-thing/tasks.md"),
+        "- [x] 1.1 Do it\n",
+    )
+    .expect("tick the task");
+
+    let output = run(&["approval", "state", "--root", root, "--change", "add-thing"]);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stdout(&output).contains("add-thing is approved"),
+        "{}",
+        stdout(&output)
+    );
+}
+
+/// A precheck that answered "not approved" for a name nobody ever created would
+/// report a typo as a review problem.
+#[test]
+fn approval_state_fails_loudly_on_an_unknown_change() {
+    let fixture = approvable_project();
+    let root = fixture.path().to_str().expect("utf-8 root");
+
+    let output = run(&[
+        "approval",
+        "state",
+        "--root",
+        root,
+        "--change",
+        "add-nothing",
+    ]);
+
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("no active change named add-nothing"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(
+        !stdout(&output).contains("not approved"),
+        "an unknown change must not be reported as an unapproved one: {}",
+        stdout(&output)
+    );
+}
+
+/// Not shipping the affordance is not the same as it being impossible — the
+/// verdict sidecar is a file — but a single command that cleared an agent's own
+/// feedback and approved its own change is one the agent would have.
+#[test]
+fn no_command_line_surface_resolves_comments_in_bulk() {
+    let help = stdout(&run(&["--help"]));
+    assert!(help.contains("approval"), "{help}");
+
+    let approval = stdout(&run(&["approval", "--help"]));
+    let comment = stdout(&run(&["comment", "--help"]));
+
+    for surface in [&approval, &comment] {
+        assert!(
+            !surface.contains("resolve-all") && !surface.contains("--all"),
+            "the bulk act is browser-side only: {surface}"
+        );
+    }
 }

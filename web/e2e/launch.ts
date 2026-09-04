@@ -16,6 +16,14 @@ const additionalChanges = [
   ['align-observation-field', 'Align observation field'],
   ['preserve-offline-observation-assets', 'Preserve offline observation assets'],
 ] as const
+/**
+ * A change of its own for the approval lane. Approving sweeps every comment to
+ * `resolved` and editing an artifact makes the approval stale, and neither is
+ * restorable from the browser — the dashboard exposes no `addressed` transition
+ * by design. So the approval tests get a change nothing else reads rather than a
+ * restore step that cannot be written.
+ */
+const approvalChange = 'verify-approval-gate'
 const additionalSessions = [
   ['0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d75', 'Crop study / solar aperture'],
   ['0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d76', 'Session rail pressure study'],
@@ -208,6 +216,57 @@ async function createFixture(): Promise<string> {
     [`.openspec-doc/verdicts/${fixtureChange}.jsonl`]:
       '{"id":"e2e-verdict","verdict":"comment-resolution","notes":"","createdAt":"2026-01-01T00:00:01Z"}\n',
   }
+  const approvalComments = [
+    {
+      type: 'comment',
+      comment: {
+        id: 'approval-open-comment',
+        anchor: null,
+        body: 'Never answered, and swept by the reviewer.',
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+    },
+    {
+      type: 'comment',
+      comment: {
+        id: 'approval-second-open-comment',
+        anchor: null,
+        body: 'A second thread the reviewer never got a reply to.',
+        createdAt: '2026-01-01T00:00:01Z',
+      },
+    },
+    {
+      type: 'comment',
+      comment: {
+        id: 'approval-addressed-comment',
+        anchor: null,
+        body: 'The agent claims this one is done.',
+        createdAt: '2026-01-01T00:00:02Z',
+      },
+    },
+    {
+      type: 'status',
+      status: {
+        id: 'approval-addressed-status',
+        commentId: 'approval-addressed-comment',
+        status: 'addressed',
+        createdAt: '2026-01-01T00:00:03Z',
+      },
+    },
+  ]
+    .map((event) => JSON.stringify(event))
+    .join('\n')
+
+  files[`openspec/changes/${approvalChange}/.openspec.yaml`] =
+    'schema: spec-driven\ncreated: 2026-01-01\n'
+  files[`openspec/changes/${approvalChange}/proposal.md`] =
+    '# Approval gate fixture\n\nTwo open threads and one addressed thread.\n'
+  files[`openspec/changes/${approvalChange}/design.md`] = '# Approval design\n\nAs recorded.\n'
+  files[`openspec/changes/${approvalChange}/tasks.md`] = '# Approval tasks\n\n- [ ] 1.1 Implement\n'
+  files[`openspec/changes/${approvalChange}/specs/change-approval/spec.md`] =
+    '# Approval capability fixture\n'
+  files[`.openspec-doc/comments/${approvalChange}.jsonl`] = `${approvalComments}\n`
+
   for (const [key, title] of additionalChanges) {
     files[`openspec/changes/${key}/.openspec.yaml`] = 'schema: spec-driven\ncreated: 2026-01-01\n'
     files[`openspec/changes/${key}/proposal.md`] = `# ${title}\n\nDeterministic index fixture.\n`

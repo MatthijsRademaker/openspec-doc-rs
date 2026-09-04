@@ -4,6 +4,7 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use openspec_doc_core::Project;
+use openspec_doc_core::approval::{self, State};
 use openspec_doc_core::comments::{self, AnchorState, Comment, Reply, ScopeKey, Status};
 use openspec_doc_core::hook;
 use openspec_doc_core::scratch;
@@ -67,6 +68,9 @@ pub struct Detail {
     comment_counts: CommentCounts,
     verdicts: Vec<Record>,
     standing_verdict: Option<StandingVerdict>,
+    /// Whether the change is cleared for implementation. A session is an
+    /// exploration rather than a change, and there is nothing there to approve.
+    approval: Option<Approval>,
 }
 
 impl Detail {
@@ -116,9 +120,13 @@ impl Detail {
         let counts = comments::counts(&project.root, &resolved.key)?;
         let verdicts = verdict::read(&project.root, &resolved.key)?;
         let standing_verdict = standing_verdict(project, &resolved.key, verdicts.last())?;
-        let (kind, key) = match &resolved.key {
-            ScopeKey::Session(session_id) => (ScopeKind::Session, session_id.clone()),
-            ScopeKey::Change(name) => (ScopeKind::Change, name.clone()),
+        let (kind, key, approval) = match &resolved.key {
+            ScopeKey::Session(session_id) => (ScopeKind::Session, session_id.clone(), None),
+            ScopeKey::Change(name) => (
+                ScopeKind::Change,
+                name.clone(),
+                Some(Approval::read(project, name)?),
+            ),
         };
 
         Ok(Self {
@@ -134,7 +142,55 @@ impl Detail {
             },
             verdicts,
             standing_verdict,
+            approval,
         })
+    }
+}
+
+/// A change's approval state as the page renders it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Approval {
+    state: ApprovalState,
+    /// The sentence saying how the state was reached, rendered beside it: a
+    /// state word without its reason tells a reviewer nothing they can act on.
+    reason: String,
+    /// The artifacts that changed under a stale approval, empty in every other
+    /// state.
+    changed_artifacts: Vec<String>,
+}
+
+impl Approval {
+    pub fn read(project: &Project, change: &str) -> Result<Self, Error> {
+        let approval = approval::state(project, change)?;
+        let changed = match &approval.state {
+            State::Stale { changed } => changed.clone(),
+            State::Approved | State::NotApproved => Vec::new(),
+        };
+
+        Ok(Self {
+            state: ApprovalState::from(&approval.state),
+            reason: approval.reason,
+            changed_artifacts: changed,
+        })
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum ApprovalState {
+    Approved,
+    Stale,
+    NotApproved,
+}
+
+impl From<&State> for ApprovalState {
+    fn from(state: &State) -> Self {
+        match state {
+            State::Approved => Self::Approved,
+            State::Stale { .. } => Self::Stale,
+            State::NotApproved => Self::NotApproved,
+        }
     }
 }
 

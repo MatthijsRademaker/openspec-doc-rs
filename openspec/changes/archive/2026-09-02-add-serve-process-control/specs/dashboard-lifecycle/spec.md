@@ -1,9 +1,9 @@
 ## ADDED Requirements
 
 ### Requirement: A dashboard can be asked to stop over the port it serves
-The dashboard SHALL expose a route that begins its graceful shutdown, SHALL accept it only as a write request carrying a header a cross-origin form cannot set, SHALL require the caller to name the project root it believes it is stopping and refuse the request when that root is not the one being served, and SHALL answer the request before exiting.
+The dashboard SHALL expose a route that begins its graceful shutdown, SHALL accept it only as a write request carrying a header a cross-origin form cannot set, SHALL require the caller to name the project root it believes it is stopping and refuse the request when that root is not the one being served, SHALL answer the request before exiting, and SHALL end the update streams it is serving rather than waiting for them to end on their own.
 
-The port is the dashboard's identity in a way a process id is not: a pid may be reused between learning it and acting on it, while a port that stops answering is the evidence directly. Asking the server to stop itself also lets it check what it is, which closes the case where the target port changed hands between the enumeration and the request — a signal cannot ask that question. Requiring a non-simple header keeps a page in the operator's own browser from stopping a dashboard on a guessable local port. Answering first is what lets the caller distinguish a shutdown that started from a request that never arrived.
+The port is the dashboard's identity in a way a process id is not: a pid may be reused between learning it and acting on it, while a port that stops answering is the evidence directly. Asking the server to stop itself also lets it check what it is, which closes the case where the target port changed hands between the enumeration and the request — a signal cannot ask that question. Requiring a non-simple header keeps a page in the operator's own browser from stopping a dashboard on a guessable local port. Answering first is what lets the caller distinguish a shutdown that started from a request that never arrived. Ending the update streams is what lets the shutdown finish at all: a graceful shutdown waits for in-flight responses, and an update stream is a response that never finishes on its own, so a dashboard with a page open would otherwise answer the request and then hang — the silent hang this whole command exists to replace. It also turns the reviewer's side of a stop into a report rather than a dead page.
 
 #### Scenario: A shutdown request stops the dashboard
 - **WHEN** the shutdown route is called on a dashboard, naming the root that dashboard serves
@@ -16,6 +16,10 @@ The port is the dashboard's identity in a way a process id is not: a pid may be 
 #### Scenario: A request a browser form could have sent is refused
 - **WHEN** the shutdown route is called without the required header
 - **THEN** the dashboard SHALL refuse the request and SHALL keep serving
+
+#### Scenario: An open review page does not hold the shutdown open
+- **WHEN** the shutdown route is called on a dashboard with a review page subscribed to its updates
+- **THEN** the dashboard SHALL end that page's update stream and SHALL shut down, rather than waiting for the page to be closed
 
 #### Scenario: The idle exit still applies
 - **WHEN** a dashboard with the shutdown route available reaches its idle condition

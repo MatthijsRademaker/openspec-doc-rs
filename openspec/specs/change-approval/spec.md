@@ -1,4 +1,14 @@
-## ADDED Requirements
+# change-approval Specification
+
+## Purpose
+
+Whether a change is cleared for implementation, and the reviewer's acts that clear it and take it back. Approval is something the reviewer states: it is never inferred from settled feedback, from artifact completeness, or from task progress, because a change nobody reviewed has no open comments either and would otherwise be born approved. An approval binds to the artifact content it approved — the proposal, the design, and every spec delta, deliberately not `tasks.md` — and stops counting once that content changes, the way a stale review is dismissed when new commits land.
+
+**It is a gate in the honest sense, not a lock.** A Stop hook runs at turn end and its whole vocabulary is block-and-continue or allow-stop, so nothing here prevents an agent implementing an unapproved change. What is delivered instead is a precheck an apply workflow runs before it starts, and after-the-fact detection that raises unapproved implementation as a directive. Anyone reading "gate" as "cannot proceed" will be disappointed, and that expectation should be corrected rather than designed around.
+
+The verdict record and its sidecar belong to `directive-verdict-loop`; the comment statuses the precondition reads belong to `anchored-comments`; the controls that submit these acts belong to `dashboard-html-views`.
+
+## Requirements
 
 ### Requirement: Approval is an explicit reviewer act
 The system SHALL record approval of a change only from an explicit `approved` verdict submitted for that change, and SHALL NOT infer approval from the absence of comments, from artifact completeness, or from task progress.
@@ -33,6 +43,29 @@ The system SHALL refuse an `approved` verdict for a change with any comment whos
 #### Scenario: Approval of a change with no comments succeeds
 - **WHEN** an `approved` verdict is submitted for a change with no comments at all
 - **THEN** the system SHALL append the approval record, because the precondition is that no feedback is outstanding rather than that feedback exists
+
+### Requirement: Outstanding feedback can be resolved and the change approved in one act
+The system SHALL accept a single submission that resolves every comment on a change whose current status is not `resolved` and then records the approval, so that satisfying the all-resolved precondition does not require one submission per comment. The submission SHALL report how many comments it resolved. This is the reviewer's act in both halves: bulk resolution is the same judgement as individual resolution, made once.
+
+#### Scenario: Outstanding comments are resolved and the approval recorded
+- **WHEN** a reviewer submits resolve-all-and-approve for a change holding `open` and `addressed` comments
+- **THEN** the system SHALL transition every one of them to `resolved`, SHALL append the approval record, and SHALL report the number resolved
+
+#### Scenario: Already-resolved comments are left alone
+- **WHEN** resolve-all-and-approve is submitted for a change some of whose comments are already `resolved`
+- **THEN** the system SHALL NOT append a further status record for those comments
+
+#### Scenario: The act is available with nothing outstanding
+- **WHEN** resolve-all-and-approve is submitted for a change with no unresolved comments
+- **THEN** the system SHALL append the approval record and SHALL report that it resolved none
+
+#### Scenario: A failure after resolution reports the partial state
+- **WHEN** the resolutions are appended and the approval then fails
+- **THEN** the system SHALL report that the comments were resolved and the change was not approved, and SHALL NOT append compensating status records to undo the resolutions
+
+#### Scenario: The bulk act has no command-line form
+- **WHEN** the command-line surface is enumerated
+- **THEN** it SHALL NOT offer a command that resolves a change's comments in bulk, because that would give the agent one command clearing its own feedback and approving its own change
 
 ### Requirement: Approval binds to the artifacts it approved
 The system SHALL record, with each approval, a fingerprint of the change's reviewed artifact content, and SHALL report an approval as stale once the current fingerprint differs. The fingerprint SHALL cover `proposal.md`, `design.md`, and every spec delta, and SHALL NOT cover `tasks.md`, whose checkbox churn during implementation is expected progress rather than a change to what was reviewed.

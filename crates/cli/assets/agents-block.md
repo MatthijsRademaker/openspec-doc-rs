@@ -38,9 +38,19 @@ guessing renames someone else's exploration onto your change. An unclaimed note 
 
 The owner reads the note and the change artifacts in a browser on `127.0.0.1`, leaves comments — anchored
 to a passage, or scoped to the whole session or change — and submits a phase verdict: keep exploring,
-move to proposal, or send the open comments back for work. That verdict becomes a directive, delivered
-exactly once: with the next prompt if one comes, and at the turn boundary if none does, which is what
-stops you going idle while feedback is outstanding.
+move to proposal, send the open comments back for work, or approve the change. That verdict becomes a
+directive, delivered exactly once: with the next prompt if one comes, and at the turn boundary if none
+does, which is what stops you going idle while feedback is outstanding.
+
+`approved` is the one that is not a request for work on the review. It says the change is cleared for
+implementation, and the artifacts under `openspec/changes/<name>/` are what was cleared — so on receiving
+it, implement what `tasks.md` lists. It also decays: editing `proposal.md`, `design.md` or a spec delta
+afterwards makes the approval **stale** and the change needs approving again, while ticking a checkbox in
+`tasks.md` does not. Run `openspec-doc approval state --change <name>` before you start; it exits non-zero
+unless the change is cleared, and at the end of a turn where tasks were ticked off without one, a
+directive says so. Nothing here *prevents* implementation — a turn-end hook runs after the work — so if
+you implement an unapproved change, say so rather than letting the report be the first the owner hears
+of it.
 
 Every directive is a **pointer, not an embed**: it says it came from this project's openspec-doc
 dashboard and names files in this repository to read. It will never ask for particular literal output.

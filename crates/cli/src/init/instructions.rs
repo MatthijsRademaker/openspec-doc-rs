@@ -90,13 +90,17 @@ mod tests {
 
     #[test]
     fn replaces_only_the_span_between_the_markers() {
-        let existing = format!("before\n\n{BEGIN}\nstale\n{END}\n\nafter\n");
+        // A sentinel no prose could contain: the block is ordinary English, so a
+        // word like "stale" starts out absent from it and stops being absent the
+        // day someone writes about staleness.
+        const SUPERSEDED: &str = "xyzzy-superseded-block-content";
+        let existing = format!("before\n\n{BEGIN}\n{SUPERSEDED}\n{END}\n\nafter\n");
 
         let installed = install(path(), Some(&existing)).expect("install");
 
         assert!(installed.starts_with("before\n\n"), "{installed}");
         assert!(installed.ends_with("\n\nafter\n"), "{installed}");
-        assert!(!installed.contains("stale"), "{installed}");
+        assert!(!installed.contains(SUPERSEDED), "{installed}");
     }
 
     #[test]

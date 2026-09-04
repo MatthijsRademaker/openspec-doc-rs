@@ -4,7 +4,7 @@ use openspec_doc_core::Project;
 use openspec_doc_core::comments::ScopeKey;
 use openspec_doc_core::hook::{
     Agent, HookDecision, encode_decision, ensure_session, load_directive, load_pending,
-    mark_consumed, parse_event, parse_session_id, start_explore, translate,
+    mark_consumed, parse_event, parse_session_id, report_unapproved, start_explore, translate,
 };
 use openspec_doc_core::scratch::{self, Promotion};
 
@@ -36,8 +36,9 @@ impl Reviewable for Live {
 /// Handle an agent's turn-end hook: normalize its payload, promote the
 /// session's scratch note if its exploration has been formalized, make sure a
 /// dashboard is up for a session that has something to review, turn any
-/// standing review verdict into a directive, then resolve and emit that agent's
-/// stop decision.
+/// standing review verdict into a directive, report implementation that ran
+/// ahead of the reviewer's approval, then resolve and emit that agent's stop
+/// decision.
 ///
 /// Errors propagate: the process exits non-zero having emitted no decision.
 /// Neither agent treats that as "block" — Claude Code surfaces the hook's
@@ -62,6 +63,15 @@ pub fn stop(project: Project, agent: Agent) -> Result<(), Error> {
         report(&format!(
             "injected the {verdict} verdict on {}",
             scope(&key)
+        ));
+    }
+
+    // After translation, so the reviewer's own feedback is never queued behind a
+    // report about it. A verdict already waiting leaves this finding a pending
+    // directive and saying nothing, which is what makes the two orderable at all.
+    if let Some(change) = report_unapproved(&project, &event.session_id)? {
+        report(&format!(
+            "change {change} has implementation progress without a current approval; said so"
         ));
     }
 

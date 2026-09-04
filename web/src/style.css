@@ -2642,6 +2642,81 @@ textarea::placeholder {
   background: var(--surface);
 }
 
+/* The approval sits above the feedback bar: it is the decision about the change
+   as a whole, where everything below it is a decision about the conversation. */
+.approval-instrument {
+  display: grid;
+  gap: var(--space-half);
+  padding: var(--space-1);
+  border-bottom: var(--hairline) solid var(--border-ink);
+  --status-color: var(--open);
+}
+
+.approval-instrument--approved {
+  --status-color: var(--resolved);
+}
+
+.approval-instrument--stale {
+  --status-color: var(--addressed);
+}
+
+.approval-instrument__state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-half);
+  margin: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+}
+
+.approval-instrument__mark {
+  color: var(--status-color);
+}
+
+.approval-instrument__state strong {
+  color: var(--status-color);
+}
+
+.approval-instrument__reason,
+.approval-instrument__changed {
+  margin: 0;
+  color: var(--muted-ink);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
+}
+
+.approval-instrument__failure {
+  margin: 0;
+  padding: var(--space-half) var(--space-1);
+  border: var(--hairline) solid var(--danger-ink);
+  color: var(--danger-ink);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
+}
+
+.approval-instrument__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.approval-instrument__controls [data-slot="button"] {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.scope-conversation--collapsed .approval-instrument__reason,
+.scope-conversation--collapsed .approval-instrument__changed,
+.scope-conversation--collapsed .approval-instrument__control-label {
+  display: none;
+}
+
 .decision-instrument__bar {
   display: flex;
   min-width: 0;

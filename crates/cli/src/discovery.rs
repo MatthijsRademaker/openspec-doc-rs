@@ -1,4 +1,5 @@
-//! Finding the dashboard that serves a project, and starting one when none does.
+//! Finding the dashboard that serves a project, starting one when none does, and
+//! asking one to stop.
 //!
 //! Two questions look like one and are not:
 //!
@@ -42,6 +43,12 @@ const READ_TIMEOUT: Duration = Duration::from_millis(250);
 const START_TIMEOUT: Duration = Duration::from_secs(2);
 const START_POLL: Duration = Duration::from_millis(50);
 
+/// How long a dashboard asked to stop has to stop answering, and how often it is
+/// asked. A graceful shutdown answers the request and closes the listener after,
+/// so the instant the request returns is exactly too early to ask.
+const STOP_TIMEOUT: Duration = Duration::from_secs(2);
+const STOP_POLL: Duration = Duration::from_millis(25);
+
 /// A response longer than this is not an identity, and reading it is not this
 /// probe's job.
 const MAX_RESPONSE: u64 = 8 * 1024;
@@ -82,6 +89,60 @@ pub fn enumerate() -> Vec<(u16, Identity)> {
     enumerate_in(&range())
 }
 
+/// What asking the dashboard on a port to stop actually achieved.
+///
+/// Every variant is read off a probe, never off the answer to the request. A
+/// delivered request is not a stopped dashboard, and the second one is what a
+/// caller was asking about.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Stopped {
+    /// Nothing serves the port any more.
+    Yes,
+    /// Nothing was listening when the request was sent, so it had already
+    /// exited — on its own idle deadline, or under somebody else, between the
+    /// enumeration and the request. Not the same thing as having been stopped,
+    /// and reporting it as one claims credit for the idle deadline's work.
+    AlreadyGone,
+    /// It answered the request and kept serving. The wedged dashboard this
+    /// deliberately does not escalate for, so the one thing owed is saying so.
+    StillServing,
+    /// Refused, so nothing was stopped, beside whatever answers there now.
+    ///
+    /// The expected cause is the port having changed hands between the
+    /// enumeration and the request: the dashboard that was found there exited,
+    /// and another project's fell forward onto its port. The server is the only
+    /// participant that could have noticed, which is the second thing asking
+    /// over HTTP buys over sending a signal.
+    Refused {
+        status: u16,
+        serving: Option<PathBuf>,
+    },
+}
+
+/// Ask the dashboard serving `root` on `port` to stop, and report what the port
+/// does afterwards.
+///
+/// The answer to the request refines the report but is never the whole of it. A
+/// refusal means nothing was asked to stop, which is worth distinguishing from a
+/// request that was accepted and ignored — but whether a dashboard is *gone* is
+/// decided by probing for it, every time.
+pub fn stop(port: u16, root: &Path) -> Stopped {
+    match ask_to_stop(port, root) {
+        Answer::Accepted => {
+            if gone(port, root) {
+                Stopped::Yes
+            } else {
+                Stopped::StillServing
+            }
+        }
+        Answer::Refused(status) => Stopped::Refused {
+            status,
+            serving: probe(port).map(|identity| identity.root),
+        },
+        Answer::Unanswered => Stopped::AlreadyGone,
+    }
+}
+
 /// Make sure a dashboard is serving `project`, starting one if none is, and
 /// return the port it is serving on.
 pub fn ensure(project: &Project) -> Result<u16, Error> {
@@ -92,7 +153,7 @@ pub fn ensure(project: &Project) -> Result<u16, Error> {
 /// operating system says are free: the real range is where the developer's own
 /// dashboards are sitting, and a test that assumes it is empty fails on the one
 /// machine that matters.
-fn range() -> Vec<u16> {
+pub(crate) fn range() -> Vec<u16> {
     dashboard::RANGE.collect()
 }
 
@@ -123,7 +184,7 @@ fn find_in(root: &Path, assigned: Option<u16>, range: &[u16]) -> Option<u16> {
 /// argument is `enumerate`'s: `find` short-circuits on the assignment and rarely
 /// gets here at all, and gets the concurrency because the sweep is shared rather
 /// than because it needed it.
-fn enumerate_in(range: &[u16]) -> Vec<(u16, Identity)> {
+pub(crate) fn enumerate_in(range: &[u16]) -> Vec<(u16, Identity)> {
     let mut found: Vec<(u16, Identity)> = std::thread::scope(|scope| {
         let probes: Vec<_> = range
             .iter()
@@ -260,10 +321,7 @@ fn detach(command: &mut Command) {
 /// adding one — nor should the `dirs` dependency the port registry needed be read
 /// as licence to add more. Do not "fix" this into an HTTP client.
 fn probe(port: u16) -> Option<Identity> {
-    let address = SocketAddr::from(([127, 0, 0, 1], port));
-    let mut stream = TcpStream::connect_timeout(&address, CONNECT_TIMEOUT).ok()?;
-    stream.set_read_timeout(Some(READ_TIMEOUT)).ok()?;
-    stream.set_write_timeout(Some(READ_TIMEOUT)).ok()?;
+    let mut stream = connected(port)?;
 
     // HTTP/1.0 so the server closes the connection after answering, which is what
     // ends the read on the normal path.
@@ -285,6 +343,93 @@ fn probe(port: u16) -> Option<Identity> {
     let _ = stream.take(MAX_RESPONSE).read_to_end(&mut response);
 
     dashboard::identity_in(&String::from_utf8_lossy(&response))
+}
+
+/// How a dashboard answered a request to stop.
+enum Answer {
+    /// It took the request. Whether it acted on it is a separate question, and
+    /// only a probe answers that one.
+    Accepted,
+    /// It refused, naming why with a status. Nothing was stopped.
+    Refused(u16),
+    /// Nothing answered: no listener, or a listener that is not a dashboard.
+    Unanswered,
+}
+
+/// Ask `port` to stop, naming the `root` the caller believes it is stopping.
+///
+/// A fixed `POST` over `TcpStream`, beside the hand-rolled `GET` in [`probe`]
+/// and for the same reason: the CLI has no HTTP client, and two requests to two
+/// known routes on localhost do not justify adding one. Do not "fix" this into
+/// an HTTP client either.
+fn ask_to_stop(port: u16, root: &Path) -> Answer {
+    let Some(mut stream) = connected(port) else {
+        return Answer::Unanswered;
+    };
+
+    // No body, so no length worth computing and no encoder: the root travels in
+    // the header, which is also the header a cross-origin form cannot set.
+    let request = format!(
+        "POST {} HTTP/1.0\r\nHost: {HOST}\r\n{}: {}\r\nContent-Length: 0\r\n\r\n",
+        dashboard::SHUTDOWN_PATH,
+        dashboard::SHUTDOWN_ROOT_HEADER,
+        root.display(),
+    );
+    if stream.write_all(request.as_bytes()).is_err() {
+        return Answer::Unanswered;
+    }
+
+    let mut response = Vec::new();
+    let _ = stream.take(MAX_RESPONSE).read_to_end(&mut response);
+
+    match status_in(&String::from_utf8_lossy(&response)) {
+        Some(status) if (200..300).contains(&status) => Answer::Accepted,
+        Some(status) => Answer::Refused(status),
+        None => Answer::Unanswered,
+    }
+}
+
+/// Whether `root`'s dashboard has stopped answering on `port`.
+///
+/// Polled rather than asked once, because a graceful shutdown answers first and
+/// closes its listener afterwards. A port answering for somebody else counts as
+/// gone: the dashboard that was asked to stop is not there.
+fn gone(port: u16, root: &Path) -> bool {
+    let deadline = Instant::now() + STOP_TIMEOUT;
+    loop {
+        if probe(port).is_none_or(|identity| identity.root != root) {
+            return true;
+        }
+
+        if Instant::now() >= deadline {
+            return false;
+        }
+
+        std::thread::sleep(STOP_POLL);
+    }
+}
+
+/// The status code in an HTTP `response`, or `None` when what answered was not
+/// HTTP at all.
+fn status_in(response: &str) -> Option<u16> {
+    let mut status_line = response.lines().next()?.split_whitespace();
+    status_line.next()?.starts_with("HTTP/").then_some(())?;
+
+    status_line.next()?.parse().ok()
+}
+
+/// A connection to `port`, with both timeouts set.
+///
+/// Short on purpose, and the reason belongs to the probe: a hook runs inside a
+/// turn boundary and sweeps up to thirty-two ports, so a hung port must not be
+/// able to stall it.
+fn connected(port: u16) -> Option<TcpStream> {
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let stream = TcpStream::connect_timeout(&address, CONNECT_TIMEOUT).ok()?;
+    stream.set_read_timeout(Some(READ_TIMEOUT)).ok()?;
+    stream.set_write_timeout(Some(READ_TIMEOUT)).ok()?;
+
+    Some(stream)
 }
 
 /// Where a failed start explains itself, for a caller reporting one.

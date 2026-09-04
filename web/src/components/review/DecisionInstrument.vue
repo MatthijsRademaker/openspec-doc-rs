@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import ApprovalInstrument from '@/components/review/ApprovalInstrument.vue'
 import CommentThread from '@/components/review/CommentThread.vue'
 import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import { Button } from '@/components/ui/button'
 import type { ReviewReceipt, TransmissionEvent } from '@/lib/motion-events'
-import type { ScopeDetail } from '@/lib/scope-review'
+import type { ApprovalAct, ScopeDetail } from '@/lib/scope-review'
 import type { Verdict } from '@/lib/scopes'
 
 const props = withDefaults(
@@ -13,14 +14,23 @@ const props = withDefaults(
     transmission?: TransmissionEvent
     receipt?: ReviewReceipt
     busy?: boolean
+    /** A refused or partially completed approval, rendered where the control
+     *  that caused it is. */
+    approvalFailure?: string
   }>(),
-  { transmission: undefined, receipt: undefined, busy: false },
+  {
+    transmission: undefined,
+    receipt: undefined,
+    busy: false,
+    approvalFailure: undefined,
+  },
 )
 
 const emit = defineEmits<{
   submit: [verdict: Verdict, comment: string]
   reply: [commentId: string, body: string]
   status: [commentId: string, status: 'open' | 'resolved']
+  approval: [act: ApprovalAct]
   composer: [id: string, dirty: boolean]
 }>()
 
@@ -120,6 +130,15 @@ function trapFocus(event: KeyboardEvent) {
     :aria-busy="isTransmittingVerdict"
     aria-label="Review decisions"
   >
+    <ApprovalInstrument
+      v-if="scope.approval"
+      :approval="scope.approval"
+      :counts="scope.commentCounts"
+      :busy="busy"
+      :failure="approvalFailure"
+      @approval="(act) => emit('approval', act)"
+    />
+
     <div class="decision-instrument__bar">
       <Button
         id="scope-comment-trigger"

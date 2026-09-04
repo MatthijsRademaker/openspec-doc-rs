@@ -56,6 +56,14 @@ Tests assert over every template that it identifies its origin, names an in-proj
 injection-shaped phrasing (`exactly`, `verbatim`, `nothing else`, `the single word`, `respond with`,
 `reply with`), and never instructs the agent to resolve a comment.
 
+There are six templates: `keep-exploring`, `move-to-proposal`, `comment-resolution`, `approved`,
+`approval-withdrawn`, and the unapproved-implementation report `hook stop` writes when tasks are ticked
+off on a change nobody approved. The four that route the reviewer's words also name the comment sidecar;
+`approved` does not, because it carries no words to route — it names the change's own artifacts and the
+`openspec-doc approval state` command instead. The report is the one template about something the agent
+did rather than something the reviewer wrote, and it says in as many words that it is a report and not a
+veto: a turn-end hook runs after the work, so it never prevented anything.
+
 Those tests cannot prove an agent will comply — only a live run can. What they do prove is that no
 template has drifted back into the shape of the one that was refused.
 

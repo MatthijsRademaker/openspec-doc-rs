@@ -11,6 +11,7 @@ mod idle;
 pub mod markdown;
 mod routes;
 mod scope;
+mod shutdown;
 mod watch;
 
 use std::net::ToSocketAddrs;
@@ -84,20 +85,32 @@ async fn run(project: Project, options: ServeOptions) -> Result<(), Error> {
 
     let hub = Arc::new(watch::Hub::default());
     let activity = Arc::new(Activity::default());
+    let stop = Arc::new(shutdown::Stop::default());
     let serving = axum::serve(
         listener,
-        routes::router(project, hub.clone(), activity.clone()),
+        routes::router(project, hub.clone(), activity.clone(), stop.clone()),
     );
 
-    match options.idle_exit {
-        Some(window) => {
-            serving
-                .with_graceful_shutdown(async move { idle::unused(&hub, &activity, window).await })
-                .await
-        }
-        None => serving.await,
-    }
-    .map_err(|source| Error::Serve { source })
+    // One graceful shutdown, whichever thing resolves it. The shutdown route is
+    // always live, because a dashboard someone started by hand is still one
+    // `serve kill` has to be able to stop; the idle deadline is only there when
+    // the server was asked to have one. Wiring the route to a second shutdown
+    // path instead would double every ordering question with only one of the two
+    // covered by the tests that already exist.
+    serving
+        .with_graceful_shutdown(async move {
+            match options.idle_exit {
+                Some(window) => {
+                    tokio::select! {
+                        () = idle::unused(&hub, &activity, window) => (),
+                        () = stop.requested() => (),
+                    }
+                }
+                None => stop.requested().await,
+            }
+        })
+        .await
+        .map_err(|source| Error::Serve { source })
 }
 
 /// Bind the port `choice` asks for.
@@ -397,6 +410,56 @@ mod tests {
                 .is_err(),
             "a server nobody asked to exit gave up under its operator"
         );
+    }
+
+    /// The route and the idle deadline resolve one future, so a server that was
+    /// never given a deadline is still stoppable — which is the case that makes
+    /// `serve kill` work on a dashboard someone started in a terminal.
+    #[tokio::test]
+    async fn a_shutdown_request_ends_a_server_that_has_no_idle_deadline() {
+        use tokio::io::AsyncWriteExt;
+
+        let fixture = fixture();
+        let project = fixture.project("a");
+        let root = project.root.clone();
+        let port = free_port().await;
+        let served = tokio::spawn(run(
+            project,
+            ServeOptions {
+                host: "127.0.0.1".to_owned(),
+                port: PortChoice::Exact(port),
+                open_browser: false,
+                idle_exit: None,
+            },
+        ));
+
+        let mut asked = None;
+        for _ in 0..100 {
+            if let Ok(mut stream) = tokio::net::TcpStream::connect(("127.0.0.1", port)).await {
+                stream
+                    .write_all(
+                        format!(
+                            "POST {} HTTP/1.0\r\nHost: 127.0.0.1\r\n{}: {}\r\n\r\n",
+                            dashboard::SHUTDOWN_PATH,
+                            dashboard::SHUTDOWN_ROOT_HEADER,
+                            root.display()
+                        )
+                        .as_bytes(),
+                    )
+                    .await
+                    .expect("write");
+                asked = Some(stream);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(asked.is_some(), "the server never came up on {port}");
+
+        tokio::time::timeout(Duration::from_secs(5), served)
+            .await
+            .expect("a server with no idle deadline ignored the shutdown route")
+            .expect("the server panicked")
+            .expect("serve");
     }
 
     #[tokio::test]

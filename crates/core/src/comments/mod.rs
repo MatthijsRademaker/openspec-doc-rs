@@ -21,7 +21,7 @@ pub use record::{
 };
 pub use sidecar::{
     ScopeKey, StatusCounts, add, add_unanchored, counts, edit, read, relocate, reply, reply_as,
-    set_status,
+    resolve_all, set_status,
 };
 
 /// The sidecar directory holding every scope's comment stream.

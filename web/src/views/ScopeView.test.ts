@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { nextTick, reactive } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EVENT_DWELL_MS, EVENT_TRANSITION_MS } from '@/lib/event-channel'
-import type { Artifact, ScopeDetail } from '@/lib/scope-review'
+import type { ApprovalState, Artifact, ScopeDetail } from '@/lib/scope-review'
 import ScopeView from '@/views/ScopeView.vue'
 
 const route = reactive<{
@@ -133,6 +133,8 @@ const SESSION_SCOPE: ScopeDetail = {
     directiveDelivered: false,
     directivePending: true,
   },
+  // An exploration is not a change and has nothing to approve.
+  approval: null,
 }
 
 const CHANGE_ARTIFACTS = [
@@ -168,8 +170,15 @@ const CHANGE_ARTIFACTS = [
 const ORPHANED_THREAD = SESSION_SCOPE.comments[1]
 if (!ORPHANED_THREAD) throw new Error('session fixture must contain orphaned thread')
 
+const NOT_APPROVED: ApprovalState = {
+  state: 'not-approved',
+  reason: 'no approval has been recorded for this change',
+  changedArtifacts: [],
+}
+
 const CHANGE_SCOPE: ScopeDetail = {
   ...SESSION_SCOPE,
+  approval: NOT_APPROVED,
   kind: 'change',
   key: 'change-with-a-long-exact-identifier',
   title: 'Selected artifact review',
@@ -942,5 +951,202 @@ describe('ScopeView selected-artifact workbench', () => {
 
     expect(await screen.findByText('2 open')).toBeTruthy()
     expect(screen.getByLabelText('Comment on block')).toHaveProperty('value', 'Keep this sentence.')
+  })
+})
+
+describe('approval gate', () => {
+  /** A change scope in `state`, with the comment counts `counts` says it has. */
+  function changeIn(
+    approval: ApprovalState,
+    counts = { open: 0, addressed: 0, resolved: 2 },
+  ): ScopeDetail {
+    return {
+      ...CHANGE_SCOPE,
+      approval,
+      comments: [],
+      commentCounts: counts,
+    }
+  }
+
+  it('renders the approval state and its reason on a change page', async () => {
+    useChange()
+    stubScope(changeIn(NOT_APPROVED))
+
+    render(ScopeView)
+    await waitFor(() => screen.getByRole('region', { name: 'Approval state' }))
+
+    expect(screen.getByText('Not approved')).toBeTruthy()
+    expect(screen.getByText(NOT_APPROVED.reason)).toBeTruthy()
+  })
+
+  /** A stale approval covers content that is no longer on disk, and saying so
+   *  without naming the artifact leaves the reviewer nothing to look at. */
+  it('renders a stale approval as stale and names what changed', async () => {
+    useChange()
+    stubScope(
+      changeIn({
+        state: 'stale',
+        reason: 'approved earlier, but proposal.md has changed since',
+        changedArtifacts: ['proposal.md'],
+      }),
+    )
+
+    render(ScopeView)
+    await waitFor(() => screen.getByText('Stale'))
+
+    expect(screen.getByText(/Changed since approval: proposal\.md/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Withdraw approval' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Approve this change' })).toBeTruthy()
+  })
+
+  it('offers withdrawal on an approved change and no second approve control', async () => {
+    useChange()
+    stubScope(
+      changeIn({
+        state: 'approved',
+        reason: 'approved on 2026-09-02T09:00:00Z, and no reviewed artifact has changed since',
+        changedArtifacts: [],
+      }),
+    )
+
+    render(ScopeView)
+    await waitFor(() => screen.getByText('Approved'))
+
+    expect(screen.getByRole('button', { name: 'Withdraw approval' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Approve this change' })).toBeNull()
+  })
+
+  /** Showing both would ask the reviewer to choose between a button that works
+   *  and one that is refused, on a page that already knows which is which. */
+  it('replaces the plain approve control with the sweep while feedback is outstanding', async () => {
+    useChange()
+    stubScope(changeIn(NOT_APPROVED, { open: 2, addressed: 1, resolved: 4 }))
+
+    render(ScopeView)
+    await waitFor(() => screen.getByRole('region', { name: 'Approval state' }))
+
+    expect(screen.queryByRole('button', { name: 'Approve this change' })).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'Resolve 3 and approve (2 open, 1 addressed)' }),
+    ).toBeTruthy()
+  })
+
+  it('submits the sweep as one request and shows the state it left behind', async () => {
+    useChange()
+    const outstanding = changeIn(NOT_APPROVED, { open: 2, addressed: 1, resolved: 0 })
+    const settled = changeIn({
+      state: 'approved',
+      reason: 'approved on 2026-09-02T09:00:00Z, and no reviewed artifact has changed since',
+      changedArtifacts: [],
+    })
+    const fetchMock = vi.fn((_input: unknown, init?: RequestInit) => {
+      if (init?.method === 'POST') return Promise.resolve(response({ resolved: 3 }))
+      return Promise.resolve(
+        response(fetchMock.mock.calls.some((call) => call[1]) ? settled : outstanding),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('EventSource', StubEventSource)
+
+    render(ScopeView)
+    const sweep = await waitFor(() =>
+      screen.getByRole('button', { name: 'Resolve 3 and approve (2 open, 1 addressed)' }),
+    )
+    await fireEvent.click(sweep)
+
+    await waitFor(() => screen.getByText('Approved'))
+    const posts = fetchMock.mock.calls.filter((call) => call[1]?.method === 'POST')
+    expect(posts).toHaveLength(1)
+    expect(posts[0]?.[0]).toContain('/approval')
+    expect(posts[0]?.[1]?.body).toBe(JSON.stringify({ act: 'resolve-all-and-approve' }))
+  })
+
+  /** An approval that was not recorded and said nothing about why reads as the
+   *  button not having worked. */
+  it('renders the refusal reason when an approval is refused', async () => {
+    useChange()
+    const refusal =
+      'change-with-a-long-exact-identifier has 1 open and 0 addressed comment(s) outstanding'
+    const fetchMock = vi.fn((_input: unknown, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? Promise.resolve(response({ error: refusal }, 400))
+        : Promise.resolve(response(changeIn(NOT_APPROVED))),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('EventSource', StubEventSource)
+
+    render(ScopeView)
+    await fireEvent.click(
+      await waitFor(() => screen.getByRole('button', { name: 'Approve this change' })),
+    )
+
+    await waitFor(() => screen.getByText(refusal))
+    expect(screen.getByText('Not approved')).toBeTruthy()
+  })
+
+  /** The comments are resolved and the change is not approved. Rendering only
+   *  half of that would leave the reviewer looking for feedback that is gone. */
+  it('renders both halves of a partial failure', async () => {
+    useChange()
+    const partial =
+      'resolved 3 comment(s) on change-with-a-long-exact-identifier and then failed to approve it: ' +
+      'the comments are resolved and the change is not approved'
+    const fetchMock = vi.fn((_input: unknown, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? Promise.resolve(response({ error: partial }, 400))
+        : Promise.resolve(response(changeIn(NOT_APPROVED, { open: 3, addressed: 0, resolved: 0 }))),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('EventSource', StubEventSource)
+
+    render(ScopeView)
+    await fireEvent.click(
+      await waitFor(() => screen.getByRole('button', { name: 'Resolve 3 and approve (3 open)' })),
+    )
+
+    await waitFor(() => screen.getByText(partial))
+  })
+
+  /** Staleness is a fact about the artifacts, so an artifact-only update is
+   *  exactly what flips an approval with no review state having changed. */
+  it('takes a new approval state from a live update without a reload', async () => {
+    useChange()
+    const approved = changeIn({
+      state: 'approved',
+      reason: 'approved on 2026-09-02T09:00:00Z, and no reviewed artifact has changed since',
+      changedArtifacts: [],
+    })
+    const stale = changeIn({
+      state: 'stale',
+      reason: 'approved earlier, but proposal.md has changed since',
+      changedArtifacts: ['proposal.md'],
+    })
+    let current = approved
+    const fetchMock = vi.fn(() => Promise.resolve(response(current)))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('EventSource', StubEventSource)
+
+    render(ScopeView)
+    await waitFor(() => screen.getByText('Approved'))
+    // A change page canonicalizes its artifact query before it subscribes, so
+    // the rendered document arrives a tick ahead of the event stream.
+    await waitFor(() => expect(StubEventSource.instances).toHaveLength(1))
+
+    current = stale
+    StubEventSource.instances[0]?.emit(
+      JSON.stringify({ artifactsChanged: true, reviewStateChanged: false }),
+    )
+
+    await waitFor(() => screen.getByText('Stale'))
+    expect(screen.getByText(/Changed since approval: proposal\.md/)).toBeTruthy()
+  })
+
+  it('offers no approval instrument on a session', async () => {
+    stubScope(SESSION_SCOPE)
+
+    render(ScopeView)
+    await waitFor(() => screen.getByRole('heading', { name: SESSION_SCOPE.title ?? '' }))
+
+    expect(screen.queryByRole('region', { name: 'Approval state' })).toBeNull()
   })
 })

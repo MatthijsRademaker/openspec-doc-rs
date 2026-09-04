@@ -75,6 +75,27 @@ export interface StandingVerdict {
   directivePending: boolean
 }
 
+export type ApprovalStateName = 'approved' | 'stale' | 'not-approved'
+
+/** Whether a change is cleared for implementation, as the server evaluates it.
+ *  Never inferred here: a change with no comments is not an approved one. */
+export interface ApprovalState {
+  state: ApprovalStateName
+  reason: string
+  /** The artifacts that changed under a stale approval; empty otherwise. */
+  changedArtifacts: string[]
+}
+
+/** What the reviewer asked to do about a change's approval. One request per
+ *  intent, so the bulk act cannot leave a change half-settled. */
+export type ApprovalAct = 'approve' | 'resolve-all-and-approve' | 'withdraw'
+
+export interface ApprovalOutcome {
+  /** How many comments a resolve-all-and-approve moved to resolved. */
+  resolved: number
+  approval: ApprovalState
+}
+
 export interface ScopeDetail {
   kind: ScopeKind
   key: string
@@ -84,6 +105,9 @@ export interface ScopeDetail {
   commentCounts: CommentCounts
   verdicts: VerdictRecord[]
   standingVerdict: StandingVerdict | null
+  /** Null for a session: an exploration is not a change and has nothing to
+   *  approve. */
+  approval: ApprovalState | null
 }
 
 export type NewComment =
@@ -163,6 +187,10 @@ export function submitVerdict(
   verdict: Verdict,
 ): Promise<VerdictRecord> {
   return post(`${scopePath(kind, key)}/verdict`, { verdict })
+}
+
+export function submitApproval(key: string, act: ApprovalAct): Promise<ApprovalOutcome> {
+  return post(`${scopePath('change', key)}/approval`, { act })
 }
 
 export function eventPath(kind: ScopeKind, key: string): string {

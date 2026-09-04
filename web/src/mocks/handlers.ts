@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw'
-import type { NewComment, ScopeKind } from '@/lib/scope-review'
+import type { ApprovalAct, NewComment, ScopeKind } from '@/lib/scope-review'
 import type { Verdict } from '@/lib/scopes'
 import {
   addMockComment,
@@ -9,10 +9,13 @@ import {
   rewriteMockArtifact,
   scopeAddress,
   setMockCommentStatus,
+  submitMockApproval,
   submitMockVerdict,
 } from './data.ts'
 
 const verdicts: readonly Verdict[] = ['keep-exploring', 'move-to-proposal', 'comment-resolution']
+
+const approvalActs: readonly ApprovalAct[] = ['approve', 'resolve-all-and-approve', 'withdraw']
 
 /** The Rust server's event payload. A bare marker would fail the client's payload parse. */
 interface LiveUpdate {
@@ -57,6 +60,10 @@ function isNewComment(value: unknown): value is NewComment {
 
 function isVerdict(value: unknown): value is Verdict {
   return typeof value === 'string' && verdicts.includes(value as Verdict)
+}
+
+function isApprovalAct(value: unknown): value is ApprovalAct {
+  return typeof value === 'string' && approvalActs.includes(value as ApprovalAct)
 }
 
 function removeEventStream(address: string, controller: EventController): void {
@@ -175,6 +182,23 @@ function createScopeHandlers(
       const record = submitMockVerdict(kind, key, body.verdict)
       broadcast(address, REVIEW_STATE_CHANGED)
       return HttpResponse.json(record, { status: 201 })
+    }),
+    // One route for all three acts, matching the server: a bulk sweep fired from
+    // the client as N status posts leaves a change neither settled nor approved
+    // when it fails halfway, and announces one intent N times.
+    http.post(`${basePath}/approval`, async ({ params, request }) => {
+      const { address, key } = readScope(params)
+      const scope = getMockScope(kind, key)
+      if (!scope) return errorResponse(404, `Unknown mock ${kind} scope: ${key}`)
+      if (kind !== 'change') return errorResponse(404, 'Only a change has an approval')
+      const body = (await request.json()) as unknown
+      if (!isRecord(body) || !isApprovalAct(body.act)) {
+        return errorResponse(400, 'Invalid mock approval act')
+      }
+      const outcome = submitMockApproval(key, body.act)
+      if (typeof outcome === 'string') return errorResponse(400, outcome)
+      broadcast(address, REVIEW_STATE_CHANGED)
+      return HttpResponse.json(outcome)
     }),
     // Deterministic remote review-state origin, separate from reviewer mutation endpoints.
     http.post(`${basePath}/mock/review-state`, ({ params }) => {

@@ -1,6 +1,7 @@
 //! The `openspec-doc` binary: argument parsing, shared project-root
 //! resolution, and subcommand dispatch.
 
+mod approval;
 mod cli;
 mod comment;
 mod discovery;
@@ -8,6 +9,7 @@ mod doctor;
 mod error;
 mod hook;
 mod init;
+mod kill;
 mod root;
 mod scratch;
 mod serve;
@@ -19,7 +21,10 @@ use std::process::ExitCode;
 use clap::Parser;
 use openspec_doc_core::comments::Status;
 
-use crate::cli::{Cli, Command, CommentCommand, HookCommand, ScratchCommand, ServeCommand};
+use crate::cli::{
+    ApprovalCommand, Cli, Command, CommentCommand, HookCommand, KillTarget, ScratchCommand,
+    ServeCommand,
+};
 use crate::error::Error;
 
 fn main() -> ExitCode {
@@ -83,10 +88,10 @@ fn prompt_hook_intended() -> bool {
 }
 
 fn run(cli: Cli) -> Result<(), Error> {
-    // Two serve subcommands ask about every checkout on the machine rather than
-    // about one project, so they answer from outside any project at all — and
-    // resolving the root every other command needs would make them fail exactly
-    // where they are most useful.
+    // Several serve subcommands ask about every checkout on the machine rather
+    // than about one project, so they answer from outside any project at all —
+    // and resolving the root every other command needs would make them fail
+    // exactly where they are most useful.
     match &cli.command {
         Command::Serve {
             command: Some(ServeCommand::List),
@@ -96,6 +101,12 @@ fn run(cli: Cli) -> Result<(), Error> {
             command: Some(ServeCommand::Forget { root }),
             ..
         } => return serve::forget(root),
+        // A kill by port, or of everything, is one of those. Only `--project`
+        // needs a root, and that is the whole reason it has to be typed.
+        Command::Serve {
+            command: Some(ServeCommand::Kill { target }),
+            ..
+        } if !target.project => return kill::run(machine_wide(target)),
         _ => {}
     }
 
@@ -107,6 +118,14 @@ fn run(cli: Cli) -> Result<(), Error> {
             command: Some(ServeCommand::Url),
             ..
         } => serve::url(project),
+        Command::Serve {
+            command: Some(ServeCommand::Kill { target }),
+            ..
+        } => {
+            // The other two targets were dispatched above, without a root.
+            debug_assert!(target.project, "{target:?} needs no project root");
+            kill::run(kill::Target::Project(project))
+        }
         // Dispatched above, without a project root.
         Command::Serve {
             command: Some(command),
@@ -164,9 +183,26 @@ fn run(cli: Cli) -> Result<(), Error> {
             skip_instructions,
         } => init::run(project, agent, yes, skip_instructions),
         Command::Doctor => doctor::run(project),
+        Command::Approval { command } => match command {
+            ApprovalCommand::State { change } => approval::state(project, &change),
+        },
         Command::Scratch { command } => match command {
             ScratchCommand::Claim { session, change } => scratch::claim(project, &session, &change),
         },
+    }
+}
+
+/// The kill target that needs no project root.
+///
+/// Called only where `--project` is absent, and the argument group makes exactly
+/// one of the three present, so the remaining two are the only possibilities.
+fn machine_wide(target: &KillTarget) -> kill::Target {
+    match target.port {
+        Some(port) => kill::Target::Port(port),
+        None => {
+            debug_assert!(target.all, "clap admitted a kill with no target");
+            kill::Target::All
+        }
     }
 }
 

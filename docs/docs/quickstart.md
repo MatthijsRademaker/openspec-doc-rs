@@ -198,12 +198,40 @@ proposal, design, tasks, spec deltas, and the exploration that produced them.
 
 If the agent forgets to claim, nothing breaks — the note stays where it is. Run the command yourself.
 
+## 8. Approve it
+
+Formalizing a change does not clear it for implementation — that is a separate thing you say. On the
+change page, *Approval* shows where it stands and offers the control that moves it:
+
+- **Approve change**, when every comment is `resolved` or there are none. Approving over an `open` or
+  `addressed` comment is refused, with the counts that blocked it; `addressed` is the agent's claim that
+  work was done, and accepting it is yours.
+- **Resolve N and approve**, in its place while anything is outstanding. One submission, and it names how
+  many comments it will resolve and in which statuses before you press it — it is the one control that
+  discards your own open feedback.
+- **Withdraw approval**, on a change you have approved.
+
+An approval binds to what it approved. Editing `proposal.md`, `design.md` or a spec delta afterwards makes
+it read **stale**, naming the file that moved; ticking a checkbox in `tasks.md` does not, because that is
+the implementation making progress rather than the change changing.
+
+The agent asks the same question from the command line, and this is what an apply workflow runs first:
+
+```bash
+openspec-doc approval state --change <name>
+```
+
+It exits zero only while the change is approved. Nothing *prevents* an agent implementing an unapproved
+change — a turn-end hook runs after the work, not before it — so what happens instead is that `hook stop`
+notices ticked-off tasks with no current approval and says so as a directive.
+
 ## Checking what was recorded
 
 Everything is a plain file, and the CLI reads the same sidecars the dashboard writes:
 
 ```bash
 openspec-doc comment list --session <id>
+openspec-doc approval state --change <name>
 openspec-doc summary
 cat .openspec-doc/verdicts/_session/<id>.jsonl
 ```

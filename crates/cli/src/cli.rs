@@ -74,6 +74,12 @@ pub enum Command {
     /// Run this project's configured agent hooks and report whether they work
     Doctor,
 
+    /// Report whether a change is cleared for implementation
+    Approval {
+        #[command(subcommand)]
+        command: ApprovalCommand,
+    },
+
     /// Manage the exploration scratch note
     Scratch {
         #[command(subcommand)]
@@ -90,11 +96,63 @@ pub enum ServeCommand {
     /// project it serves, beside the ports assigned with nothing serving them
     List,
 
+    /// Stop a running dashboard, naming which one with --project, --port, or
+    /// --all
+    Kill {
+        #[command(flatten)]
+        target: KillTarget,
+    },
+
     /// Drop a project root's port assignment, freeing its port for another
     Forget {
         /// Project root to forget, canonical or not
         #[arg(value_name = "PATH")]
         root: PathBuf,
+    },
+}
+
+/// Which dashboards `serve kill` stops: exactly one of the three ways of saying
+/// so, and saying one of them is required.
+///
+/// There is no default in either direction. A bare `serve kill` that stopped
+/// every dashboard on the machine is the command someone runs by accident while
+/// another checkout's review is open; one that quietly stopped *this* project's
+/// is a command whose behaviour depends on the working directory without the
+/// operator having said so. Dashboards are machine-global while the operator's
+/// mental model is per-project, so the natural reading of an untargeted stop is
+/// not the destructive one — which is what would make the destructive behaviour
+/// a surprise rather than a choice.
+///
+/// Note what cannot be spelled here: `Cli` already declares `--root` as a global
+/// flag, so a subcommand `--root` is taken — and the global one already defaults
+/// to the resolved project, which is precisely the untargeted case this group
+/// exists to reject.
+#[derive(Debug, Args)]
+#[group(required = true, multiple = false)]
+pub struct KillTarget {
+    /// Stop the dashboard serving the resolved project; typed rather than
+    /// implied, because the working directory is what decides which project
+    /// that is
+    #[arg(long)]
+    pub project: bool,
+
+    /// Stop the dashboard answering on this port, as `serve list` prints it
+    #[arg(long, value_name = "PORT")]
+    pub port: Option<u16>,
+
+    /// Stop every dashboard answering on the assignable port range
+    #[arg(long)]
+    pub all: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ApprovalCommand {
+    /// Print a change's approval state and reason, exiting non-zero unless it
+    /// is approved, so an apply workflow can run it as a precheck
+    State {
+        /// Change to report on
+        #[arg(long, value_name = "NAME")]
+        change: String,
     },
 }
 

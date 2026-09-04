@@ -1,11 +1,13 @@
 //! The agent hook bridge: normalize a coding agent's turn-end event, resolve
-//! the session's pending directive, and emit that agent's stop decision.
+//! the session's pending directive, notice implementation running ahead of the
+//! reviewer's approval, and emit that agent's stop decision.
 
 mod adapter;
 mod directive;
 mod event;
 mod explore;
 mod translate;
+mod unapproved;
 
 pub use adapter::{encode_decision, parse_event, parse_session_id};
 pub use directive::{
@@ -15,3 +17,4 @@ pub use directive::{
 pub use event::{Agent, HookDecision, HookEvent};
 pub use explore::start as start_explore;
 pub use translate::{reason as directive_reason, translate};
+pub use unapproved::report as report_unapproved;

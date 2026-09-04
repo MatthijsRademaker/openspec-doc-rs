@@ -55,6 +55,15 @@ pub enum Error {
     )]
     DashboardServing { root: PathBuf, port: u16 },
 
+    #[error("no dashboard is running to stop: nothing matched {target}")]
+    NothingToStop { target: String },
+
+    #[error(
+        "stopped {stopped} of the {total} dashboards asked to stop; the report above says what \
+         happened to the rest"
+    )]
+    NotEveryDashboardStopped { stopped: usize, total: usize },
+
     #[error(
         "no agent harness was detected in this project: neither .claude/ nor .pi/ exists. \
          Name one explicitly with --agent <claude|pi>"
@@ -104,4 +113,11 @@ pub enum Error {
         path.display()
     )]
     HalfDelimitedInstructions { path: PathBuf },
+
+    #[error(
+        "{change} is not cleared for implementation; the state printed above says why. \
+         Approval is the reviewer's, made on this project's dashboard — `openspec-doc serve url` \
+         prints where"
+    )]
+    NotApproved { change: String },
 }

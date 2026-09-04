@@ -2,6 +2,9 @@ import type { Index, Scope, Verdict } from '@/lib/scopes'
 import type {
   Anchor,
   AnchorState,
+  ApprovalAct,
+  ApprovalOutcome,
+  ApprovalState,
   Artifact,
   Block,
   CommentRecord,
@@ -88,6 +91,16 @@ function makeThread(
   replies: Reply[] = [],
 ): Thread {
   return { comment, status, replies, anchorState, blockId }
+}
+
+/** What a change nobody has approved reports. Never inferred from settled
+ *  feedback: a change nobody looked at has no open comments either. */
+function notApproved(): ApprovalState {
+  return {
+    state: 'not-approved',
+    reason: 'no approval has been recorded for this change',
+    changedArtifacts: [],
+  }
 }
 
 function makeVerdict(id: string, verdict: Verdict, createdAt: string): VerdictRecord {
@@ -185,6 +198,7 @@ function makeSupportingChange(input: SupportingChangeInput): ScopeDetail {
     ],
     comments: [],
     commentCounts: { open: 0, addressed: 0, resolved: 0 },
+    approval: notApproved(),
     verdicts,
     standingVerdict: input.verdict
       ? {
@@ -225,6 +239,7 @@ function makeSupportingSession(
     artifacts: [makeArtifact(`.openspec-doc/scratch/_session/${key}.md`, blocks)],
     comments: [],
     commentCounts: { open: 0, addressed: 0, resolved: 0 },
+    approval: null,
     verdicts,
     standingVerdict: verdict
       ? {
@@ -538,6 +553,7 @@ const changeScope: ScopeDetail = {
     ),
   ],
   commentCounts: { open: 2, addressed: 2, resolved: 2 },
+  approval: notApproved(),
   verdicts: [makeVerdict('mock-change-verdict', 'comment-resolution', '2026-08-08T11:15:00Z')],
   standingVerdict: {
     id: 'mock-change-verdict',
@@ -569,6 +585,7 @@ const sessionScope: ScopeDetail = {
     ),
   ],
   commentCounts: { open: 1, addressed: 0, resolved: 0 },
+  approval: null,
   verdicts: [makeVerdict('mock-session-verdict', 'keep-exploring', '2026-08-08T08:55:00Z')],
   standingVerdict: {
     id: 'mock-session-verdict',
@@ -900,6 +917,51 @@ export function submitMockVerdict(kind: ScopeKind, key: string, verdict: Verdict
 }
 
 /**
+ * The mock counterpart of the server's approval acts. The precondition and the
+ * bulk sweep are modelled rather than stubbed, so the mock lane refuses an
+ * approval over outstanding feedback the way the real one does.
+ */
+export function submitMockApproval(key: string, act: ApprovalAct): ApprovalOutcome | string {
+  const scope = requireMockScope('change', key)
+
+  if (act === 'withdraw') {
+    if (!scope.approval || scope.approval.state === 'not-approved') {
+      return `there is no approval on ${key} to withdraw: ${scope.approval?.reason ?? 'none'}`
+    }
+    scope.approval = {
+      state: 'not-approved',
+      reason: `approval was withdrawn on ${new Date().toISOString()}`,
+      changedArtifacts: [],
+    }
+    touchSummary('change', key, new Date().toISOString())
+    return { resolved: 0, approval: scope.approval }
+  }
+
+  let resolved = 0
+  if (act === 'resolve-all-and-approve') {
+    for (const thread of scope.comments) {
+      if (thread.status === 'resolved') continue
+      thread.status = 'resolved'
+      resolved += 1
+    }
+    refreshCounts(scope)
+  }
+
+  const { open, addressed } = scope.commentCounts
+  if (open || addressed) {
+    return `${key} has ${open} open and ${addressed} addressed comment(s) outstanding, so it cannot be approved yet`
+  }
+
+  scope.approval = {
+    state: 'approved',
+    reason: `approved on ${new Date().toISOString()}, and no reviewed artifact has changed since`,
+    changedArtifacts: [],
+  }
+  touchSummary('change', key, new Date().toISOString())
+  return { resolved, approval: scope.approval }
+}
+
+/**
  * Replaces one block's content and keeps every block id: the mock lane has no anchor resolver,
  * so a fresh id would silently detach the threads anchored to that block and the conversation
  * would empty out instead of showing a rewritten passage under its own comment. Block 1 is the
@@ -921,6 +983,15 @@ export function rewriteMockArtifact(
   block.source = source
   block.html = `<p>${source}</p>`
   block.range = { start: block.range.start, end: block.range.start + source.length }
+  // What the reviewer approved is no longer what is on disk, which is the whole
+  // point of binding an approval to artifact content.
+  if (scope.approval?.state === 'approved') {
+    scope.approval = {
+      state: 'stale',
+      reason: `approved earlier, but ${artifact.path} has changed since`,
+      changedArtifacts: [artifact.path],
+    }
+  }
   touchSummary(kind, key, new Date().toISOString())
   return artifact
 }

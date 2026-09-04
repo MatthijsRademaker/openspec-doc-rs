@@ -15,6 +15,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::approval::Fingerprint;
 use crate::comments::ScopeKey;
 use crate::error::Error;
 use crate::session::check_session_id;
@@ -41,6 +42,11 @@ pub enum Verdict {
     MoveToProposal,
     /// The change's open comments should be addressed.
     CommentResolution,
+    /// The change is cleared for implementation. The record carries the
+    /// fingerprint of the artifacts that clearance covers.
+    Approved,
+    /// A recorded approval no longer stands.
+    ApprovalWithdrawn,
 }
 
 impl Verdict {
@@ -57,6 +63,8 @@ impl fmt::Display for Verdict {
             Self::KeepExploring => "keep-exploring",
             Self::MoveToProposal => "move-to-proposal",
             Self::CommentResolution => "comment-resolution",
+            Self::Approved => "approved",
+            Self::ApprovalWithdrawn => "approval-withdrawn",
         };
         f.write_str(label)
     }
@@ -72,6 +80,11 @@ pub struct Record {
     /// The reviewer's open questions or resolutions. Empty for a verdict that
     /// carries no free text of its own.
     pub notes: String,
+    /// The reviewed artifact content an approval covers, so a later query can
+    /// say whether what was approved is still what is on disk. Absent on every
+    /// other kind, which say nothing about artifacts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<Fingerprint>,
     pub created_at: String,
 }
 
@@ -106,6 +119,33 @@ fn sidecar_relative(key: &ScopeKey, extension: &str) -> Result<String, Error> {
 /// refused. Dashboard feedback lives in the comment sidecar, so every verdict
 /// may be recorded without notes.
 pub fn add(root: &Path, key: &ScopeKey, verdict: Verdict, notes: &str) -> Result<Record, Error> {
+    // An approval without the fingerprint it approved cannot be told apart from
+    // one whose artifacts have since been rewritten, so it is recorded through
+    // `approval::submit`, which computes that fingerprint and enforces the
+    // precondition, rather than through the route any verdict can reach.
+    if verdict == Verdict::Approved {
+        return Err(Error::UnfingerprintedApproval);
+    }
+
+    record(root, key, verdict, notes, None)
+}
+
+/// Record an approval of `key` carrying the artifact `fingerprint` it approves.
+pub(crate) fn add_approval(
+    root: &Path,
+    key: &ScopeKey,
+    fingerprint: Fingerprint,
+) -> Result<Record, Error> {
+    record(root, key, Verdict::Approved, "", Some(fingerprint))
+}
+
+fn record(
+    root: &Path,
+    key: &ScopeKey,
+    verdict: Verdict,
+    notes: &str,
+    fingerprint: Option<Fingerprint>,
+) -> Result<Record, Error> {
     let session_scoped = matches!(key, ScopeKey::Session(_));
     if session_scoped != verdict.is_session_phase() {
         return Err(Error::MisscopedVerdict {
@@ -114,12 +154,11 @@ pub fn add(root: &Path, key: &ScopeKey, verdict: Verdict, notes: &str) -> Result
         });
     }
 
-    let notes = notes.trim();
-
     let record = Record {
         id: Uuid::new_v4().to_string(),
         verdict,
-        notes: notes.to_owned(),
+        notes: notes.trim().to_owned(),
+        fingerprint,
         created_at: Utc::now().to_rfc3339(),
     };
 

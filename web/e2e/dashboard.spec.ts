@@ -7,9 +7,17 @@ import { expectClearOfAll, expectContained, expectNoOverlap } from './geometry'
 const fixtureChange = 'implement-observatory-design-system-with-a-realistically-long-identifier'
 const fixtureTitle = 'Observatory Design System Fixture'
 const fixtureSession = '0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d74'
+// Its own change, because approving is not undoable from the browser: the
+// dashboard exposes no `addressed` transition, so a swept thread cannot be put
+// back the way the other mutation tests put theirs back.
+const approvalChange = 'verify-approval-gate'
+const approvalProposalPath = `openspec/changes/${approvalChange}/proposal.md`
+const approvalTasksPath = `openspec/changes/${approvalChange}/tasks.md`
+const approvalProposalSource =
+  '# Approval gate fixture\n\nTwo open threads and one addressed thread.\n'
 const fixtureSessionTitle = 'Agent-guided observatory exploration session'
 const untitledFixtureSession = '0199a4c6-3b2e-7c41-9f8d-2a6b5c1e0d77'
-const fixtureScopeCount = { changes: 3, sessions: 9 }
+const fixtureScopeCount = { changes: 4, sessions: 9 }
 const changeRoot = `openspec/changes/${fixtureChange}`
 const proposalPath = `${changeRoot}/proposal.md`
 const designPath = `${changeRoot}/design.md`
@@ -1346,4 +1354,79 @@ test('captures deterministic selected-artifact design evidence', async ({ page }
     })
   }
   expectHealthy(health)
+})
+
+/**
+ * The approval gate, end to end and in a real browser: which control the state
+ * selects, what the sweep says before it is pressed, and that the change reads
+ * approved in a second tab that nobody reloaded.
+ *
+ * Its fixture change carries an `open` thread and an `addressed` one, which is
+ * exactly the state the plain approve control must not appear in.
+ */
+test('sweeps outstanding feedback into an approval that reaches a second tab', async ({
+  page,
+  context,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'cross-tab approval runs once')
+  const second = await context.newPage()
+  await page.goto(`/changes/${approvalChange}`)
+  await second.goto(`/changes/${approvalChange}`)
+
+  const approval = page.getByRole('region', { name: 'Approval state' })
+  await expect(approval).toContainText('Not approved')
+  await expect(approval).toContainText('no approval has been recorded')
+  await expect(page.getByRole('button', { name: 'Approve this change' })).toHaveCount(0)
+
+  const sweep = page.getByRole('button', { name: /^Resolve \d+ and approve/ })
+  await expect(sweep).toContainText('Resolve 3 and approve (2 open, 1 addressed)')
+  await sweep.click()
+
+  await expect(approval).toContainText('Approved')
+  await expect(page.getByRole('button', { name: 'Withdraw approval' })).toBeVisible()
+  await expect(page.getByText('3 resolved', { exact: true })).toBeVisible()
+
+  // No reload: the second tab is carried by the scope's event stream.
+  await expect(second.getByRole('region', { name: 'Approval state' })).toContainText('Approved')
+  await expect(second.getByText('3 resolved', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Withdraw approval' }).click()
+  await expect(approval).toContainText('Not approved')
+  await expect(approval).toContainText('withdrawn')
+  await second.close()
+})
+
+/**
+ * What an approval is bound to. Editing a reviewed artifact takes it out of
+ * force; ticking a checkbox, which happens on essentially every turn of
+ * implementation, does not.
+ */
+test('goes stale on a reviewed artifact and not on a ticked task', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'filesystem staleness contract runs once')
+  const fixtureRoot = process.env.E2E_FIXTURE_ROOT
+  if (!fixtureRoot) throw new Error('E2E_FIXTURE_ROOT is required for approval staleness')
+  // Opened on the tasks artifact, so the write below is observable as content
+  // arriving rather than only as an approval that did not move.
+  await page.goto(
+    `/changes/${approvalChange}?${new URLSearchParams({ artifact: approvalTasksPath })}`,
+  )
+
+  const approval = page.getByRole('region', { name: 'Approval state' })
+  const sweep = page.getByRole('button', { name: /^Resolve \d+ and approve/ })
+  if (await sweep.isVisible()) await sweep.click()
+  else await page.getByRole('button', { name: 'Approve this change' }).click()
+  await expect(approval).toContainText('Approved')
+
+  await writeFile(join(fixtureRoot, approvalTasksPath), '# Approval tasks\n\n- [x] 1.1 Implement\n')
+  await expect(page.getByText('1.1 Implement')).toBeVisible()
+  await expect(approval).toContainText('Approved')
+
+  await writeFile(
+    join(fixtureRoot, approvalProposalPath),
+    `${approvalProposalSource}\nRevised after approval.\n`,
+  )
+  await expect(approval).toContainText('Stale')
+  await expect(approval).toContainText('Changed since approval: proposal.md')
+  await expect(page.getByRole('button', { name: 'Approve this change' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Withdraw approval' })).toHaveCount(0)
 })

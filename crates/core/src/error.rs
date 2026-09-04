@@ -101,6 +101,47 @@ pub enum Error {
         session_scoped: bool,
     },
 
+    #[error(
+        "an approval carries the fingerprint of the artifacts it approves, so it is recorded \
+         through the approval route rather than submitted as a plain verdict"
+    )]
+    UnfingerprintedApproval,
+
+    #[error("no active change named {change}")]
+    UnknownChange { change: String },
+
+    #[error(
+        "{change} has {open} open and {addressed} addressed comment(s) outstanding, so it cannot \
+         be approved yet: an addressed comment is the agent's claim that work was done, and \
+         accepting that work is the reviewer's own judgement"
+    )]
+    ApprovalBlocked {
+        change: String,
+        open: usize,
+        addressed: usize,
+    },
+
+    #[error("there is no approval on {change} to withdraw: {reason}")]
+    NothingToWithdraw { change: String, reason: String },
+
+    #[error(
+        "resolved {resolved} comment(s) on {change} and then failed to approve it: the comments \
+         are resolved and the change is not approved. Nothing was undone — compensating records \
+         would be indistinguishable from the reviewer reopening those threads"
+    )]
+    PartialApproval {
+        change: String,
+        resolved: usize,
+        #[source]
+        source: Box<Error>,
+    },
+
+    #[error(
+        "the approval recorded for {change} carries no artifact fingerprint, so nothing can say \
+         whether what it approved is still on disk; withdraw it and approve the change again"
+    )]
+    FingerprintlessApproval { change: String },
+
     #[error("malformed verdict sidecar {}", path.display())]
     VerdictSidecar {
         path: PathBuf,

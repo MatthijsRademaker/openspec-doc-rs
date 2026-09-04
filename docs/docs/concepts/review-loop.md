@@ -38,6 +38,22 @@ On the session page the note renders as its own markdown source. The reviewer se
 | `keep-exploring` | session | Stay in the explore phase; notes say what is still open (**required**) |
 | `move-to-proposal` | session | Ready to be formalized into a change |
 | `comment-resolution` | change | Address the change's open comments |
+| `approved` | change | The change is cleared for implementation |
+| `approval-withdrawn` | change | A recorded approval no longer stands |
+
+`approved` is the odd one out: every other verdict asks for work on the review, and that one clears work
+on the change. It is not submitted through the verdict route either — an approval carries a fingerprint of
+the artifacts it approves, so it goes through `POST /api/changes/<name>/approval` and that route's
+precondition (see [Routes](/reference/routes.md)). Two things follow from the fingerprint: editing
+`proposal.md`, `design.md` or a spec delta afterwards makes the approval **stale**, and ticking a checkbox
+in `tasks.md` does not. `openspec-doc approval state --change <name>` reports where a change stands and
+exits non-zero unless it is approved, which is what an apply workflow runs before it starts.
+
+**It is a gate in the honest sense, not a lock.** A Stop hook runs at turn end and can only block-and-
+continue or allow-stop, so nothing here *prevents* an agent implementing an unapproved change. What
+happens instead is that `hook stop` notices completed tasks on a change with no current approval and
+raises it as a directive — after the fact, by construction. Anyone reading "gate" as "cannot proceed" will
+be disappointed.
 
 Comments and verdicts are different channels. Comments accumulate while the reviewer is still forming a
 view; **the verdict is the trigger that sends anything to the agent**. A comment with no verdict behind it
