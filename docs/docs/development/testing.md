@@ -47,14 +47,16 @@ platform legs download that single artifact, so each embeds the same frontend by
 built itself; a leg whose artifact is missing fails instead of compiling.
 
 **Windows is not covered, and it is an omission rather than an oversight.** `doctor`'s binary
-resolution and its hook-registration probe are both broken there. Three tests cover exactly that code
-and are `#[cfg(unix)]`-gated, so a Windows leg would run the other 398 and report success:
+resolution and its hook-registration probe are both broken there. Five tests cover exactly that code
+and are `#[cfg(unix)]`-gated, so a Windows leg would run the other 396 and report success:
 
-- `doctor_passes_a_wired_project_and_fails_naming_a_hook_that_is_not_registered`
-- `doctor_leaves_a_pending_directive_and_the_projects_own_review_state_alone`
-- `hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it`
+- `the_first_executable_on_the_path_wins` (`crates/cli/src/doctor/binary.rs`)
+- `a_directory_without_the_binary_resolves_nothing` (`crates/cli/src/doctor/binary.rs`)
+- `doctor_passes_a_wired_project_and_fails_naming_a_hook_that_is_not_registered` (`crates/cli/tests/cli.rs`)
+- `doctor_leaves_a_pending_directive_and_the_projects_own_review_state_alone` (`crates/cli/tests/cli.rs`)
+- `hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it` (`crates/cli/tests/cli.rs`)
 
-A green Windows badge over those three is a stronger false claim than no badge at all, which is why
+A green Windows badge over those five is a stronger false claim than no badge at all, which is why
 `replace-hook-shell-form-with-exec-form` fixes the defects, un-gates the tests, and adds the leg in one
 change: supported and verified have to move together.
 

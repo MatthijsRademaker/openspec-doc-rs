@@ -110,7 +110,7 @@ The Rust toolchain is pinned in `rust-toolchain.toml`, so rustup uses that versi
 machine's default channel.
 
 `make check` and `make test` also run automatically on every push to `main` and every pull request,
-on **Linux and macOS**, via `.github/workflows/rust.yml`. Windows is not covered, deliberately: three
+on **Linux and macOS**, via `.github/workflows/rust.yml`. Windows is not covered, deliberately: five
 `doctor` and hook-start tests are `#[cfg(unix)]`-gated, so a Windows run would pass while omitting
 exactly the coverage of the code that is broken there. See
 [testing](docs/docs/development/testing.md#what-the-automated-run-covers) for the named tests.

@@ -40,6 +40,88 @@ The cost is a staleness hazard, and it should be stated rather than discovered: 
 
 What defuses it is specific to this repository rather than a general reassurance: **the Rust gates do not verify the frontend's contents.** They embed it and never assert on it. The frontend has its own gate — `bun run check` for its quality, `bun run test:e2e` for the embedded application in a browser — and both build fresh. So a stale dist under `cargo test` produces a stale binary that no assertion looks inside. If a Rust test ever does start asserting on embedded content, this decision is the one to revisit, and that sentence belongs in the Makefile next to the target.
 
+## The suite is not hermetic, and the lane installs what it needs
+
+*Added after the lane's first run, which failed on both platforms before this was understood.*
+
+`scratch::promote` runs `openspec validate <change>` as a subprocess, and two tests assert on what it
+reported — `hook_stop_promotes_the_scratch_note_and_reports_the_validate_outcome` and
+`hook_stop_reports_a_failing_validate_rather_than_hiding_it`. `docs/docs/development/testing.md` has
+said so for as long as it has existed, under a heading that reads "Hermetic by default", which is where
+the fact went to be forgotten. On a runner with no `openspec` on `PATH`, those two fail.
+
+Three ways out, and the choice between them is not close:
+
+1. Gate the two tests behind the binary's presence, so they skip when it is absent.
+2. Install `openspec` in the `gates` job.
+3. Replace the subprocess with a fake, so nothing shells out.
+
+**Take the second.** The first is this change's own argument turned against itself: a run that skips the
+only two assertions that promotion reports a validation outcome, and reports success, is the
+green-line-for-something-never-examined failure the Windows section spends four paragraphs refusing. It
+would also be invisible in exactly the way that matters, because a skipped test and a passing test look
+identical in a run's summary.
+
+The third is the better long-term answer and is not this change's to make. Those two tests are the only
+place anything checks that the promotion path reports a real validator's verdict rather than a verdict
+it made up; replacing the validator with a fake removes the coupling and some of the value with it.
+That is a decision about what the tests are for, and it belongs to whoever next touches promotion.
+
+So the job installs `@fission-ai/openspec` at a pinned version. Pinned because the tests read its
+output: an upgrade that reworded `passed` or `FAILED` breaks them, and a pin makes that a commit rather
+than a Tuesday.
+
+The cost is honest and small: the lane now depends on a package from npm, so npm being down is a red
+lane. Bun is already installed in that job for `make check`, so it is one command and no new toolchain.
+
+## Passing on a macOS machine is not passing on a macOS runner
+
+*Added after the lane's second and third runs, which were green on Linux and red on macOS, on a
+different test each time.*
+
+The proposal says this change depends on `fix-repository-verification-gates` because that change
+*"makes `cargo test --workspace` pass on macOS against a clean tree"*. That was checked on a
+developer's macOS machine and it is true there. It was not true on `macos-latest`, and the difference
+is load rather than platform.
+
+Two tests in `crates/server` asserted against filesystem events **their own fixtures had caused**:
+
+- `watch::tests::reading_a_watched_file_is_not_an_update` writes a file into the watched directory,
+  *then* subscribes, then asserts that nothing arrives within two seconds. The subscription's FSEvents
+  stream starts from "now" only approximately, so under load the setup's write is delivered after the
+  subscription it preceded, and the test reads its own noise as a read being reported as a change.
+- `routes::tests::resolve_all_and_approve_pushes_one_event_rather_than_one_per_comment` writes three
+  comments, opens an SSE stream, sleeps 500ms, submits one bulk act, and asserts the stream carried
+  **exactly one** event. A late fixture event makes that two. Its own comment stated the assumption it
+  was relying on — *"the subscription is taken when the handler runs, and an update written before it
+  exists reaches nobody"* — which is true of the subscription and says nothing about when FSEvents
+  delivers.
+
+Both now wait for the fixture's events to go quiet before asserting, rather than sleeping a fixed span.
+Waiting for quiet is the point: the condition becomes the absence of events instead of the passage of
+time, so a slower runner makes the test wait longer rather than fail. A longer sleep would have moved
+the race rather than removed it.
+
+Two things follow, and the second is the reason this section exists rather than a task note.
+
+**The capability already predicted this failure.** Its scenario *"the automated run reproduces the local
+verdict"* — gates pass locally on a supported platform, so the automated run for the same contents on
+that platform passes too — is exactly what these two tests violated. The requirement was written before
+anything could violate it and it caught them on the first opportunity. Nothing in the spec delta needs
+to change; it did its job.
+
+**"Verified on macOS" was a claim about one machine.** The lane's whole argument is that a gate whose
+result nobody sees is worth nothing; the sharper version this run taught is that a gate run in one
+place has only ever reported on that place. The suite had passed on macOS hundreds of times and had
+never once run on a macOS machine that was busy. That is not a property of these two tests — it is a
+property of every timing-sensitive assertion in the repository, and this lane is now the only thing
+exercising them anywhere else.
+
+Three of these were fixed rather than one: the audit in task 6.3 checked the remaining negative and
+count assertions in `crates/server` and found them driving in-process channels and timers, where a
+slower machine makes the assertion pass rather than fail. That audit is the part worth repeating if a
+third one ever surfaces.
+
 ## One frontend, downloaded by every leg
 
 ```text
@@ -78,7 +160,9 @@ Rejected, on the narrower of two available arguments. The broad one — that the
 
 It is deferred because adding it here would require choosing between two bad options, and the second one is available and tempting.
 
-`crates/cli/tests/cli.rs` has roughly 153 test functions, of which three and their three helpers are `#[cfg(unix)]`-gated. A Windows leg added today therefore compiles and runs about 150 tests — it is not vacuous, and that is the trap. It would be green. The three tests it silently omits are `doctor_passes_a_wired_project_and_fails_naming_a_hook_that_is_not_registered`, `doctor_leaves_a_pending_directive_and_the_projects_own_review_state_alone`, and `hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it` — which is to say, exactly the coverage of `doctor`'s two Windows defects and of the hook-start path. A green Windows badge over those three is a stronger false claim than no badge at all.
+The workspace has 401 tests, of which **five** are `#[cfg(unix)]`-gated. A Windows leg added today therefore compiles and runs 396 of them — it is not vacuous, and that is the trap. It would be green. The five it silently omits are `the_first_executable_on_the_path_wins` and `a_directory_without_the_binary_resolves_nothing` in `crates/cli/src/doctor/binary.rs`, and `doctor_passes_a_wired_project_and_fails_naming_a_hook_that_is_not_registered`, `doctor_leaves_a_pending_directive_and_the_projects_own_review_state_alone` and `hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it` in `crates/cli/tests/cli.rs` — which is to say, exactly the coverage of `doctor`'s binary resolution, of its hook probe, and of the hook-start path. A green Windows badge over those five is a stronger false claim than no badge at all.
+
+> **Amended after implementation.** This section originally said `cli.rs` held "roughly 153 test functions" of which "three" were gated, and that a Windows leg would run "about 150". Every one of those figures was wrong: `cli.rs` has 60 tests, the workspace has 401, and the gating covers five tests rather than three — the two in `doctor/binary.rs` were missed, which is unfortunate given they are the most on-the-nose examples the argument has. The argument survives its own arithmetic being wrong, but it was making a quantitative case out of numbers nobody had counted.
 
 `replace-hook-shell-form-with-exec-form` fixes the defects, un-gates the tests, and adds the leg together. Until then this change states Linux and macOS as the covered platforms, and the capability requires that statement to exist so the gap is a written omission rather than a reader's inference.
 
