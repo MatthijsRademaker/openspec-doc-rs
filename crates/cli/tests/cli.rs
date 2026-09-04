@@ -1897,8 +1897,8 @@ fn hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it() {
     )
     .expect("register the session");
 
-    let stopped = claude_stop(&root);
-    assert!(stopped.status.success(), "{}", stderr(&stopped));
+    let stopped = claude_stop_without_capture(&root);
+    assert!(stopped.success(), "hook process exited with {stopped:?}");
 
     // The hook process has exited by now, so anything still serving outlived it.
     let listed = run(&["serve", "url", "--root", &root]);
@@ -1917,8 +1917,7 @@ fn hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it() {
 
     assert!(
         listed.contains("(serving)"),
-        "the started dashboard was not found: {listed}\nhook said: {}",
-        stderr(&stopped)
+        "the started dashboard was not found: {listed}"
     );
     assert!(
         identity.contains(&format!(
@@ -1935,6 +1934,25 @@ fn hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it() {
         killed.status.success(),
         "could not stop the dashboard this test started"
     );
+}
+
+/// Run lifecycle hook without output pipes that a detached server could inherit.
+fn claude_stop_without_capture(root: &str) -> std::process::ExitStatus {
+    let (_, payload, ..) = AGENTS[0];
+    let mut child = binary()
+        .args(["hook", "stop", "--agent", "claude", "--root", root])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn openspec-doc");
+    child
+        .stdin
+        .take()
+        .expect("piped stdin")
+        .write_all(payload.replace("SESSION", SESSION_ID).as_bytes())
+        .expect("write stdin");
+    child.wait().expect("run openspec-doc")
 }
 
 /// Stop a dashboard process using the platform's process utility.
