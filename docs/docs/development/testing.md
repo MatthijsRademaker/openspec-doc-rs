@@ -67,8 +67,13 @@ cheaper than rewriting the only automation this repository had.
 
 Every test builds its own temp project. No test needs a network or a browser.
 
-One exception: `scratch::promote`'s validation tests shell out to `openspec validate` and will fail if
-`openspec` is not on `PATH`.
+One exception: `scratch::promote` runs `openspec validate` as a subprocess, so
+`hook_stop_promotes_the_scratch_note_and_reports_the_validate_outcome` and
+`hook_stop_reports_a_failing_validate_rather_than_hiding_it` fail if `openspec` is not on `PATH`. The
+automated run installs `@fission-ai/openspec` at a pinned version rather than skipping them — those two
+are the only assertions that the promotion path reports a validation outcome at all, and a run that
+quietly omitted them would be the green-line-for-something-unexamined failure the lane exists to remove.
+The first CI run failed on exactly this, on both platforms.
 
 ## Layout
 

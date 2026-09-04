@@ -14,6 +14,7 @@
 - [x] 2.5 Fail the leg if `web/dist` is absent after the download step, rather than letting cargo report a confusing embed error. The artifact is a hard dependency and its absence should say so.
 - [x] 2.6 Cache the cargo registry and the `target` directory per platform. Unlike the frontend lane, this one is not proving a clean build; it is proving the code compiles and passes, so a cache verifies nothing it should not.
 - [x] 2.7 Do not add a Windows leg. `replace-hook-shell-form-with-exec-form` adds it together with the fixes that make it honest.
+- [x] 2.8 Install the `openspec` CLI in the `gates` job, pinned. **Added during implementation** — the first run failed identically on both platforms. `scratch::promote` shells out to `openspec validate`, and `hook_stop_promotes_the_scratch_note_and_reports_the_validate_outcome` and `hook_stop_reports_a_failing_validate_rather_than_hiding_it` assert on what it reported, so the suite's two non-hermetic tests fail on a runner that has no `openspec`. Gating them out instead would be exactly the green-run-that-omitted-the-tests failure this change argues against, so the prerequisite gets installed. The design does not mention this and should when it is next touched.
 
 ## 3. Pin the toolchain
 

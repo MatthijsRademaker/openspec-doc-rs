@@ -92,6 +92,15 @@ jobs:
       - run: bun install --frozen-lockfile
         working-directory: web
 
+      # `scratch::promote` runs `openspec validate` as a subprocess, and two
+      # `hook stop` tests assert on what it reported. They are the suite's only
+      # non-hermetic tests, so without this the run fails on both platforms.
+      # Skipping them instead would be the green-run-that-omitted-the-tests
+      # failure this lane exists to remove. Pinned, because their assertions
+      # read its output.
+      - name: Install the openspec CLI the promotion tests shell out to
+        run: bun add --global @fission-ai/openspec@1.3.1
+
       - run: make check
 
       - run: make test

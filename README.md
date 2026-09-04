@@ -103,7 +103,7 @@ make build                                             # web/dist if absent, the
 make test                                              # cargo test --workspace, 401 tests
 make check                                             # clippy, rustfmt, the frontend gate, the docs build
 make frontend                                          # force a web/dist rebuild after editing web/src
-cargo test -p openspec-doc-core -p openspec-doc-cli    # 338 of them, hermetic
+cargo test -p openspec-doc-core -p openspec-doc-cli    # 338 of them; needs `openspec` on PATH for two
 ```
 
 The Rust toolchain is pinned in `rust-toolchain.toml`, so rustup uses that version rather than the
