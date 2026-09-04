@@ -4,7 +4,13 @@
       {
         "hooks": [
           {
-            "command": "openspec-doc hook stop --agent claude",
+            "args": [
+              "hook",
+              "stop",
+              "--agent",
+              "claude"
+            ],
+            "command": "openspec-doc",
             "statusMessage": "Checking openspec-doc review feedback",
             "timeout": 30,
             "type": "command"
@@ -16,7 +22,13 @@
       {
         "hooks": [
           {
-            "command": "openspec-doc hook explore --agent claude",
+            "args": [
+              "hook",
+              "explore",
+              "--agent",
+              "claude"
+            ],
+            "command": "openspec-doc",
             "statusMessage": "Opening the openspec-doc exploration note",
             "timeout": 30,
             "type": "command"
@@ -29,7 +41,13 @@
       {
         "hooks": [
           {
-            "command": "openspec-doc hook prompt --agent claude",
+            "args": [
+              "hook",
+              "prompt",
+              "--agent",
+              "claude"
+            ],
+            "command": "openspec-doc",
             "statusMessage": "Checking openspec-doc review feedback",
             "timeout": 30,
             "type": "command"

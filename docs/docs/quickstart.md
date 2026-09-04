@@ -17,6 +17,9 @@ openspec-doc --version
 
 `make build` needs Bun 1.3.2 (`web/.bun-version`); everything after it is plain cargo.
 
+Claude Code hook registration requires version 2.1.139 or newer because `init` writes exec-form argument
+vectors.
+
 `~/.cargo/bin` needs to be on your `PATH`. Re-run with `--force` after pulling changes.
 
 You also need the `openspec` CLI on `PATH` — promotion runs `openspec validate` against the change it
@@ -68,8 +71,8 @@ command bypasses.
 ### Wiring it by hand instead
 
 `.claude/settings.json` at the project root. This is the same JSON `init` writes, and it is
-team-owned — the command strings hold nothing machine-specific, so there is nothing here to keep out of
-version control:
+team-owned — the executable and argument vectors hold nothing machine-specific, so there is nothing here
+to keep out of version control:
 
 ```json
 {
@@ -79,7 +82,8 @@ version control:
         "hooks": [
           {
             "type": "command",
-            "command": "openspec-doc hook stop --agent claude",
+            "args": ["hook", "stop", "--agent", "claude"],
+            "command": "openspec-doc",
             "timeout": 30,
             "statusMessage": "Checking openspec-doc review feedback"
           }
@@ -91,7 +95,8 @@ version control:
         "hooks": [
           {
             "type": "command",
-            "command": "openspec-doc hook prompt --agent claude",
+            "args": ["hook", "prompt", "--agent", "claude"],
+            "command": "openspec-doc",
             "timeout": 30,
             "statusMessage": "Checking openspec-doc review feedback"
           }
@@ -104,7 +109,8 @@ version control:
         "hooks": [
           {
             "type": "command",
-            "command": "openspec-doc hook explore --agent claude",
+            "args": ["hook", "explore", "--agent", "claude"],
+            "command": "openspec-doc",
             "timeout": 30,
             "statusMessage": "Opening the openspec-doc exploration note"
           }

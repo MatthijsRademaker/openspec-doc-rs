@@ -7,6 +7,7 @@
 //! would rewrite.
 
 use serde_json::{Map, Value, json};
+use std::path::Path;
 
 /// A Claude Code hook registration: which event fires it, what it runs, and what
 /// the session shows while it runs.
@@ -16,7 +17,10 @@ pub struct Entry {
     pub event: &'static str,
     /// The `command_name` pattern, for the events that dispatch on one.
     pub matcher: Option<&'static str>,
+    /// The executable Claude Code spawns directly.
     pub command: &'static str,
+    /// The arguments Claude Code passes to the executable.
+    pub args: &'static [&'static str],
     pub timeout: u64,
     pub status_message: &'static str,
 }
@@ -26,14 +30,16 @@ pub const ENTRIES: [Entry; 3] = [
     Entry {
         event: "Stop",
         matcher: None,
-        command: "openspec-doc hook stop --agent claude",
+        command: "openspec-doc",
+        args: &["hook", "stop", "--agent", "claude"],
         timeout: 30,
         status_message: "Checking openspec-doc review feedback",
     },
     Entry {
         event: "UserPromptSubmit",
         matcher: None,
-        command: "openspec-doc hook prompt --agent claude",
+        command: "openspec-doc",
+        args: &["hook", "prompt", "--agent", "claude"],
         timeout: 30,
         status_message: "Checking openspec-doc review feedback",
     },
@@ -43,26 +49,44 @@ pub const ENTRIES: [Entry; 3] = [
         // silently.
         event: "UserPromptExpansion",
         matcher: Some("opsx:explore|openspec-explore"),
-        command: "openspec-doc hook explore --agent claude",
+        command: "openspec-doc",
+        args: &["hook", "explore", "--agent", "claude"],
         timeout: 30,
         status_message: "Opening the openspec-doc exploration note",
     },
 ];
 
-/// What makes a hook entry already in someone's settings file ours.
+/// Whether a settings entry invokes this tool's hook bridge.
 ///
-/// Substring rather than prefix, so `OPENSPEC_DOC_BIN=… openspec-doc hook stop`
-/// and an absolute-path invocation are recognised and replaced rather than
-/// duplicated beside a fresh entry. An entry written by an older version matches
-/// the same way, which is the upgrade case for free.
-pub const COMMAND_MARKER: &str = "openspec-doc hook ";
+/// Current entries are structural: the executable's file stem is ours and the
+/// first argument is `hook`. An entry without `args` is the old shell form; it
+/// is recognised only so `init` can replace it. The first shell word must be
+/// the executable, so an environment assignment is deliberately not recognised.
+pub fn is_ours(entry: &Value) -> bool {
+    let Some(command) = entry.get("command").and_then(Value::as_str) else {
+        return false;
+    };
+    match entry.get("args") {
+        Some(args) => {
+            our_executable(command)
+                && args
+                    .as_array()
+                    .and_then(|args| args.first())
+                    .and_then(Value::as_str)
+                    .is_some_and(|argument| argument == "hook")
+        }
+        None => {
+            let mut words = command.split_whitespace();
+            words.next().is_some_and(our_executable) && words.next() == Some("hook")
+        }
+    }
+}
 
-/// Whether `command` is an invocation of this tool's hook bridge.
-pub fn is_ours(command: &Value) -> bool {
-    command
-        .get("command")
-        .and_then(Value::as_str)
-        .is_some_and(|command| command.contains(COMMAND_MARKER))
+fn our_executable(command: &str) -> bool {
+    Path::new(command)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .is_some_and(|stem| stem == "openspec-doc")
 }
 
 /// `settings` with every one of our hook entries registered exactly once, and
@@ -128,6 +152,7 @@ fn group(entry: &Entry) -> Value {
         json!([{
             "type": "command",
             "command": entry.command,
+            "args": entry.args,
             "timeout": entry.timeout,
             "statusMessage": entry.status_message,
         }]),
@@ -182,14 +207,18 @@ mod tests {
         );
         assert_eq!(
             commands(&settings, "Stop"),
-            vec!["make lint", "openspec-doc hook stop --agent claude"]
+            vec!["make lint", "openspec-doc"]
+        );
+        assert_eq!(
+            settings["hooks"]["Stop"][1]["hooks"][0]["args"],
+            json!(["hook", "stop", "--agent", "claude"])
         );
     }
 
     #[test]
-    fn replaces_an_entry_that_is_ours_however_it_was_invoked() {
+    fn replaces_legacy_entries_that_are_ours() {
         for command in [
-            "OPENSPEC_DOC_BIN=/tmp/b openspec-doc hook stop --agent claude",
+            "openspec-doc hook stop --agent claude",
             "/tmp/target/debug/openspec-doc hook stop --agent claude",
         ] {
             let existing = json!({
@@ -200,7 +229,7 @@ mod tests {
 
             assert_eq!(
                 commands(&settings, "Stop"),
-                vec!["openspec-doc hook stop --agent claude"],
+                vec!["openspec-doc"],
                 "{command} was not recognised as ours"
             );
         }

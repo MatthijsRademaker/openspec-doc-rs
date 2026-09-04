@@ -4,11 +4,10 @@
 //! come from [`wiring`], the module `init` writes the file from, so the two
 //! commands cannot disagree about what a wired project contains.
 //!
-//! What comes back is the command string exactly as it stands. A developer
-//! pointing an entry at a local build — `OPENSPEC_DOC_BIN=… openspec-doc hook
-//! stop --agent claude`, or an absolute path into `target/debug` — is running
-//! that string, and probing the canonical one would check a binary the agent
-//! never invokes.
+//! What comes back is the executable and arguments exactly as they stand. A
+//! developer pointing an entry at a local build by absolute path is running
+//! that executable, and probing the canonical one would check a binary the
+//! agent never invokes.
 
 use std::fs;
 use std::io;
@@ -43,18 +42,54 @@ pub fn read(root: &Path) -> Result<Value, Error> {
     serde_json::from_str(&contents).map_err(|source| Error::Settings { path, source })
 }
 
-/// The command registered under `event` that is ours, exactly as recorded.
-pub fn command<'a>(settings: &'a Value, event: &str) -> Option<&'a str> {
-    settings
+/// How a hook is recorded, exactly as it appears in settings.
+#[derive(Debug, Eq, PartialEq)]
+pub enum RecordedCommand<'a> {
+    Exec {
+        executable: &'a str,
+        args: Vec<&'a str>,
+    },
+    /// An entry written by an older version. It is returned so the probe can
+    /// report the required `init` fix instead of pretending it is unregistered.
+    Shell { command: &'a str },
+    Invalid {
+        executable: &'a str,
+        reason: &'static str,
+    },
+}
+
+/// The command registered under `event`, exactly as recorded.
+pub fn command<'a>(settings: &'a Value, event: &str) -> Option<RecordedCommand<'a>> {
+    let entry = settings
         .get("hooks")?
         .get(event)?
         .as_array()?
         .iter()
         .filter_map(|group| group.get("hooks")?.as_array())
         .flatten()
-        .find(|command| wiring::is_ours(command))?
-        .get("command")?
-        .as_str()
+        .find(|entry| wiring::is_ours(entry))?;
+    let executable = entry.get("command")?.as_str()?;
+
+    match entry.get("args") {
+        None => Some(RecordedCommand::Shell {
+            command: executable,
+        }),
+        Some(args) => {
+            let Some(args) = args.as_array() else {
+                return Some(RecordedCommand::Invalid {
+                    executable,
+                    reason: "its `args` field is not an array",
+                });
+            };
+            let Some(args) = args.iter().map(Value::as_str).collect() else {
+                return Some(RecordedCommand::Invalid {
+                    executable,
+                    reason: "its `args` field contains a non-string value",
+                });
+            };
+            Some(RecordedCommand::Exec { executable, args })
+        }
+    }
 }
 
 #[cfg(test)]
@@ -73,22 +108,40 @@ mod tests {
         temp
     }
 
-    /// The recorded string is what the agent runs, so it is what comes back —
-    /// however the operator spelled the binary.
+    /// The recorded executable and arguments come back verbatim, however the
+    /// operator spelled the binary.
     #[test]
     fn a_locally_built_binary_is_returned_verbatim() {
-        for recorded in [
-            "OPENSPEC_DOC_BIN=/tmp/b openspec-doc hook stop --agent claude",
-            "/tmp/target/debug/openspec-doc hook stop --agent claude",
-        ] {
+        for recorded in ["openspec-doc", "/tmp/target/debug/openspec-doc"] {
             let temp = root_with_settings(&format!(
-                r#"{{"hooks": {{"Stop": [{{"hooks": [{{"type": "command", "command": "{recorded}"}}]}}]}}}}"#
+                r#"{{"hooks": {{"Stop": [{{"hooks": [{{"type": "command", "command": "{recorded}", "args": ["hook", "stop", "--agent", "claude"]}}]}}]}}}}"#
             ));
 
             let settings = read(temp.path()).expect("read");
 
-            assert_eq!(command(&settings, "Stop"), Some(recorded));
+            assert_eq!(
+                command(&settings, "Stop"),
+                Some(RecordedCommand::Exec {
+                    executable: recorded,
+                    args: vec!["hook", "stop", "--agent", "claude"],
+                })
+            );
         }
+    }
+
+    #[test]
+    fn a_legacy_shell_entry_is_returned_for_the_probe_to_reject() {
+        let recorded = "openspec-doc hook stop --agent claude";
+        let temp = root_with_settings(&format!(
+            r#"{{"hooks": {{"Stop": [{{"hooks": [{{"type": "command", "command": "{recorded}"}}]}}]}}}}"#
+        ));
+
+        let settings = read(temp.path()).expect("read");
+
+        assert_eq!(
+            command(&settings, "Stop"),
+            Some(RecordedCommand::Shell { command: recorded })
+        );
     }
 
     #[test]
@@ -100,7 +153,13 @@ mod tests {
         let settings = read(temp.path()).expect("read");
 
         for entry in wiring::ENTRIES {
-            assert_eq!(command(&settings, entry.event), Some(entry.command));
+            assert_eq!(
+                command(&settings, entry.event),
+                Some(RecordedCommand::Exec {
+                    executable: entry.command,
+                    args: entry.args.to_vec(),
+                })
+            );
         }
     }
 
