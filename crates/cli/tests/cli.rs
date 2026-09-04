@@ -1897,8 +1897,8 @@ fn hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it() {
     )
     .expect("register the session");
 
-    let stopped = claude_stop_without_capture(&root);
-    assert!(stopped.success(), "hook process exited with {stopped:?}");
+    let stopped = claude_stop(&root);
+    assert!(stopped.status.success(), "{}", stderr(&stopped));
 
     // The hook process has exited by now, so anything still serving outlived it.
     let listed = run(&["serve", "url", "--root", &root]);
@@ -1907,23 +1907,26 @@ fn hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it() {
         panic!("no URL printed: {listed}");
     };
     let identity = identity_of(&url);
-    let pid: i32 = between(&identity, "\"pid\":", "}")
-        .trim()
-        .parse()
-        .unwrap_or_else(|error| panic!("{error} in {identity}"));
+    let identity: serde_json::Value =
+        serde_json::from_str(&identity).expect("parse dashboard identity");
+    let pid = identity["pid"].as_i64().expect("dashboard identity pid") as i32;
+    let expected_root = fixture
+        .path()
+        .canonicalize()
+        .expect("canonicalize fixture")
+        .display()
+        .to_string();
 
     // Killed before any assertion can fail and leak it.
     let killed = stop_dashboard(pid);
 
     assert!(
         listed.contains("(serving)"),
-        "the started dashboard was not found: {listed}"
+        "the started dashboard was not found: {listed}\nhook said: {}",
+        stderr(&stopped)
     );
     assert!(
-        identity.contains(&format!(
-            "\"root\":\"{}\"",
-            fixture.path().canonicalize().unwrap().display()
-        )),
+        identity["root"].as_str() == Some(expected_root.as_str()),
         "the dashboard serves someone else: {identity}"
     );
     assert!(
@@ -1934,25 +1937,6 @@ fn hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it() {
         killed.status.success(),
         "could not stop the dashboard this test started"
     );
-}
-
-/// Run lifecycle hook without output pipes that a detached server could inherit.
-fn claude_stop_without_capture(root: &str) -> std::process::ExitStatus {
-    let (_, payload, ..) = AGENTS[0];
-    let mut child = binary()
-        .args(["hook", "stop", "--agent", "claude", "--root", root])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn openspec-doc");
-    child
-        .stdin
-        .take()
-        .expect("piped stdin")
-        .write_all(payload.replace("SESSION", SESSION_ID).as_bytes())
-        .expect("write stdin");
-    child.wait().expect("run openspec-doc")
 }
 
 /// Stop a dashboard process using the platform's process utility.
