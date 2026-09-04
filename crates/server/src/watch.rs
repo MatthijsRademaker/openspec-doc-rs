@@ -435,6 +435,18 @@ mod tests {
         let hub = Hub::default();
         let mut updates = hub.subscribe(&target_for(&root));
 
+        // The fixture wrote into the watched directory, and that write's event
+        // can arrive after the subscription that followed it — FSEvents streams
+        // start from "now" only approximately. Wait for the fixture's own noise
+        // to go quiet before reading, or this asserts a negative against an
+        // event it caused itself and fails on a loaded machine for a reason
+        // that has nothing to do with reading. Draining rather than sleeping
+        // keeps the condition the absence of events, not the passage of time.
+        while tokio::time::timeout(Duration::from_secs(1), updates.recv())
+            .await
+            .is_ok()
+        {}
+
         fs::read_to_string(&file).expect("read file");
         fs::read_dir(&root).expect("read dir").count();
 

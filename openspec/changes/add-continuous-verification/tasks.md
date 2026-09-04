@@ -37,3 +37,7 @@
 - [ ] 5.3 Confirm the `gates` job fails, rather than silently compiling, when the `frontend` job's artifact is unavailable.
 - [ ] 5.4 Confirm on a run that both platform legs used the same artifact — the run's single `frontend` job — rather than each having produced one.
 - [ ] 5.5 Confirm total wall-clock time for the lane is acceptable on a pull request. If it is not, the answer is caching or a smaller matrix, not dropping `make`.
+
+## 6. What the lane found on its first runs
+
+- [x] 6.1 Fix `watch::tests::reading_a_watched_file_is_not_an_update`, which failed on `macos-latest` and passed on `ubuntu-latest` on the lane's second run. **Found by the lane, not by a person.** The fixture writes into the watched directory and then subscribes, so it asserts a negative against an event it caused itself; FSEvents starts a stream from "now" only approximately, and on a loaded runner that write's event lands after the subscription. It passes locally on macOS every time, in isolation and under the full suite. The test now drains the fixture's own events before reading. This is a pre-existing defect in code this change does not own, carried here because the change's stated premise is that the macOS leg is green on arrival — a lane that is red on its first run teaches everyone to ignore it.
