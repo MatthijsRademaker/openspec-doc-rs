@@ -458,11 +458,11 @@ mod tests {
     /// Answer identity probes with `root` until the test is done.
     fn identity_server(root: &Path) -> u16 {
         let (listener, port) = listener();
-        let body = format!(
-            "{{\"root\":\"{}\",\"pid\":{}}}",
-            root.display(),
-            std::process::id()
-        );
+        let body = serde_json::json!({
+            "root": root.display().to_string(),
+            "pid": std::process::id(),
+        })
+        .to_string();
         std::thread::spawn(move || {
             for connection in listener.incoming() {
                 let Ok(mut stream) = connection else { break };
