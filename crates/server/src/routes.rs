@@ -1387,9 +1387,21 @@ mod tests {
             )
             .await
             .expect("write");
-        // The subscription is taken when the handler runs, and an update written
-        // before it exists reaches nobody.
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        // The subscription is taken when the handler runs, so an update written
+        // before it exists reaches nobody — but the fixture's three comments
+        // are real writes under the watcher, and FSEvents starts a stream from
+        // "now" only approximately, so on a loaded machine one of them can be
+        // delivered after the subscription it preceded. Read the stream until
+        // it goes quiet and discard what arrives, so the count below is of the
+        // submission and not of the fixture. Waiting for quiet rather than
+        // sleeping a fixed span is what makes this hold on a slow runner: this
+        // failed on macos-latest and passed on ubuntu-latest, and never
+        // reproduced on a developer's macOS machine.
+        let mut buffer = [0_u8; 1024];
+        while tokio::time::timeout(Duration::from_secs(1), stream.read(&mut buffer))
+            .await
+            .is_ok()
+        {}
 
         let outcome = post_json(
             address,
@@ -1401,7 +1413,6 @@ mod tests {
         assert_eq!(outcome["resolved"], 3);
 
         let mut response = String::new();
-        let mut buffer = [0_u8; 1024];
         let arrived = tokio::time::timeout(Duration::from_secs(10), async {
             while !response.contains("data: ") {
                 let read = stream.read(&mut buffer).await.expect("read");
