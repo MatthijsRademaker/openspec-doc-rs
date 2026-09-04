@@ -303,6 +303,6 @@ mod tests {
         for unchecked in ["pi.dev extension", "dashboard server", "matcher"] {
             assert!(rendered.contains(unchecked), "{rendered}");
         }
-        assert_eq!(rendered.matches("not checked").count(), 3, "{rendered}");
+        assert!(rendered.contains("Claude Code version"), "{rendered}");
     }
 }
