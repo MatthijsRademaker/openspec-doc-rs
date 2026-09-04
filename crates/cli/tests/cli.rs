@@ -1586,14 +1586,17 @@ fn init_plans_then_performs_then_leaves_the_project_alone() {
     assert!(
         written.contains(&format!(
             "created   {}",
-            Path::new(".claude/settings.json").display()
+            Path::new(".claude").join("settings.json").display()
         )),
         "{written}"
     );
     assert!(
         written.contains(&format!(
             "created   {}",
-            Path::new(".pi/extensions/openspec-doc-hook.ts").display()
+            Path::new(".pi")
+                .join("extensions")
+                .join("openspec-doc-hook.ts")
+                .display()
         )),
         "{written}"
     );
@@ -1878,7 +1881,6 @@ fn subcommand_help_does_not_execute_the_subcommand() {
 /// It kills what it started using the pid that dashboard reports about itself,
 /// which is the same fact `serve list` will be built on.
 #[test]
-#[cfg_attr(windows, ignore = "diagnostic isolation")]
 fn hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it() {
     let fixture = project_fixture(&[]);
     // This one test needs the start to actually happen.
