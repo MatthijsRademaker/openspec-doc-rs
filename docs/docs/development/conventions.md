@@ -17,6 +17,35 @@ exactly what browser interaction recorded.
 It is also what keeps two agents supportable. Decision logic lives in `core`; the agent-specific parts are
 a thin adapter that translates wire formats and nothing else.
 
+## The Rust toolchain
+
+Pinned to an exact version in `rust-toolchain.toml` at the repository root, with `rustfmt` and `clippy`,
+rather than left on the `stable` channel.
+
+On `stable` the gates change meaning roughly every six weeks with no commit to attribute the change to,
+and the usual symptom is a new clippy lint failing `--all-targets` on code nobody touched — arriving on
+an unrelated pull request. The pin does not prevent that failure. It turns it into a one-line commit here
+that says what it is.
+
+**Nothing bumps it.** Bumping is a deliberate commit, and the gates run against the new version as part
+of that commit — which is the point, and also the cost: an old pin stays old until someone decides
+otherwise. That is a candidate for whatever automation eventually opens the release pull request.
+
+## The gates
+
+`make check` and `make test` are the entry points, and `.github/workflows/rust.yml` invokes those same
+two targets rather than the `cargo` lines inside them. That is deliberate and it is not about
+convenience: two copies of the command list drift, and they drift asymmetrically. CI being the stricter
+copy is annoying and self-correcting; the Makefile being the stricter copy leaves CI green for a surface
+nobody is checking, which is silent and permanent.
+
+The cost is accepted rather than denied: a target that bundles several commands reports the first failure
+and stops, so a run tells you about `fmt` or about `clippy`, never both. Three separate steps would
+diagnose better. They would also be the second definition.
+
+[Testing](/development/testing.md#what-the-automated-run-covers) records which platforms the automated
+run covers and which it does not.
+
 ## The frontend
 
 ```text
@@ -35,7 +64,9 @@ then the embedding binary, plus an install script), so user machines will need n
 
 **CI proves a clean checkout builds and embeds** — `.github/workflows/frontend-assets.yml` does
 `bun install --frozen-lockfile && bun run build` from a clean checkout, then drives the embedded app in
-Chromium.
+Chromium. It is deliberately uncached, since a cached build would verify the cache rather than the
+source. It stays a separate workflow from the Rust lane for a narrower reason than that: it works, and
+sharing a job to save one Bun install is a rewrite of something that is not broken.
 
 Two things keep that lane honest, and both are load-bearing:
 
