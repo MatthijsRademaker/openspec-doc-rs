@@ -72,9 +72,9 @@ fn usage_exit(error: &clap::Error) -> ExitCode {
     let _ = error.print();
 
     match error.kind() {
-        clap::error::ErrorKind::DisplayHelp
-        | clap::error::ErrorKind::DisplayVersion
-        | clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => ExitCode::SUCCESS,
+        clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
+            ExitCode::SUCCESS
+        }
         _ if prompt_hook_intended() => ExitCode::SUCCESS,
         _ => ExitCode::from(2),
     }

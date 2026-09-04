@@ -13,11 +13,11 @@ Looking to *use* the tool rather than test it? That is the [Quickstart](/quickst
 cargo test -p openspec-doc-core -p openspec-doc-cli
 ```
 
-157 tests. They cover the whole server side of the review loop — including that a new comment pushes an SSE
+346 tests. They cover the whole server side of the review loop — including that a new comment pushes an SSE
 event and that the review fragment reflects it. `openspec` must be on `PATH`; `scratch::promote`'s
 validation tests shell out to it.
 
-`cargo test --workspace` adds the 33 server tests for 190 in total. All pass — the three `watch.rs` failures
+`cargo test --workspace` adds the 63 server tests for 409 in total. All pass — the three `watch.rs` failures
 this document used to warn about are gone, unexplained; see [Testing](/development/testing.md).
 
 What automated tests **cannot** cover is the reason this document exists, and it is more than the browser:

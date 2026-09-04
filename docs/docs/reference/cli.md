@@ -277,8 +277,9 @@ openspec-doc doctor
 
 What it does, and why each part is the way it is:
 
-- **It executes the command string recorded in the settings file**, verbatim, through `sh -c`. Not the
-  canonical one: an entry pointing at a local build is what the agent runs, so that is what gets probed.
+- **It executes the executable and arguments recorded in the settings file**, directly without a shell. Not
+  the canonical definition: an entry pointing at a local build is what the agent runs, so that is what gets
+  probed.
 - **Every probe runs against a throwaway project** in a temporary directory, never this one. `hook stop`
   consumes a pending directive, so a probe against the real project would eat the reviewer's outstanding
   feedback — `doctor` would cause the failure it exists to diagnose. An entry whose command names its own

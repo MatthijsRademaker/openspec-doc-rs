@@ -39,6 +39,9 @@ openspec-doc serve url      # this project's dashboard URL, and whether one is s
 
 The `openspec` CLI must also be on `PATH` — promotion runs `openspec validate`.
 
+Claude Code hook registration requires version 2.1.139 or newer because `init` writes exec-form argument
+vectors rather than shell-form command strings.
+
 Once the hooks are wired, `serve` is not something you run: the turn-end hook brings a dashboard up at
 the first turn boundary of a session that has something to review, and keeps it up at every later one.
 
@@ -100,20 +103,19 @@ these needs Bun to have been run by hand on a fresh clone.
 
 ```bash
 make build                                             # web/dist if absent, then the binary
-make test                                              # cargo test --workspace, 401 tests
+make test                                              # cargo test --workspace, 409 tests
 make check                                             # clippy, rustfmt, the frontend gate, the docs build
 make frontend                                          # force a web/dist rebuild after editing web/src
-cargo test -p openspec-doc-core -p openspec-doc-cli    # 338 of them; needs `openspec` on PATH for two
+cargo test -p openspec-doc-core -p openspec-doc-cli    # 346 of them; needs `openspec` on PATH for two
 ```
 
 The Rust toolchain is pinned in `rust-toolchain.toml`, so rustup uses that version rather than the
 machine's default channel.
 
 `make check` and `make test` also run automatically on every push to `main` and every pull request,
-on **Linux and macOS**, via `.github/workflows/rust.yml`. Windows is not covered, deliberately: five
-`doctor` and hook-start tests are `#[cfg(unix)]`-gated, so a Windows run would pass while omitting
-exactly the coverage of the code that is broken there. See
-[testing](docs/docs/development/testing.md#what-the-automated-run-covers) for the named tests.
+on **Linux, macOS, and Windows**, via `.github/workflows/rust.yml`. The fixtures are portable and the
+full suite runs on each leg. See
+[testing](docs/docs/development/testing.md#what-the-automated-run-covers) for coverage details.
 
 ## Dashboard frontend development
 
