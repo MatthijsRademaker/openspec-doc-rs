@@ -1944,12 +1944,7 @@ fn stop_dashboard(pid: i32) -> Output {
     #[cfg(windows)]
     let mut command = Command::new("taskkill");
     #[cfg(windows)]
-    let args = [
-        "/PID".to_owned(),
-        pid.to_string(),
-        "/T".to_owned(),
-        "/F".to_owned(),
-    ];
+    let args = ["/PID".to_owned(), pid.to_string(), "/F".to_owned()];
 
     command.args(args).output().expect("stop the dashboard")
 }
