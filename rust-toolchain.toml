@@ -1,0 +1,14 @@
+# Pinned to an exact version rather than the `stable` channel. On `stable` the
+# gates change meaning roughly every six weeks with no commit to attribute the
+# change to, and the usual symptom is a new clippy lint failing
+# `--all-targets` on code nobody touched — arriving on an unrelated pull
+# request. Pinning does not prevent that failure; it moves it into a one-line
+# commit here that says what it is.
+#
+# Nothing bumps this automatically. Bumping it is a deliberate commit, and the
+# gates run against the new version as part of it.
+#
+# The workspace declares edition 2024, which needs 1.85 or later.
+[toolchain]
+channel = "1.96.0"
+components = ["rustfmt", "clippy"]
