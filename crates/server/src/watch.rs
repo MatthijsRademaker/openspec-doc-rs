@@ -301,6 +301,21 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    /// A temporary directory and the canonical form of its path.
+    ///
+    /// `classify` compares paths by literal prefix, and macOS resolves the
+    /// system temp directory under `/var/folders/…` while reporting filesystem
+    /// events at `/private/var/…` — so a test that hands the watcher the
+    /// symlinked path has every event discarded as outside the scope. Tests
+    /// build their paths by joining onto the canonical root, rather than
+    /// canonicalizing each subpath, because a scope's sidecar directory is
+    /// legitimately absent until its first record is written.
+    fn temp_root() -> (TempDir, PathBuf) {
+        let dir = TempDir::new().expect("temp dir");
+        let root = dir.path().canonicalize().expect("canonicalize temp dir");
+        (dir, root)
+    }
+
     fn target_for(dir: &Path) -> Target {
         Target {
             watched_dirs: vec![dir.to_owned()],
@@ -398,17 +413,13 @@ mod tests {
         task.abort();
     }
 
-    // macOS follow-up (2026-08-07): `notify::RecommendedWatcher` initializes but
-    // can deliver no write event for these temporary directories. If this times
-    // out on macOS while polling passes, rerun on Linux/CI before changing
-    // watcher code; reproduce there before treating it as a product regression.
     #[tokio::test]
     async fn a_write_under_the_watched_path_is_one_update() {
-        let dir = TempDir::new().expect("temp dir");
+        let (_dir, root) = temp_root();
         let hub = Hub::default();
-        let mut updates = hub.subscribe(&target_for(dir.path()));
+        let mut updates = hub.subscribe(&target_for(&root));
 
-        fs::write(dir.path().join("a.md"), "one").expect("write file");
+        fs::write(root.join("a.md"), "one").expect("write file");
 
         let update = tokio::time::timeout(Duration::from_secs(10), updates.recv()).await;
         assert!(update.is_ok(), "the written file was never reported");
@@ -418,14 +429,14 @@ mod tests {
     /// change would leave every open page reloading itself in a loop.
     #[tokio::test]
     async fn reading_a_watched_file_is_not_an_update() {
-        let dir = TempDir::new().expect("temp dir");
-        let file = dir.path().join("a.md");
+        let (_dir, root) = temp_root();
+        let file = root.join("a.md");
         fs::write(&file, "one").expect("write file");
         let hub = Hub::default();
-        let mut updates = hub.subscribe(&target_for(dir.path()));
+        let mut updates = hub.subscribe(&target_for(&root));
 
         fs::read_to_string(&file).expect("read file");
-        fs::read_dir(dir.path()).expect("read dir").count();
+        fs::read_dir(&root).expect("read dir").count();
 
         let update = tokio::time::timeout(Duration::from_secs(2), updates.recv()).await;
         assert!(update.is_err(), "reading was reported as a change");
@@ -435,12 +446,12 @@ mod tests {
     /// the watcher backend is unavailable.
     #[tokio::test]
     async fn polling_reports_a_change_under_the_watched_path() {
-        let dir = TempDir::new().expect("temp dir");
-        fs::write(dir.path().join("a.md"), "one").expect("write file");
+        let (_dir, root) = temp_root();
+        fs::write(root.join("a.md"), "one").expect("write file");
         let (updates, mut receiver) = broadcast::channel(UPDATE_CAPACITY);
 
-        let polling = spawn_polling(target_for(dir.path()), updates);
-        fs::write(dir.path().join("a.md"), "one changed").expect("rewrite file");
+        let polling = spawn_polling(target_for(&root), updates);
+        fs::write(root.join("a.md"), "one changed").expect("rewrite file");
 
         let update = tokio::time::timeout(Duration::from_secs(10), receiver.recv()).await;
         polling.abort();
@@ -450,15 +461,11 @@ mod tests {
 
     /// A scope spans separate trees — a change's directory and the sidecars its
     /// comments live in — and a write in either one is that scope's update.
-    // macOS follow-up (2026-08-07): `notify::RecommendedWatcher` initializes but
-    // can deliver no write event for these temporary directories. If this times
-    // out on macOS while polling passes, rerun on Linux/CI before changing
-    // watcher code; reproduce there before treating it as a product regression.
     #[tokio::test]
     async fn a_write_in_any_watched_tree_is_an_update() {
-        let dir = TempDir::new().expect("temp dir");
-        let change = dir.path().join("change");
-        let sidecars = dir.path().join("sidecars");
+        let (_dir, root) = temp_root();
+        let change = root.join("change");
+        let sidecars = root.join("sidecars");
         fs::create_dir_all(&change).expect("create change dir");
         let hub = Hub::default();
 
@@ -479,14 +486,10 @@ mod tests {
     /// The comment and verdict sidecars only exist once a reviewer writes one,
     /// so a scope whose sidecar directory is still absent must not fall back to
     /// polling for want of a directory to watch.
-    // macOS follow-up (2026-08-07): `notify::RecommendedWatcher` initializes but
-    // can deliver no write event for these temporary directories. If this times
-    // out on macOS while polling passes, rerun on Linux/CI before changing
-    // watcher code; reproduce there before treating it as a product regression.
     #[tokio::test]
     async fn a_sidecar_directory_that_does_not_exist_yet_is_still_watched() {
-        let dir = TempDir::new().expect("temp dir");
-        let sidecars = dir.path().join("comments/_session");
+        let (_dir, root) = temp_root();
+        let sidecars = root.join("comments/_session");
         let hub = Hub::default();
 
         let mut updates = hub.subscribe(&Target {

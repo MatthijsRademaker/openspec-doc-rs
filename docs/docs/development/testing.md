@@ -16,14 +16,20 @@ cargo fmt --all --check
 
 All 190 pass.
 
-:::note The three `watch.rs` failures are gone, and nobody knows why
-This table previously recorded three failing filesystem-watcher tests, described as pre-existing and
-probably timing or platform sensitivity. They pass now — checked repeatedly on a clean tree.
+:::note The three `watch.rs` failures were a symlinked temp directory
+This table recorded three failing filesystem-watcher tests for weeks, first as timing or platform
+sensitivity, then as having vanished unexplained. Both readings were wrong, and the second was wrong
+because the tests fail only where `TMPDIR` points through a symlink — which is the macOS default and
+not a Linux one.
 
-Nothing was done to fix them, so treat this as unexplained rather than resolved. The most likely reading is
-that they were always environmental, which would mean the "pre-existing, not caused by recent work" note
-was doing real harm: it stood for weeks as a known defect and discouraged anyone from looking. If they
-return, that is a timing bug worth chasing, not a familiar nuisance.
+`std::env::temp_dir()` resolves under `/var/folders/…`, `/var` is a symlink to `/private/var`, FSEvents
+reports the canonical path, and `classify` compares with `path.starts_with` — a literal prefix match that
+resolves nothing. Every event was discarded as outside the scope. The tests now canonicalize their
+temporary root before handing it to a `Target`, and pass on either platform with nothing configured.
+
+The product was never exposed: `crates/cli/src/serve.rs` canonicalizes the project root before any
+`Target` is built. The lesson is the one the note itself is evidence for — an annotation deferring a
+diagnosis to a lane that does not run costs more than the bug.
 :::
 
 ## Hermetic by default

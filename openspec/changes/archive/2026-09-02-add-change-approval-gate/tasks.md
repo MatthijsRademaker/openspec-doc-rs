@@ -54,7 +54,7 @@
 - [x] 7.3 Tick a task in `tasks.md`; confirm the state stays approved
 - [x] 7.4 Run the precheck subcommand in each state and confirm the exit codes
 - [x] 7.5 On a change with both `open` and `addressed` comments, confirm the plain approve control is absent, submit resolve-all-and-approve, and confirm every thread reads resolved and the change reads approved in a second open tab without reloading
-- [ ] 7.6 Run a real session implementing an unapproved change and confirm the directive arrives at turn end on both Claude Code and pi.dev
+- [x] 7.6 Run a real session implementing an unapproved change and confirm the directive arrives at turn end on both Claude Code and pi.dev
 
 ## 8. Text this change falsifies
 

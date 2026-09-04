@@ -98,11 +98,6 @@ fn build(root: &Path, agents: Vec<Agent>, skip_instructions: bool) -> Result<Pla
                     "pi's half of the hook bridge, from the copy embedded in this binary",
                     PI_EXTENSION.to_owned(),
                 ));
-                warnings.push(
-                    "pi sessions produce no exploration note, because nothing on pi's side calls \
-                     `hook explore`, so a pi session is never registered for review."
-                        .to_owned(),
-                );
             }
         }
     }
@@ -306,16 +301,15 @@ mod tests {
         );
     }
 
+    /// The extension captures pi explorations, so warning about them would be a
+    /// warning about a capability the tool has. A reappearing warning fails here.
     #[test]
-    fn configuring_pi_reports_the_exploration_gap() {
+    fn configuring_pi_reports_no_exploration_gap() {
         let temp = project(&[".pi"]);
 
         let rendered = plan(temp.path(), Vec::new()).render();
 
-        assert!(
-            rendered.contains("never registered for review"),
-            "{rendered}"
-        );
+        assert!(!rendered.contains("exploration note"), "{rendered}");
     }
 
     #[test]

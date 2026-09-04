@@ -103,12 +103,6 @@ The note is also what gets promoted, and promotion happens only if you say which
 
 **Known gap:** `UserPromptExpansion` fires only for commands the *owner* types. If you start an exploration yourself by invoking the explore skill through the `Skill` tool, no hook fires and no note is created — write it yourself at the `$CLAUDE_CODE_SESSION_ID` path above.
 
-**Known gap, pi:** pi sessions get no scratch note at all. `.pi/extensions/openspec-doc-hook.ts` calls `hook prompt` at `before_agent_start` and `hook stop` at `agent_end`, so pi gets the directive loop and the dashboard for free, but nothing calls `hook explore` — so a pi exploration is invisible to the reviewer, and a pi session is never registered under the review-material predicate either. `openspec-doc init --agent pi` says so in its output rather than shipping the gap silently.
-
-Two routes exist, and pi 0.84.3's extension type declarations decide between them. `agent_start` and `agent_settled` carry no payload at all; `agent_end` carries `messages` and fires after the turn, too late to start an exploration. `before_agent_start` carries the submitted `prompt` — on the event this extension **already handles**, whose payload it currently discards unread — so the smaller change is to read it there. The larger one is a `pi.on("input")` handler, which fires before skill and template expansion and therefore sees raw input text.
-
-`pi.on("input")` is still the one to reach for, because matching on a command name is matching on something this repository owns, while `before_agent_start` sees the prompt *after* expansion — so a matcher there matches the expanded prose of `.pi/prompts/opsx-explore.md`, which upstream owns and can rewrite without notice. Its matcher has to cover both `/opsx-explore` (the prompt template) and `/skill:openspec-explore` (the skill). Do **not** use `pi.registerCommand` for it — extension commands are checked before the input event and suppress it, so registering `opsx-explore` would shadow `.pi/prompts/opsx-explore.md` and silently break the existing prompt.
-
 <!-- openspec-doc:begin -->
 ## openspec-doc review directives
 

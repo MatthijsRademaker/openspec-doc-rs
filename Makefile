@@ -21,6 +21,7 @@ check:
 	cargo clippy --workspace --all-targets
 	cargo fmt --all --check
 	cd web && bun run check
+	cd docs && bun install --frozen-lockfile && bun run build
 
 # Builds frontend and binary itself, then drives the embedded app in Chromium.
 e2e:

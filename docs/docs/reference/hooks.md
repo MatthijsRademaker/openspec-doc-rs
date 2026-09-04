@@ -140,19 +140,26 @@ prompt in the session. Paste the command string rather than typing it until this
 
 ## pi.dev
 
-pi has no external-process hook; neither of its delivery points is reachable except from a TypeScript
+pi has no external-process hook; none of its delivery points is reachable except from a TypeScript
 extension. One copy of it is embedded in the binary; `openspec-doc init --agent pi` writes it to
 `.pi/extensions/openspec-doc-hook.ts`, where pi auto-discovers it once the project is trusted. This
-repository's own copy is that same output. It handles both delivery points:
+repository's own copy is that same output. It handles all three delivery points:
 
 - `before_agent_start` — fires after the prompt is submitted and before the agent loop, pi's equivalent of
   `UserPromptSubmit`. Shells out to `openspec-doc hook prompt --agent pi` and returns any directive as a
   `custom` message, which lands in the conversation before the model runs.
 - `agent_end` — shells out to `openspec-doc hook stop --agent pi` and re-injects any returned directive with
   `pi.sendUserMessage(…, { deliverAs: "followUp" })`.
+- `input` — pi's stand-in for `UserPromptExpansion`, which it has no equivalent of. It is the only event
+  that sees the text the user typed: it fires before skill and prompt-template expansion, so the command
+  is still `/opsx-explore` or `/skill:openspec-explore` rather than the expanded body those become. The
+  handler matches that command at the start of the raw input, shells out to `openspec-doc hook explore
+  --agent pi`, and injects the resolved note path with `pi.sendMessage(…, { deliverAs: "nextTurn" })`,
+  which pi appends alongside the user message of the turn the input is starting.
 
-`init --agent pi` also reports what pi does **not** get: there is no command-expansion event, so nothing
-calls `hook explore`, so a pi session writes no note and is never registered for review.
+Matching raw input rather than the expanded prompt is deliberate, and so is not registering `opsx-explore`
+with `pi.registerCommand`: pi dispatches extension commands *before* the input event, so a registration
+would shadow `.pi/prompts/opsx-explore.md` and suppress the exploration instructions themselves.
 
 Set `OPENSPEC_DOC_BIN` to use a binary that is not on `PATH`, such as this repo's own `target/debug/openspec-doc`.
 

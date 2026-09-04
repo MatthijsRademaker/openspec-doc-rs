@@ -74,7 +74,7 @@ The system SHALL check whether the project provides a command or skill named `op
 - **THEN** the system SHALL emit no warning about the explore command
 
 ### Requirement: pi.dev extension installation
-The system SHALL, when pi.dev is selected, write `.pi/extensions/openspec-doc-hook.ts` from a copy of the extension embedded in the binary, and SHALL report that pi explorations are not captured.
+The system SHALL, when pi.dev is selected, write `.pi/extensions/openspec-doc-hook.ts` from a copy of the extension embedded in the binary.
 
 There is one copy of that file, in the binary. Every project's copy is its output, so a divergence appears as a diff rather than as a defect in a project nobody is looking at.
 
@@ -86,9 +86,9 @@ There is one copy of that file, in the binary. Every project's copy is its outpu
 - **WHEN** `init --yes` configures pi.dev in a project whose `.pi/extensions/openspec-doc-hook.ts` differs from the embedded copy
 - **THEN** the system SHALL replace the file with the embedded copy and report it as modified
 
-#### Scenario: The pi explore gap is reported
+#### Scenario: No explore gap is reported for pi
 - **WHEN** `init` plans or performs a pi.dev configuration
-- **THEN** the output SHALL state that pi sessions produce no exploration note and are therefore not registered for review
+- **THEN** the output SHALL NOT warn that pi sessions produce no exploration note, because the installed extension captures them
 
 ### Requirement: Managed instruction block
 The system SHALL, unless `--skip-instructions` is given, maintain a block delimited by `<!-- openspec-doc:begin -->` and `<!-- openspec-doc:end -->` in `AGENTS.md` at the project root, containing the standing instructions describing the exploration note, the review loop, and the comment commands.

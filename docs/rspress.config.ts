@@ -112,7 +112,7 @@ const TAXONOMY: Section[] = [
 			{
 				title: "Testing",
 				path: "/development/testing.md",
-				desc: "Test layout, what is hermetic, the known-failing watcher tests, and what automated tests cannot establish here",
+				desc: "Test layout, what is hermetic, why a fixture must resolve the paths the OS hands it, and what automated tests cannot establish here",
 			},
 			{
 				title: "Manual verification",

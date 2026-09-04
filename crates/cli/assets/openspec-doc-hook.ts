@@ -2,7 +2,7 @@
  * openspec-doc hook bridge for pi.dev.
  *
  * pi has no external-process hook, so this extension is pi's half of the
- * bridge, at both of the two delivery points:
+ * bridge, at all three of the delivery points:
  *
  *   - `before_agent_start` → `openspec-doc hook prompt --agent pi`, which puts a
  *     standing verdict in context at the *start* of the turn the prompt begins,
@@ -10,6 +10,9 @@
  *   - `agent_end` → `openspec-doc hook stop --agent pi`, which re-injects a
  *     pending directive as a follow-up message, keeping the session alive
  *     exactly as Claude Code's Stop hook does.
+ *   - `input` → `openspec-doc hook explore --agent pi`, which readies the
+ *     session's scratch note when the submitted input starts an exploration,
+ *     where Claude Code uses `UserPromptExpansion`.
  *
  * A directive is consumed once across the two: whichever fires first delivers
  * it, and that is enforced by the binary, not here.
@@ -36,10 +39,21 @@ interface HookResult {
 }
 
 /**
+ * The two ways an exploration is started on pi: the prompt template
+ * `.pi/prompts/opsx-explore.md` and the `openspec-explore` skill. Both names are
+ * this repository's own, and both appear verbatim in raw input.
+ */
+const EXPLORE_COMMAND = /^\s*\/(?:opsx-explore|skill:openspec-explore)(?:\s|$)/;
+
+/**
  * Run the hook binary with `payload` on stdin. `pi.exec()` cannot pipe stdin
  * (its ExecOptions has no such field), so spawn directly.
  */
-function runHook(cwd: string, subcommand: "stop" | "prompt", payload: string): Promise<HookResult> {
+function runHook(
+	cwd: string,
+	subcommand: "stop" | "prompt" | "explore",
+	payload: string,
+): Promise<HookResult> {
 	const bin = process.env.OPENSPEC_DOC_BIN ?? "openspec-doc";
 
 	return new Promise((resolve, reject) => {
@@ -131,5 +145,55 @@ export default function (pi: ExtensionAPI) {
 		if (decision.action !== "continue" || !decision.message) return;
 
 		pi.sendUserMessage(decision.message, { deliverAs: "followUp" });
+	});
+
+	// pi's half of explore detection. Claude Code dispatches this on
+	// `UserPromptExpansion`, whose matcher runs against the bare command name; pi
+	// has no such event, so the match is on raw input and `input` is the only
+	// event that sees it. `input` fires before skill and prompt-template
+	// expansion, which is what makes that possible and is also why the match is
+	// not made later: by `before_agent_start` the command is gone, replaced by the
+	// expanded body of `.pi/prompts/opsx-explore.md` or a `<skill>` block. That
+	// prose is upstream's to rewrite, so matching it would stop detection silently
+	// — the exact failure this capability is specified against.
+	//
+	// This is deliberately not a `pi.registerCommand("opsx-explore")`. pi
+	// dispatches extension commands *before* the input event, so registering the
+	// name would shadow `.pi/prompts/opsx-explore.md` and the exploration
+	// instructions would stop being delivered while the note started appearing.
+	//
+	// Anchoring to the leading token, rather than searching the message, keeps a
+	// question *about* the command from starting an exploration.
+	pi.on("input", async (event, ctx) => {
+		if (!EXPLORE_COMMAND.test(event.text)) return;
+		if (!ctx.sessionManager.getSessionFile()) return;
+
+		const payload = JSON.stringify({ sessionId: ctx.sessionManager.getSessionId() });
+
+		let result: HookResult;
+		try {
+			result = await runHook(ctx.cwd, "explore", payload);
+		} catch (error) {
+			ctx.ui.notify(`openspec-doc hook explore could not run: ${error}`, "warning");
+			return;
+		}
+
+		if (result.code !== 0) {
+			ctx.ui.notify(`openspec-doc hook explore failed: ${result.stderr.trim()}`, "warning");
+			return;
+		}
+
+		const instruction = result.stdout.trim();
+		if (!instruction) return;
+
+		// `before_agent_start` returns its directive as a message on the event
+		// result; an `input` handler's result can only continue, transform or
+		// swallow the input, so the equivalent injection is `deliverAs: "nextTurn"`
+		// — pi appends those alongside the user message of the turn this input is
+		// about to start. The input itself is never transformed.
+		pi.sendMessage(
+			{ customType: "openspec-doc-directive", content: instruction, display: true },
+			{ deliverAs: "nextTurn" },
+		);
 	});
 }
