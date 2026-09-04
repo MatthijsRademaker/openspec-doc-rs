@@ -1584,11 +1584,17 @@ fn init_plans_then_performs_then_leaves_the_project_alone() {
     assert!(performed.status.success(), "{}", stderr(&performed));
     let written = stdout(&performed);
     assert!(
-        written.contains("created   .claude/settings.json"),
+        written.contains(&format!(
+            "created   {}",
+            Path::new(".claude/settings.json").display()
+        )),
         "{written}"
     );
     assert!(
-        written.contains("created   .pi/extensions/openspec-doc-hook.ts"),
+        written.contains(&format!(
+            "created   {}",
+            Path::new(".pi/extensions/openspec-doc-hook.ts").display()
+        )),
         "{written}"
     );
     assert!(written.contains("modified  AGENTS.md"), "{written}");
@@ -1855,8 +1861,9 @@ fn subcommand_help_does_not_execute_the_subcommand() {
 
         assert!(output.status.success(), "`{command} --help` should succeed");
         let stdout = stdout(&output);
+        let binary_name = format!("openspec-doc{}", std::env::consts::EXE_SUFFIX);
         assert!(
-            stdout.contains(&format!("Usage: openspec-doc {command}")),
+            stdout.contains(&format!("Usage: {binary_name} {command}")),
             "{stdout}"
         );
         assert!(stdout.contains("--root <PATH>"), "{stdout}");
@@ -1955,7 +1962,10 @@ fn identity_of(url: &str) -> String {
     let address = url.trim_start_matches("http://");
     let mut stream = TcpStream::connect(address).expect("connect to the dashboard");
     stream
-        .write_all(format!("GET /api/identity HTTP/1.0\r\nHost: {address}\r\n\r\n").as_bytes())
+        .write_all(
+            format!("GET /api/identity HTTP/1.0\r\nHost: {address}\r\nConnection: close\r\n\r\n")
+                .as_bytes(),
+        )
         .expect("write request");
     let mut response = String::new();
     stream.read_to_string(&mut response).expect("read response");
