@@ -1433,11 +1433,11 @@ fn identity_server(root: &Path) -> u16 {
 
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let port = listener.local_addr().expect("local addr").port();
-    let body = format!(
-        "{{\"root\":\"{}\",\"pid\":{}}}",
-        root.display(),
-        std::process::id()
-    );
+    let body = serde_json::json!({
+        "root": root.display().to_string(),
+        "pid": std::process::id(),
+    })
+    .to_string();
     std::thread::spawn(move || {
         for connection in listener.incoming() {
             let Ok(mut stream) = connection else { break };
