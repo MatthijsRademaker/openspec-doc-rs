@@ -1956,20 +1956,43 @@ fn stop_dashboard(pid: i32) -> Output {
 
 /// One fixed `GET` to the identity route, the way the hook's own probe does it.
 fn identity_of(url: &str) -> String {
-    use std::io::Read;
+    use std::io::{BufRead, BufReader, Read};
     use std::net::TcpStream;
 
     let address = url.trim_start_matches("http://");
     let mut stream = TcpStream::connect(address).expect("connect to the dashboard");
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .expect("set read timeout");
     stream
         .write_all(
             format!("GET /api/identity HTTP/1.0\r\nHost: {address}\r\nConnection: close\r\n\r\n")
                 .as_bytes(),
         )
         .expect("write request");
-    let mut response = String::new();
-    stream.read_to_string(&mut response).expect("read response");
+
+    let mut response = BufReader::new(stream);
+    let mut content_length = None;
+    loop {
+        let mut line = String::new();
+        response
+            .read_line(&mut line)
+            .expect("read response headers");
+        if line == "\r\n" {
+            break;
+        }
+        if let Some((name, value)) = line.split_once(':')
+            && name.eq_ignore_ascii_case("content-length")
+        {
+            content_length = Some(value.trim().parse::<usize>().expect("parse content length"));
+        }
+    }
+
+    let mut body = vec![0; content_length.expect("identity response content length")];
     response
+        .read_exact(&mut body)
+        .expect("read identity response body");
+    String::from_utf8(body).expect("identity response is utf-8")
 }
 
 fn between<'a>(haystack: &'a str, after: &str, before: &str) -> &'a str {
