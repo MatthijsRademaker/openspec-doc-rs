@@ -55,6 +55,6 @@ The workspace had 401 tests before this change and five were `#[cfg(unix)]`-gate
 
 ## 9. Live verification
 
-- [ ] 9.1 Run a real Claude Code session in this repository after 8.3, submit a prompt, and reach a turn boundary. The unit tests cannot tell you the agent accepted the entries — only the agent can. **PARTIAL.** Claude Code 2.1.260 loaded the generated settings and reported a successful `UserPromptSubmit` hook, but the API rate limit stopped the session before an assistant turn and Stop hook.
+- [x] 9.1 Run a real Claude Code session in this repository after 8.3, submit a prompt, and reach a turn boundary. The unit tests cannot tell you the agent accepted the entries — only the agent can. **DONE.** Confirmed by the owner in a live Claude Code session in this repository after 8.3: the agent accepted the exec-form entries and the hooks fired across a submitted prompt and a turn boundary.
 - [x] 9.2 Run `openspec-doc doctor` in this repository and confirm every hook probes green through the shell-free path. **PASSED.** Current binary on `PATH`: 5 passed, 0 failed; Stop, UserPromptSubmit, and UserPromptExpansion all ran directly.
 - [x] 9.3 If a Windows machine is available, run `init` and `doctor` there. If one is not, say so in the change rather than implying the platform was exercised by hand; CI is then the only evidence and it is worth being explicit that it is. **NO LOCAL WINDOWS MACHINE.** No hand-run Windows evidence is claimed; Windows CI passed `init`, `doctor`, and the full gate.
