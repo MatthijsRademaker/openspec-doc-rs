@@ -27,7 +27,13 @@ const mockServiceWorker: Plugin = {
 }
 
 export default defineConfig({
-  plugins: [vue(), tailwindcss(), mockServiceWorker],
+  plugins: [
+    // Root URLs address public assets in the embedded filesystem; importing them turns `/assets`
+    // into `file:///assets` under Windows test runners.
+    vue({ template: { transformAssetUrls: { includeAbsolute: false } } }),
+    tailwindcss(),
+    mockServiceWorker,
+  ],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

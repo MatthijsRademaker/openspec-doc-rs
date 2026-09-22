@@ -1059,6 +1059,7 @@ fn hook_prompt_never_refuses_a_prompt_over_its_own_arguments() {
 #[test]
 fn other_commands_still_exit_non_zero_on_a_usage_error() {
     for args in [
+        Vec::new(),
         vec!["hook", "stop"],
         vec!["hook", "explore"],
         vec!["comment", "list"],
@@ -1432,11 +1433,11 @@ fn identity_server(root: &Path) -> u16 {
 
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let port = listener.local_addr().expect("local addr").port();
-    let body = format!(
-        "{{\"root\":\"{}\",\"pid\":{}}}",
-        root.display(),
-        std::process::id()
-    );
+    let body = serde_json::json!({
+        "root": root.display().to_string(),
+        "pid": std::process::id(),
+    })
+    .to_string();
     std::thread::spawn(move || {
         for connection in listener.incoming() {
             let Ok(mut stream) = connection else { break };
@@ -1583,19 +1584,34 @@ fn init_plans_then_performs_then_leaves_the_project_alone() {
     assert!(performed.status.success(), "{}", stderr(&performed));
     let written = stdout(&performed);
     assert!(
-        written.contains("created   .claude/settings.json"),
+        written.contains(&format!(
+            "created   {}",
+            Path::new(".claude").join("settings.json").display()
+        )),
         "{written}"
     );
     assert!(
-        written.contains("created   .pi/extensions/openspec-doc-hook.ts"),
+        written.contains(&format!(
+            "created   {}",
+            Path::new(".pi")
+                .join("extensions")
+                .join("openspec-doc-hook.ts")
+                .display()
+        )),
         "{written}"
     );
     assert!(written.contains("modified  AGENTS.md"), "{written}");
 
-    let settings = fs::read_to_string(root.join(".claude/settings.json")).expect("read settings");
-    assert!(
-        settings.contains("openspec-doc hook stop --agent claude"),
-        "{settings}"
+    let settings: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(root.join(".claude/settings.json")).expect("read settings"),
+    )
+    .expect("parse settings");
+    for event in ["Stop", "UserPromptSubmit", "UserPromptExpansion"] {
+        assert_eq!(hook_count(&settings, event), 1, "{event}: {settings}");
+    }
+    assert_eq!(
+        settings["hooks"]["Stop"][0]["hooks"][0]["args"],
+        serde_json::json!(["hook", "stop", "--agent", "claude"])
     );
     let instructions = fs::read_to_string(root.join("AGENTS.md")).expect("read AGENTS.md");
     assert!(
@@ -1610,9 +1626,61 @@ fn init_plans_then_performs_then_leaves_the_project_alone() {
     let again = run_in(root, &["init", "--yes"]);
     assert!(again.status.success(), "{}", stderr(&again));
     assert_eq!(stdout(&again).matches("unchanged").count(), 6);
+    let settings: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(root.join(".claude/settings.json")).expect("read settings"),
+    )
+    .expect("parse settings");
+    for event in ["Stop", "UserPromptSubmit", "UserPromptExpansion"] {
+        assert_eq!(hook_count(&settings, event), 1, "{event}: {settings}");
+    }
     assert_eq!(
         fs::read_to_string(root.join("AGENTS.md")).expect("read"),
         instructions
+    );
+}
+
+fn hook_count(settings: &serde_json::Value, event: &str) -> usize {
+    settings["hooks"][event]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|group| group["hooks"].as_array().into_iter().flatten())
+        .filter(|hook| hook["command"] == "openspec-doc")
+        .count()
+}
+
+#[test]
+fn init_rewrites_shell_form_entries_without_doubling() {
+    let fixture = project_fixture(&[".claude"]);
+    let settings = serde_json::json!({
+        "hooks": {
+            "Stop": [{"hooks": [{"type": "command", "command": "openspec-doc hook stop --agent claude"}]}],
+            "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "openspec-doc hook prompt --agent claude"}]}],
+            "UserPromptExpansion": [{
+                "matcher": "opsx:explore|openspec-explore",
+                "hooks": [{"type": "command", "command": "openspec-doc hook explore --agent claude"}]
+            }]
+        }
+    });
+    fs::write(
+        fixture.path().join(".claude/settings.json"),
+        serde_json::to_string(&settings).expect("serialize settings"),
+    )
+    .expect("write settings");
+
+    let output = run_in(fixture.path(), &["init", "--yes", "--skip-instructions"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+
+    let settings: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(fixture.path().join(".claude/settings.json")).expect("read settings"),
+    )
+    .expect("parse settings");
+    for event in ["Stop", "UserPromptSubmit", "UserPromptExpansion"] {
+        assert_eq!(hook_count(&settings, event), 1, "{event}: {settings}");
+    }
+    assert!(
+        !settings.to_string().contains("openspec-doc hook"),
+        "{settings}"
     );
 }
 
@@ -1630,32 +1698,33 @@ fn init_without_a_harness_fails_naming_the_flag() {
     );
 }
 
-/// A directory holding an `openspec-doc` that *is* the binary under test, for
-/// putting on the probes' `PATH`.
-///
-/// `doctor` fails when the binary the agent would run is not the one running the
-/// check, and in a test the one running the check is the one cargo just built. A
-/// symlink canonicalizes to the same file, so this is that binary reached by the
-/// bare name every hook command uses.
-#[cfg(unix)]
+/// A directory holding a copied `openspec-doc` binary for putting on the
+/// probes' `PATH`. The test invokes that same copy as `doctor`, so the binary
+/// under test and the first binary on `PATH` remain identical without relying on
+/// Unix symlink support.
 fn path_with_binary() -> TempDir {
     let temp = TempDir::new().expect("temp dir");
-    std::os::unix::fs::symlink(
+    fs::copy(
         env!("CARGO_BIN_EXE_openspec-doc"),
-        temp.path().join("openspec-doc"),
+        temp.path()
+            .join(format!("openspec-doc{}", std::env::consts::EXE_SUFFIX)),
     )
-    .expect("symlink the binary under test");
+    .expect("copy the binary under test");
 
     temp
 }
 
 /// `doctor` in `root`, with `bin` first on `PATH`.
-#[cfg(unix)]
 fn doctor(root: &Path, bin: &Path) -> Output {
-    binary()
+    let executable = bin.join(format!("openspec-doc{}", std::env::consts::EXE_SUFFIX));
+    Command::new(executable)
+        .env(STATE_DIR_ENV, state_dir())
         .current_dir(root)
         .arg("doctor")
-        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .env(
+            "PATH",
+            std::env::join_paths([bin]).expect("join the probe PATH"),
+        )
         .output()
         .expect("run openspec-doc doctor")
 }
@@ -1683,7 +1752,6 @@ fn tree(dir: &Path) -> Vec<(String, Vec<u8>)> {
     entries
 }
 
-#[cfg(unix)]
 #[test]
 fn doctor_passes_a_wired_project_and_fails_naming_a_hook_that_is_not_registered() {
     let fixture = project_fixture(&[".claude"]);
@@ -1707,6 +1775,11 @@ fn doctor_passes_a_wired_project_and_fails_naming_a_hook_that_is_not_registered(
             "{report}"
         );
     }
+    assert!(report.contains("Claude Code version"), "{report}");
+    assert!(
+        report.contains("`claude` was not found on PATH"),
+        "{report}"
+    );
     assert!(report.contains("0 failed"), "{report}");
 
     let settings = root.join(".claude/settings.json");
@@ -1735,7 +1808,6 @@ fn doctor_passes_a_wired_project_and_fails_naming_a_hook_that_is_not_registered(
 /// The check must not cause the failure it exists to diagnose. `hook stop`
 /// consumes a pending directive, so a probe that resolved to this project would
 /// silently eat the reviewer's outstanding feedback.
-#[cfg(unix)]
 #[test]
 fn doctor_leaves_a_pending_directive_and_the_projects_own_review_state_alone() {
     let fixture = project_fixture(&[".claude"]);
@@ -1792,8 +1864,9 @@ fn subcommand_help_does_not_execute_the_subcommand() {
 
         assert!(output.status.success(), "`{command} --help` should succeed");
         let stdout = stdout(&output);
+        let binary_name = format!("openspec-doc{}", std::env::consts::EXE_SUFFIX);
         assert!(
-            stdout.contains(&format!("Usage: openspec-doc {command}")),
+            stdout.contains(&format!("Usage: {binary_name} {command}")),
             "{stdout}"
         );
         assert!(stdout.contains("--root <PATH>"), "{stdout}");
@@ -1806,9 +1879,7 @@ fn subcommand_help_does_not_execute_the_subcommand() {
 /// any other way: they pass in a harness and fail in a real hook invocation.
 ///
 /// It kills what it started using the pid that dashboard reports about itself,
-/// which is the same fact `serve list` will be built on. Unix only — the
-/// mechanism under test is `process_group(0)`.
-#[cfg(unix)]
+/// which is the same fact `serve list` will be built on.
 #[test]
 fn hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it() {
     let fixture = project_fixture(&[]);
@@ -1836,16 +1907,18 @@ fn hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it() {
         panic!("no URL printed: {listed}");
     };
     let identity = identity_of(&url);
-    let pid: i32 = between(&identity, "\"pid\":", "}")
-        .trim()
-        .parse()
-        .unwrap_or_else(|error| panic!("{error} in {identity}"));
+    let identity: serde_json::Value =
+        serde_json::from_str(&identity).expect("parse dashboard identity");
+    let pid = identity["pid"].as_i64().expect("dashboard identity pid") as i32;
+    let expected_root = fixture
+        .path()
+        .canonicalize()
+        .expect("canonicalize fixture")
+        .display()
+        .to_string();
 
     // Killed before any assertion can fail and leak it.
-    let killed = Command::new("kill")
-        .arg(pid.to_string())
-        .status()
-        .expect("kill the dashboard");
+    let killed = stop_dashboard(pid);
 
     assert!(
         listed.contains("(serving)"),
@@ -1853,10 +1926,7 @@ fn hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it() {
         stderr(&stopped)
     );
     assert!(
-        identity.contains(&format!(
-            "\"root\":\"{}\"",
-            fixture.path().canonicalize().unwrap().display()
-        )),
+        identity["root"].as_str() == Some(expected_root.as_str()),
         "the dashboard serves someone else: {identity}"
     );
     assert!(
@@ -1864,25 +1934,65 @@ fn hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it() {
         "the dashboard's output has nowhere to explain a failed start"
     );
     assert!(
-        killed.success(),
+        killed.status.success(),
         "could not stop the dashboard this test started"
     );
 }
 
+/// Stop a dashboard process using the platform's process utility.
+fn stop_dashboard(pid: i32) -> Output {
+    #[cfg(unix)]
+    let mut command = Command::new("kill");
+    #[cfg(unix)]
+    let args = [pid.to_string()];
+
+    #[cfg(windows)]
+    let mut command = Command::new("taskkill");
+    #[cfg(windows)]
+    let args = ["/PID".to_owned(), pid.to_string(), "/F".to_owned()];
+
+    command.args(args).output().expect("stop the dashboard")
+}
+
 /// One fixed `GET` to the identity route, the way the hook's own probe does it.
-#[cfg(unix)]
 fn identity_of(url: &str) -> String {
-    use std::io::Read;
+    use std::io::{BufRead, BufReader, Read};
     use std::net::TcpStream;
 
     let address = url.trim_start_matches("http://");
     let mut stream = TcpStream::connect(address).expect("connect to the dashboard");
     stream
-        .write_all(format!("GET /api/identity HTTP/1.0\r\nHost: {address}\r\n\r\n").as_bytes())
+        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .expect("set read timeout");
+    stream
+        .write_all(
+            format!("GET /api/identity HTTP/1.0\r\nHost: {address}\r\nConnection: close\r\n\r\n")
+                .as_bytes(),
+        )
         .expect("write request");
-    let mut response = String::new();
-    stream.read_to_string(&mut response).expect("read response");
+
+    let mut response = BufReader::new(stream);
+    let mut content_length = None;
+    loop {
+        let mut line = String::new();
+        response
+            .read_line(&mut line)
+            .expect("read response headers");
+        if line == "\r\n" {
+            break;
+        }
+        if let Some((name, value)) = line.split_once(':')
+            && name.eq_ignore_ascii_case("content-length")
+        {
+            content_length = Some(value.trim().parse::<usize>().expect("parse content length"));
+        }
+    }
+
+    let mut body = vec![0; content_length.expect("identity response content length")];
     response
+        .read_exact(&mut body)
+        .expect("read identity response body");
+    String::from_utf8(body).expect("identity response is utf-8")
 }
 
 fn between<'a>(haystack: &'a str, after: &str, before: &str) -> &'a str {

@@ -17,10 +17,10 @@ The compiler is pinned in `rust-toolchain.toml`, so both paths use the same vers
 | Crate | Tests | Status |
 |---|---|---|
 | `openspec-doc-core` | 201 | pass |
-| `openspec-doc-cli` | 137 | pass |
+| `openspec-doc-cli` | 145 | pass |
 | `openspec-doc-server` | 63 | pass |
 
-All 401 pass. `openspec-doc-cli`'s figure is 77 unit tests beside the code plus the 60 in
+All 409 pass. `openspec-doc-cli`'s figure is 84 unit tests beside the code plus the 61 in
 `tests/cli.rs` that drive the built binary.
 
 :::note The three `watch.rs` failures were a symlinked temp directory
@@ -42,23 +42,11 @@ diagnosis to a lane that does not run costs more than the bug.
 ## What the automated run covers
 
 `.github/workflows/rust.yml` runs `make check` and `make test` on every push to `main` and every pull
-request, on **Linux (`ubuntu-latest`) and macOS (`macos-latest`)**. One job builds `web/dist` and both
-platform legs download that single artifact, so each embeds the same frontend bytes rather than one it
-built itself; a leg whose artifact is missing fails instead of compiling.
-
-**Windows is not covered, and it is an omission rather than an oversight.** `doctor`'s binary
-resolution and its hook-registration probe are both broken there. Five tests cover exactly that code
-and are `#[cfg(unix)]`-gated, so a Windows leg would run the other 396 and report success:
-
-- `the_first_executable_on_the_path_wins` (`crates/cli/src/doctor/binary.rs`)
-- `a_directory_without_the_binary_resolves_nothing` (`crates/cli/src/doctor/binary.rs`)
-- `doctor_passes_a_wired_project_and_fails_naming_a_hook_that_is_not_registered` (`crates/cli/tests/cli.rs`)
-- `doctor_leaves_a_pending_directive_and_the_projects_own_review_state_alone` (`crates/cli/tests/cli.rs`)
-- `hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it` (`crates/cli/tests/cli.rs`)
-
-A green Windows badge over those five is a stronger false claim than no badge at all, which is why
-`replace-hook-shell-form-with-exec-form` fixes the defects, un-gates the tests, and adds the leg in one
-change: supported and verified have to move together.
+request, on **Linux (`ubuntu-latest`), macOS (`macos-latest`), and Windows (`windows-latest`)**. One
+job builds `web/dist` and every platform leg downloads that single artifact, so each embeds the same
+frontend bytes rather than one it built itself; a leg whose artifact is missing fails instead of
+compiling. The full workspace suite, including binary-resolution, doctor, and hook-start coverage, runs
+on every leg.
 
 `.github/workflows/frontend-assets.yml` remains separate and uncached, because what it proves is that a
 clean checkout builds the frontend, embeds it, and serves it in a real browser. The two lanes overlap on

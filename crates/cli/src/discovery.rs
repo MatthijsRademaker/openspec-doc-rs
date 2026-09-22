@@ -245,6 +245,8 @@ fn start(project: &Project, assigned: Option<u16>, range: &[u16]) -> Result<u16,
             source,
         })?)
         .stderr(log);
+    #[cfg(windows)]
+    prevent_stdio_inheritance().map_err(|source| Error::Spawn { source })?;
     detach(&mut command);
 
     command.spawn().map_err(|source| Error::Spawn { source })?;
@@ -303,6 +305,48 @@ fn detach(command: &mut Command) {
 
     // In std, so no `libc` dependency for `setsid`.
     command.process_group(0);
+}
+
+/// Prevent a detached dashboard from keeping a hook runner's pipes open.
+///
+/// `Command` inherits every inheritable Windows handle, not only its configured
+/// stdio handles. A hook runner captures its output, so the dashboard's copies
+/// would keep the hook's stdout and stderr open until the dashboard exits.
+#[cfg(windows)]
+fn prevent_stdio_inheritance() -> std::io::Result<()> {
+    use std::os::windows::io::RawHandle;
+
+    const HANDLE_FLAG_INHERIT: u32 = 0x0000_0001;
+    const INVALID_HANDLE_VALUE: RawHandle = -1isize as RawHandle;
+    const STD_INPUT_HANDLE: u32 = (-10i32) as u32;
+    const STD_OUTPUT_HANDLE: u32 = (-11i32) as u32;
+    const STD_ERROR_HANDLE: u32 = (-12i32) as u32;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetHandleInformation(handle: RawHandle, flags: *mut u32) -> i32;
+        fn GetStdHandle(which: u32) -> RawHandle;
+        fn SetHandleInformation(handle: RawHandle, mask: u32, flags: u32) -> i32;
+    }
+
+    for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        let handle = unsafe { GetStdHandle(which) };
+        if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+            continue;
+        }
+
+        let mut flags = 0;
+        if unsafe { GetHandleInformation(handle, &mut flags) } == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        if flags & HANDLE_FLAG_INHERIT != 0
+            && unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) } == 0
+        {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -458,11 +502,11 @@ mod tests {
     /// Answer identity probes with `root` until the test is done.
     fn identity_server(root: &Path) -> u16 {
         let (listener, port) = listener();
-        let body = format!(
-            "{{\"root\":\"{}\",\"pid\":{}}}",
-            root.display(),
-            std::process::id()
-        );
+        let body = serde_json::json!({
+            "root": root.display().to_string(),
+            "pid": std::process::id(),
+        })
+        .to_string();
         std::thread::spawn(move || {
             for connection in listener.incoming() {
                 let Ok(mut stream) = connection else { break };

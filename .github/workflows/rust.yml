@@ -9,9 +9,8 @@
 # openspec/changes/add-continuous-verification/design.md is what needs
 # revisiting, not this file.
 #
-# Covered platforms are Linux and macOS. Windows is deliberately absent — see
-# docs/docs/development/testing.md for which tests a Windows leg would silently
-# omit and why a green one would be a false claim.
+# Covered platforms are Linux, macOS, and Windows. Every leg runs the full suite;
+# the fixtures do not depend on a platform-specific facility.
 name: Rust
 
 on:
@@ -55,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -75,6 +74,7 @@ jobs:
       # as a cargo error about an unreadable embed folder, which reads like a
       # source problem rather than a missing upstream job.
       - name: Fail if the frontend artifact did not arrive
+        shell: bash
         run: |
           if [ ! -d web/dist ] || [ -z "$(ls -A web/dist)" ]; then
             echo "::error::web/dist is missing or empty after downloading the web-dist artifact from the frontend job. The workspace cannot be compiled without it." >&2
@@ -102,5 +102,7 @@ jobs:
         run: bun add --global @fission-ai/openspec@1.3.1
 
       - run: make check
+        shell: bash
 
       - run: make test
+        shell: bash

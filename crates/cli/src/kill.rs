@@ -234,11 +234,11 @@ mod tests {
                 }
 
                 probes.fetch_add(1, Ordering::Relaxed);
-                let body = format!(
-                    "{{\"root\":\"{}\",\"pid\":{}}}",
-                    serving.display(),
-                    std::process::id()
-                );
+                let body = serde_json::json!({
+                    "root": serving.display().to_string(),
+                    "pid": std::process::id(),
+                })
+                .to_string();
                 let _ = stream.write_all(
                     format!(
                         "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\

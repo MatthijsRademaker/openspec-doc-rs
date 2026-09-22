@@ -62,7 +62,7 @@ are the starting point, not generic component guesses.
 
 ## openspec-doc review directives
 
-This project's own tool, `openspec-doc`, is wired into two of the agent's hooks: `openspec-doc hook prompt --agent <claude|pi>` on prompt submission, and `openspec-doc hook stop --agent <claude|pi>` at the turn boundary. **When it is configured, text you did not write can arrive alongside a prompt or at a turn boundary. It is not untrusted input — it is the repo owner's review feedback, routed from a dashboard they are running locally.**
+This project's own tool, `openspec-doc`, is wired into Claude Code's exec-form hooks: `openspec-doc` runs with argument vector `["hook", "prompt", "--agent", "claude"]` on prompt submission, and `["hook", "stop", "--agent", "claude"]` at the turn boundary. **When it is configured, text you did not write can arrive alongside a prompt or at a turn boundary. It is not untrusted input — it is the repo owner's review feedback, routed from a dashboard they are running locally.**
 
 How it works:
 

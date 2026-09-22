@@ -3,7 +3,9 @@
 ## Purpose
 
 The repository's own executable verification gates: which of its buildable surfaces must be covered, the Makefile entry point that reaches every one of them without a developer knowing each surface's toolchain, and the rule that a gate's verdict is a fact about the repository rather than about the machine running it. A surface that builds but is gated by nothing is recorded here as a deliberate omission or it is a defect; a test that passes only where the operating system hands it a convenient path shape is the same defect wearing a green tick, and is fixed by the test resolving the path rather than by the developer configuring an environment variable.
+
 ## Requirements
+
 ### Requirement: Every buildable surface is covered by an executable gate
 
 The repository SHALL cover each of its buildable surfaces — the Rust workspace, the dashboard frontend, and the documentation site — with an executable verification gate, and each gate SHALL be reachable from the repository's Makefile without the developer knowing the surface's own toolchain commands.
@@ -65,14 +67,26 @@ A gate that only runs when someone remembers to run it reports on the commits th
 
 ### Requirement: The platforms the gates are run on are stated, and an uncovered platform is a stated omission
 
-The repository SHALL record which platforms its automated gate runs cover. A platform the repository distributes a binary for and does not run its gates on SHALL be recorded as an omission, with the reason, and SHALL NOT be represented as covered.
+The repository SHALL record which platforms its automated gate runs cover, SHALL cover Linux, macOS, and Windows, and SHALL run the full test suite on each of them with no test excluded by conditional compilation on the ground of the platform's own facilities. A platform the repository distributes a binary for and does not run its gates on SHALL be recorded as an omission, with the reason, and SHALL NOT be represented as covered.
 
-The gap this closes is specific. The workspace's test suite is very nearly platform-agnostic — a handful of tests are compiled out on non-Unix targets — so an automated run on an unprepared platform passes while silently omitting exactly the tests covering the code that platform breaks. A passing run that omitted the relevant tests is a stronger false claim than no run at all, and the only defence is that the covered set is written down rather than inferred from a workflow file.
+The gap this closes is specific. The workspace's test suite is very nearly platform-agnostic, so an automated run on an unprepared platform passes while silently omitting exactly the tests covering the code that platform breaks. A passing run that omitted the relevant tests is a stronger false claim than no run at all.
+
+Windows was that case and is no longer. The three tests previously compiled out there covered the setup diagnostics and the hook-start path — the two places whose Windows defects were real — so a Windows run with them excluded would have reported success over the only code that was broken. Where a test is excluded on a platform for reasons of the *test harness* rather than the product, the harness is what must change: a symbolic link and a hardcoded path separator are properties of how a fixture was built, not statements about what the product supports.
+
+#### Scenario: The suite runs whole on every covered platform
+
+- **WHEN** the gates run on Linux, macOS, or Windows
+- **THEN** every test in the workspace suite SHALL be compiled and run, and no test SHALL be excluded because of the platform it is running on
 
 #### Scenario: A platform whose tests are partly compiled out is not claimed as covered
 
 - **WHEN** a platform would run the suite with some tests excluded by conditional compilation
 - **THEN** the repository SHALL record it as not covered, naming the excluded tests, rather than adding a run that reports success
+
+#### Scenario: A fixture that only one platform can build is rebuilt rather than skipped
+
+- **WHEN** a test's fixture relies on a facility one platform lacks, such as a symbolic link or a platform-specific path separator
+- **THEN** the fixture SHALL be constructed by portable means, and the test SHALL NOT be excluded on that platform
 
 #### Scenario: Coverage and support move together
 
@@ -110,4 +124,3 @@ An unpinned toolchain changes what the gates mean roughly every six weeks with n
 
 - **WHEN** the toolchain version changes
 - **THEN** it SHALL change by an edit to the pinning file, and the gates SHALL run against the new version as part of that change
-

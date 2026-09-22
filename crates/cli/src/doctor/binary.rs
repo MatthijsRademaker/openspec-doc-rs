@@ -60,7 +60,7 @@ pub fn check() -> Outcome {
 /// process environment is unsound with other tests running beside it.
 fn resolve(path_var: Option<&OsStr>) -> Option<PathBuf> {
     std::env::split_paths(path_var?)
-        .map(|dir| dir.join(BINARY))
+        .map(|dir| dir.join(format!("{BINARY}{}", std::env::consts::EXE_SUFFIX)))
         .filter(|candidate| is_executable(candidate))
         .find_map(|candidate| candidate.canonicalize().ok())
 }
@@ -73,6 +73,8 @@ fn is_executable(path: &Path) -> bool {
         .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
 }
 
+/// On platforms without Unix permission bits, the executable suffix is the
+/// loader's contract, so a regular file with that name is the portable check.
 #[cfg(not(unix))]
 fn is_executable(path: &Path) -> bool {
     path.is_file()
@@ -100,17 +102,18 @@ mod tests {
 
     use super::*;
 
-    #[cfg(unix)]
     fn executable(dir: &Path, name: &str) -> PathBuf {
-        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+        fs::write(&path, "fixture").expect("write");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
 
-        let path = dir.join(name);
-        fs::write(&path, "#!/bin/sh\n").expect("write");
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("chmod");
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("chmod");
+        }
         path
     }
 
-    #[cfg(unix)]
     #[test]
     fn the_first_executable_on_the_path_wins() {
         let first = TempDir::new().expect("temp dir");
@@ -127,7 +130,6 @@ mod tests {
         assert_eq!(resolved, Some(expected.canonicalize().expect("canonical")));
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_directory_without_the_binary_resolves_nothing() {
         let empty = TempDir::new().expect("temp dir");

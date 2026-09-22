@@ -35,7 +35,7 @@ Exec form spawns no `bash`. Neither defect can reach it.
 
 ## The version floor, and why `doctor` has to check it
 
-`args` was added in Claude Code 2.1.139. The relevant question is not what a supporting version does — it is what a non-supporting one does, and the answer is the worst available.
+`args` was added in Claude Code 2.1.139. This is confirmed by Claude Code's own changelog, release section `2.1.139`, which says: "Added hook `args: string[]` field (exec form) that spawns the command directly without a shell, so path placeholders never need quoting." Source: `https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md`. The relevant question is not what a supporting version does — it is what a non-supporting one does, and the answer is the worst available.
 
 An older Claude Code does not error on an unknown key. It ignores `args` and treats the entry as shell form, so it runs `openspec-doc` with no subcommand. That is a clap usage error. `main.rs` exits 2 on a usage error unless the raw arguments look like `hook prompt` — and here they do not, because there are no arguments at all. Claude Code treats a `UserPromptSubmit` hook exiting 2 as a block.
 
@@ -61,7 +61,7 @@ This is a real loss, and the honest accounting is that it is small: setting an e
 
 ## The recognition predicate is the risky part
 
-`COMMAND_MARKER` is the substring `openspec-doc hook `, and `init` uses it to decide whether a settings entry is one of ours — *"including one prefixed by an environment assignment or an absolute path"*. It is deliberately loose, and looseness is right here: the predicate's job is to find our entry so it can be **replaced**, and a predicate that is too strict produces a duplicate hook entry rather than a replacement. Two `Stop` hooks both starting a dashboard is a bad failure and a confusing one.
+`COMMAND_MARKER` is the substring `openspec-doc hook`, and `init` uses it to decide whether a settings entry is one of ours — *"including one prefixed by an environment assignment or an absolute path"*. It is deliberately loose, and looseness is right here: the predicate's job is to find our entry so it can be **replaced**, and a predicate that is too strict produces a duplicate hook entry rather than a replacement. Two `Stop` hooks both starting a dashboard is a bad failure and a confusing one.
 
 Under exec form the predicate becomes structural: an entry is ours when its `command` ends in the binary name and its `args` begin with `hook`. That must keep matching an entry whose `command` is an absolute path to a local build, and it must keep matching the *old* shell-form entries — not for compatibility, but because `init` run against an already-wired project has to replace them rather than add beside them. That is the one place this change touches the old format, and it touches it in order to delete it.
 

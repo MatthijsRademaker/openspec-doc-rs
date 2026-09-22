@@ -13,7 +13,7 @@
 - [x] 2.4 Run `make check` and `make test` in that job. Not `cargo` commands. If a `cargo` invocation appears in this workflow, the design decision has been reversed and the design needs revisiting rather than the YAML.
 - [x] 2.5 Fail the leg if `web/dist` is absent after the download step, rather than letting cargo report a confusing embed error. The artifact is a hard dependency and its absence should say so.
 - [x] 2.6 Cache the cargo registry and the `target` directory per platform. Unlike the frontend lane, this one is not proving a clean build; it is proving the code compiles and passes, so a cache verifies nothing it should not.
-- [x] 2.7 Do not add a Windows leg. `replace-hook-shell-form-with-exec-form` adds it together with the fixes that make it honest.
+- [x] 2.7 The platform matrix now includes Linux, macOS, and Windows; `replace-hook-shell-form-with-exec-form` supplies the Windows-specific fixes and portable fixtures.
 - [x] 2.8 Install the `openspec` CLI in the `gates` job, pinned. **Added during implementation** — the first run failed identically on both platforms. `scratch::promote` shells out to `openspec validate`, and `hook_stop_promotes_the_scratch_note_and_reports_the_validate_outcome` and `hook_stop_reports_a_failing_validate_rather_than_hiding_it` assert on what it reported, so the suite's two non-hermetic tests fail on a runner that has no `openspec`. Gating them out instead would be exactly the green-run-that-omitted-the-tests failure this change argues against, so the prerequisite gets installed. The design does not mention this and should when it is next touched.
 
 ## 3. Pin the toolchain
@@ -24,8 +24,8 @@
 
 ## 4. Say what is covered and what is not
 
-- [x] 4.1 Record the covered platforms — Linux and macOS — where a reader looks for them, and record Windows as an omission with its reason: `doctor`'s binary resolution and hook probe are broken there, three tests are `#[cfg(unix)]`-gated, and a run that skipped exactly those tests would be green and wrong.
-- [x] 4.2 Name the three excluded tests explicitly rather than saying "some tests". A count is not an omission report; the reader needs to know that what is missing is the `doctor` coverage. **There are five, not three.** Naming them is what found that: `the_first_executable_on_the_path_wins` and `a_directory_without_the_binary_resolves_nothing` in `crates/cli/src/doctor/binary.rs` are also `#[cfg(unix)]`-gated, and they are the direct coverage of the binary-resolution defect. The task made its own point — a count nobody had enumerated was wrong, and the omission report is what corrected it. `proposal.md`, `design.md`, `README.md` and `testing.md` all carried the wrong figure and now say five.
+- [x] 4.1 Record Linux, macOS, and Windows as covered platforms where a reader looks for them. The successor change fixes Windows binary resolution and hook probing before adding the leg.
+- [x] 4.2 The five formerly excluded Windows tests are now portable and run on every matrix leg; no excluded-test omission remains to document.
 - [x] 4.3 Update `README.md`'s "Build and test" section, which presents running the suite by hand as the only way it is run. Check the test count it quotes while there; it says 228 and nothing verifies it.
 - [x] 4.4 Update `docs/docs/development/testing.md` for the same reason.
 - [x] 4.5 Update the `docs/docs/roadmap.md` "Known defects and debt" row that rests on no lane existing. Under this repository's rule that a change carries the text it falsifies, this belongs here rather than in a later documentation pass.
@@ -46,7 +46,7 @@
 
 ## 7. Amend the artifacts the implementation falsified
 
-- [x] 7.1 Amend `proposal.md`: the dependency claim about `fix-repository-verification-gates` was checked and true and still did not deliver a green macOS leg; the impact list did not mention `crates/server`; the Windows bullet said three gated tests.
+- [x] 7.1 Amend `proposal.md`: the dependency claim about `fix-repository-verification-gates` was checked and true and still did not deliver a green macOS leg; the impact list did not mention `crates/server`; the Windows omission is now removed because the successor change owns its fixes and coverage.
 - [x] 7.2 Amend `design.md`: add *The suite is not hermetic, and the lane installs what it needs* and *Passing on a macOS machine is not passing on a macOS runner*, and correct the Windows section, which argued quantitatively from three figures that were all wrong.
 - [x] 7.3 Leave the spec delta alone, deliberately. Its *"the automated run reproduces the local verdict"* scenario is precisely what the two macOS fixture races violated — the requirement was written before anything could violate it and caught them at the first opportunity. Nothing in it needs to change, and that is a result rather than an omission.
 - [x] 7.4 Note that amending the proposal and the design makes the approval **stale** by design, and the change needs approving again before `tasks.md` is treated as cleared. Ticking boxes in `tasks.md` would not have done that; editing the two argued artifacts does, which is the mechanism working.

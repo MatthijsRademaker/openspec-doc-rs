@@ -7,9 +7,9 @@
 //! working directory set to a throwaway OpenSpec project built here, which is
 //! what root discovery lands on.
 //!
-//! The recorded command string is executed verbatim through `sh -c`, because
-//! that is how the agent runs it. Nothing is spliced into it — which is why an
-//! entry that already names a `--root` is refused rather than rewritten.
+//! The recorded executable and arguments are spawned directly, because that is
+//! how the agent runs exec-form entries. Nothing is spliced into them — which
+//! is why an entry that already names a `--root` is refused rather than rewritten.
 
 use std::io::Write as _;
 use std::path::Path;
@@ -25,6 +25,7 @@ use tempfile::TempDir;
 use crate::error::Error;
 
 use super::Outcome;
+use super::settings::RecordedCommand;
 
 /// One session per hook, all in the same throwaway root.
 ///
@@ -82,17 +83,38 @@ impl Probe {
         })
     }
 
-    /// Run `command` as the hook registered under `event`, and judge what came
-    /// back by what that hook has to answer with.
-    pub fn check(&self, event: &str, command: &str) -> Outcome {
-        if command.contains("--root") {
-            return Outcome::Refused(format!(
-                "`{command}` names a project root of its own, so probing it would run against \
-                 that project and consume any directive pending for the probe session there. \
-                 Drop the option — the hook resolves the root from the session's own directory — \
-                 or check this entry by hand."
-            ));
-        }
+    /// Run the recorded hook under `event`, and judge what came back by what
+    /// that hook has to answer with.
+    pub fn check(&self, event: &str, command: RecordedCommand<'_>) -> Outcome {
+        let (executable, args, label) = match &command {
+            RecordedCommand::Exec { executable, args } => {
+                let label = display(executable, args);
+                if args
+                    .iter()
+                    .any(|argument| *argument == "--root" || argument.starts_with("--root="))
+                {
+                    return Outcome::Refused(format!(
+                        "`{label}` names a project root of its own, so probing it would run against \
+                         that project and consume any directive pending for the probe session there. \
+                         Drop the option — the hook resolves the root from the session's own directory — \
+                         or check this entry by hand."
+                    ));
+                }
+                (*executable, args.as_slice(), label)
+            }
+            RecordedCommand::Shell { command } => {
+                return Outcome::Fail(format!(
+                    "`{command}` is a shell-form hook entry and cannot be probed without a shell. \
+                     Run `openspec-doc init` to rewrite it in exec form."
+                ));
+            }
+            RecordedCommand::Invalid { executable, reason } => {
+                return Outcome::Fail(format!(
+                    "`{executable}` is not a valid exec-form hook entry: {reason}. \
+                     Run `openspec-doc init` to rewrite it."
+                ));
+            }
+        };
 
         let session = match event {
             "Stop" => STOP_SESSION,
@@ -106,7 +128,7 @@ impl Probe {
             }
         };
 
-        let output = match self.run(command, session) {
+        let output = match self.run(executable, args, session) {
             Ok(output) => output,
             Err(error) => return Outcome::Fail(super::chain(&error)),
         };
@@ -114,13 +136,13 @@ impl Probe {
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
         if !output.status.success() {
             return Outcome::Fail(format!(
-                "`{command}` {}\n{}",
+                "`{label}` {}\n{}",
                 super::status(&output.status),
                 transcript(&stdout, &output)
             ));
         }
 
-        self.judge(event, command, &stdout, &output)
+        self.judge(event, &label, &stdout, &output)
     }
 
     /// Whether the hook's stdout is the answer that hook exists to give.
@@ -170,12 +192,12 @@ impl Probe {
         }
     }
 
-    /// Execute `command` the way the agent does: through a shell, with the
+    /// Execute the recorded executable directly with its arguments and the
     /// event's payload on stdin.
-    fn run(&self, command: &str, session: &str) -> Result<Output, Error> {
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(command)
+    fn run(&self, executable: &str, args: &[&str], session: &str) -> Result<Output, Error> {
+        let command = display(executable, args);
+        let mut child = Command::new(executable)
+            .args(args)
             .current_dir(self.root.path())
             .env(STATE_DIR_ENV, self.state.path())
             .stdin(Stdio::piped())
@@ -183,24 +205,32 @@ impl Probe {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|source| Error::Probe {
-                command: command.to_owned(),
+                command: command.clone(),
                 source,
             })?;
 
-        // A command that does not exist exits before reading, so a failed write
-        // is the child's exit rather than a problem of ours; the exit status and
-        // its stderr are what the report is about. Taking stdin here also closes
-        // it, which is what lets a hook that does read reach end of input.
+        // Direct spawn reports a missing executable before a child exists, so
+        // no stdin write happens in that case. A child can still exit before
+        // reading; its exit status and stderr remain the report, not a failed
+        // write on our side. Taking stdin here also closes it, which lets a hook
+        // that does read reach end of input.
         let _ = child
             .stdin
             .take()
             .expect("stdin was piped")
             .write_all(payload(session, self.root.path()).as_bytes());
 
-        child.wait_with_output().map_err(|source| Error::Probe {
-            command: command.to_owned(),
-            source,
-        })
+        child
+            .wait_with_output()
+            .map_err(|source| Error::Probe { command, source })
+    }
+}
+
+fn display(executable: &str, args: &[&str]) -> String {
+    if args.is_empty() {
+        executable.to_owned()
+    } else {
+        format!("{executable} {}", args.join(" "))
     }
 }
 
@@ -250,9 +280,32 @@ fn quote(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use openspec_doc_core::hook::load_pending;
 
     use super::*;
+
+    fn openspec_doc() -> PathBuf {
+        if let Ok(path) = std::env::var("CARGO_BIN_EXE_openspec-doc") {
+            return PathBuf::from(path);
+        }
+
+        std::env::current_exe()
+            .expect("test executable")
+            .parent()
+            .expect("deps directory")
+            .parent()
+            .expect("target directory")
+            .join(format!("openspec-doc{}", std::env::consts::EXE_SUFFIX))
+    }
+
+    fn direct<'a>(executable: &'a str, args: &[&'a str]) -> RecordedCommand<'a> {
+        RecordedCommand::Exec {
+            executable,
+            args: args.to_vec(),
+        }
+    }
 
     /// Each hook is probed under its own session, so the explore probe's note
     /// cannot make the stop probe start a dashboard.
@@ -290,7 +343,17 @@ mod tests {
 
         let outcome = probe.check(
             "Stop",
-            "openspec-doc --root /some/project hook stop --agent claude",
+            direct(
+                "openspec-doc",
+                &[
+                    "--root",
+                    "/some/project",
+                    "hook",
+                    "stop",
+                    "--agent",
+                    "claude",
+                ],
+            ),
         );
 
         assert!(
@@ -300,24 +363,54 @@ mod tests {
     }
 
     #[test]
-    fn a_command_that_does_not_exist_fails_with_its_status_and_stderr() {
+    fn a_legacy_shell_entry_is_reported_with_the_init_fix() {
         let probe = Probe::new().expect("probe root");
 
-        let outcome = probe.check("Stop", "openspec-doc-that-is-not-installed hook stop");
+        let outcome = probe.check(
+            "Stop",
+            RecordedCommand::Shell {
+                command: "openspec-doc hook stop --agent claude",
+            },
+        );
+
+        let Outcome::Fail(detail) = outcome else {
+            panic!("{outcome:?}");
+        };
+        assert!(detail.contains("shell-form"), "{detail}");
+        assert!(detail.contains("openspec-doc init"), "{detail}");
+    }
+
+    #[test]
+    fn a_command_that_does_not_exist_fails_before_stdin_is_written() {
+        let probe = Probe::new().expect("probe root");
+
+        let outcome = probe.check(
+            "Stop",
+            direct(
+                "openspec-doc-that-is-not-installed",
+                &["hook", "stop", "--agent", "claude"],
+            ),
+        );
 
         let Outcome::Fail(detail) = &outcome else {
             panic!("{outcome:?}");
         };
-        assert!(detail.contains("exited"), "{detail}");
-        assert!(detail.contains("not found"), "{detail}");
+        assert!(detail.contains("failed to run"), "{detail}");
+        assert!(
+            detail.contains("openspec-doc-that-is-not-installed"),
+            "{detail}"
+        );
     }
 
     #[test]
     fn an_empty_answer_fails_every_hook() {
         let probe = Probe::new().expect("probe root");
+        let binary = openspec_doc();
+        let executable = binary.to_str().expect("binary path");
+        let args = ["hook", "prompt", "--agent", "pi"];
 
         for event in ["Stop", "UserPromptSubmit", "UserPromptExpansion"] {
-            let outcome = probe.check(event, "true");
+            let outcome = probe.check(event, direct(executable, &args));
 
             assert!(
                 matches!(outcome, Outcome::Fail(_)),
@@ -332,8 +425,13 @@ mod tests {
     #[test]
     fn the_prompt_hook_fails_on_a_decision_payload_that_is_not_its_directive() {
         let probe = Probe::new().expect("probe root");
+        let binary = openspec_doc();
+        let executable = binary.to_str().expect("binary path");
 
-        let outcome = probe.check("UserPromptSubmit", "echo '{\"continue\":true}'");
+        let outcome = probe.check(
+            "UserPromptSubmit",
+            direct(executable, &["hook", "prompt", "--agent", "pi"]),
+        );
 
         assert!(matches!(outcome, Outcome::Fail(_)), "{outcome:?}");
     }
@@ -341,17 +439,18 @@ mod tests {
     #[test]
     fn a_hook_answering_what_it_should_passes() {
         let probe = Probe::new().expect("probe root");
-        let directive = probe.directive.clone();
+        let binary = openspec_doc();
+        let executable = binary.to_str().expect("binary path");
 
-        for (event, command) in [
-            ("Stop", "echo '{\"continue\":true}'".to_owned()),
+        for (event, args) in [
+            ("Stop", ["hook", "stop", "--agent", "claude"]),
             (
                 "UserPromptExpansion",
-                "echo .openspec-doc/scratch/_session/x.md".to_owned(),
+                ["hook", "explore", "--agent", "claude"],
             ),
-            ("UserPromptSubmit", format!("cat <<'EOF'\n{directive}\nEOF")),
+            ("UserPromptSubmit", ["hook", "prompt", "--agent", "claude"]),
         ] {
-            let outcome = probe.check(event, &command);
+            let outcome = probe.check(event, direct(executable, &args));
 
             assert!(matches!(outcome, Outcome::Pass(_)), "{event}: {outcome:?}");
         }

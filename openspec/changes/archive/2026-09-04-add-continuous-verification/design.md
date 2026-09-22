@@ -14,7 +14,7 @@ One thing in the Makefile has to change. `test` currently depends on `build`, wh
 
 ```make
 test: build
-	cargo test --workspace
+ cargo test --workspace
 ```
 
 In CI the frontend has already been built by another job and downloaded into `web/dist`. Rebuilding it there costs a Bun install per platform leg and — the actual problem — produces a *different* `web/dist` from the one the artifact carried, which is precisely the property the fan-out exists to guarantee. So the gate targets cannot depend on a target that unconditionally rebuilds.
@@ -24,10 +24,10 @@ Two ways out. Drop the prerequisite and tell developers to run `make build` firs
 ```make
 # The artifact the workspace embeds. Built when absent; `make frontend` forces it.
 web/dist:
-	$(MAKE) frontend
+ $(MAKE) frontend
 
 frontend:
-	cd web && bun install --frozen-lockfile && bun run build
+ cd web && bun install --frozen-lockfile && bun run build
 
 build test check: web/dist
 ```
@@ -155,16 +155,6 @@ The artifact is passed between jobs rather than rebuilt or cached. A cache would
 `frontend-assets.yml` could absorb this. Its `frontend-lane` job already builds `web/dist`, so the fan-out would come free and the repository would have one CI file instead of two.
 
 Rejected, on the narrower of two available arguments. The broad one — that the frontend lane is deliberately uncached, *"since a cached one would verify the cache rather than the source"*, while the Rust lane wants aggressive caching — does not survive contact with the facts, because caching is per-job and one workflow can hold both policies. The narrow one holds: that lane works, it is the only automation this repository has, and rewriting it to share a job is a change to something that is not broken for a saving of roughly sixty seconds per run on free runners. `make check` already covers the frontend's own gate, so the two workflows overlap on `bun run check`; that duplication is visible, cheap, and reversible later if a third consumer of `web/dist` appears.
-
-## Windows is not deferred out of caution
-
-It is deferred because adding it here would require choosing between two bad options, and the second one is available and tempting.
-
-The workspace has 401 tests, of which **five** are `#[cfg(unix)]`-gated. A Windows leg added today therefore compiles and runs 396 of them — it is not vacuous, and that is the trap. It would be green. The five it silently omits are `the_first_executable_on_the_path_wins` and `a_directory_without_the_binary_resolves_nothing` in `crates/cli/src/doctor/binary.rs`, and `doctor_passes_a_wired_project_and_fails_naming_a_hook_that_is_not_registered`, `doctor_leaves_a_pending_directive_and_the_projects_own_review_state_alone` and `hook_stop_starts_a_dashboard_that_outlives_it_and_serve_url_finds_it` in `crates/cli/tests/cli.rs` — which is to say, exactly the coverage of `doctor`'s binary resolution, of its hook probe, and of the hook-start path. A green Windows badge over those five is a stronger false claim than no badge at all.
-
-> **Amended after implementation.** This section originally said `cli.rs` held "roughly 153 test functions" of which "three" were gated, and that a Windows leg would run "about 150". Every one of those figures was wrong: `cli.rs` has 60 tests, the workspace has 401, and the gating covers five tests rather than three — the two in `doctor/binary.rs` were missed, which is unfortunate given they are the most on-the-nose examples the argument has. The argument survives its own arithmetic being wrong, but it was making a quantitative case out of numbers nobody had counted.
-
-`replace-hook-shell-form-with-exec-form` fixes the defects, un-gates the tests, and adds the leg together. Until then this change states Linux and macOS as the covered platforms, and the capability requires that statement to exist so the gap is a written omission rather than a reader's inference.
 
 ## The toolchain pin
 

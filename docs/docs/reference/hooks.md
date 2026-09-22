@@ -52,6 +52,7 @@ If a start fails, that server's output is in `.openspec-doc/serve.log` and the h
 `.claude/settings.json` at the project root — the file `init` writes, and the file to edit if you are
 wiring it by hand. Committed: every character of it is a fact about how the project is reviewed,
 identical on every machine that checks the project out, so a per-machine file is the wrong place for it.
+Claude Code 2.1.139 or newer is required; that release added hook argument vectors, which these entries use.
 
 ```json
 {
@@ -61,7 +62,8 @@ identical on every machine that checks the project out, so a per-machine file is
         "hooks": [
           {
             "type": "command",
-            "command": "openspec-doc hook stop --agent claude",
+            "args": ["hook", "stop", "--agent", "claude"],
+            "command": "openspec-doc",
             "timeout": 30,
             "statusMessage": "Checking openspec-doc review feedback"
           }
@@ -73,7 +75,8 @@ identical on every machine that checks the project out, so a per-machine file is
         "hooks": [
           {
             "type": "command",
-            "command": "openspec-doc hook prompt --agent claude",
+            "args": ["hook", "prompt", "--agent", "claude"],
+            "command": "openspec-doc",
             "timeout": 30,
             "statusMessage": "Checking openspec-doc review feedback"
           }
@@ -86,7 +89,8 @@ identical on every machine that checks the project out, so a per-machine file is
         "hooks": [
           {
             "type": "command",
-            "command": "openspec-doc hook explore --agent claude",
+            "args": ["hook", "explore", "--agent", "claude"],
+            "command": "openspec-doc",
             "timeout": 30,
             "statusMessage": "Opening the openspec-doc exploration note"
           }

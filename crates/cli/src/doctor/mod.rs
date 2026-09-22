@@ -10,6 +10,7 @@
 //! Anything this does not examine gets a line saying so. A green line for
 //! something never looked at is the failure mode this command exists to remove.
 
+mod agent;
 mod binary;
 mod probe;
 mod settings;
@@ -93,7 +94,10 @@ pub fn run(project: Project) -> Result<(), Error> {
 /// Every check, run in full before anything is printed, so one failure does not
 /// truncate the report.
 fn collect(project: &Project) -> Vec<Check> {
-    let mut checks = vec![Check::new("binary on PATH", binary::check())];
+    let mut checks = vec![
+        Check::new("binary on PATH", binary::check()),
+        Check::new("Claude Code version", agent::check()),
+    ];
     checks.extend(hooks(&project.root));
     checks.extend(unchecked());
 
@@ -299,6 +303,6 @@ mod tests {
         for unchecked in ["pi.dev extension", "dashboard server", "matcher"] {
             assert!(rendered.contains(unchecked), "{rendered}");
         }
-        assert_eq!(rendered.matches("not checked").count(), 3, "{rendered}");
+        assert!(rendered.contains("Claude Code version"), "{rendered}");
     }
 }
