@@ -8,14 +8,16 @@ Looking to exercise every interaction against a throwaway project instead? That 
 ## 1. Install
 
 ```bash
-git clone https://github.com/matthijsrademaker/openspec-doc-rs
-cd openspec-doc-rs
+git clone --branch v0.1.0 https://github.com/matthijsrademaker/openspec-doc-rs openspec-doc-rs-0.1.0
+cd openspec-doc-rs-0.1.0
 make build   # web/dist is not committed; rust-embed needs it at compile time
-cargo install --path crates/cli
+cargo install --path crates/cli --locked
 openspec-doc --version
 ```
 
-`make build` needs Bun 1.3.2 (`web/.bun-version`); everything after it is plain cargo.
+Versioned releases currently carry source only; the first release has no prebuilt binaries yet.
+`add-release-binaries-and-installers` owns downloadable binaries and installers. `make build` needs
+Bun 1.3.2 (`web/.bun-version`); everything after it is plain cargo.
 
 `~/.cargo/bin` needs to be on your `PATH`. Re-run with `--force` after pulling changes.
 

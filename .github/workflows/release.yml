@@ -1,0 +1,37 @@
+# Versioning and GitHub releases are one workflow run. A tag created with
+# GITHUB_TOKEN does not trigger another workflow, so release follow-up jobs must
+# depend on this job's output rather than on `push.tags`.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-pull-request:
+    name: Release pull request
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    outputs:
+      releases_created: ${{ steps.release-plz.outputs.releases_created }}
+      releases: ${{ steps.release-plz.outputs.releases }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Omitting `command` intentionally runs release-pr and release in sequence:
+      # open/update the proposal first, then release only after that proposal is
+      # merged. Downstream artifact jobs must gate on releases_created below.
+      - name: Run release-plz
+        id: release-plz
+        uses: release-plz/action@b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5 # v0.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

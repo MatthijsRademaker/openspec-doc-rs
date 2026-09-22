@@ -216,5 +216,8 @@ export default defineConfig({
 				content: "https://github.com/matthijsrademaker/openspec-doc-rs",
 			},
 		],
+		footer: {
+			message: "Released under the MIT License.",
+		},
 	},
 });

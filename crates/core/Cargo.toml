@@ -2,6 +2,9 @@
 name = "openspec-doc-core"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+# Registry packages cannot carry gitignored web/dist, so keep entire workspace out of registries.
+publish = false
 
 [dependencies]
 chrono.workspace = true
