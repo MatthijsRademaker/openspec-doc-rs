@@ -3,7 +3,9 @@
 ## Purpose
 
 The repository's own executable verification gates: which of its buildable surfaces must be covered, the Makefile entry point that reaches every one of them without a developer knowing each surface's toolchain, and the rule that a gate's verdict is a fact about the repository rather than about the machine running it. A surface that builds but is gated by nothing is recorded here as a deliberate omission or it is a defect; a test that passes only where the operating system hands it a convenient path shape is the same defect wearing a green tick, and is fixed by the test resolving the path rather than by the developer configuring an environment variable.
+
 ## Requirements
+
 ### Requirement: Every buildable surface is covered by an executable gate
 
 The repository SHALL cover each of its buildable surfaces — the Rust workspace, the dashboard frontend, and the documentation site — with an executable verification gate, and each gate SHALL be reachable from the repository's Makefile without the developer knowing the surface's own toolchain commands.
@@ -122,4 +124,3 @@ An unpinned toolchain changes what the gates mean roughly every six weeks with n
 
 - **WHEN** the toolchain version changes
 - **THEN** it SHALL change by an edit to the pinning file, and the gates SHALL run against the new version as part of that change
-
