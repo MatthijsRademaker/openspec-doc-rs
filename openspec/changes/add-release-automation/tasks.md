@@ -29,19 +29,19 @@ Do this first. It is the smallest edit in the change and it closes the one way a
   **PASSED** In a clean temporary worktree with `web/dist` absent, release-plz 0.3.169 ran `update --allow-dirty`; it performed version detection and generated the initial changelog without any `cargo build`, `cargo check`, `cargo test`, or `cargo package` command in its log.
 - [x] 4.2 If it does compile, do not add a Bun build step to the release-plz job as a reflex. Establish which path compiles and why first — the answer changes whether the fix is a build step, a configuration flag, or a different tool.
   **PASSED** The clean-worktree run did not compile; no Bun build step was added.
-- [ ] 4.3 Confirm the release pull request opens with no checks reported, and that this is because pull requests opened with `GITHUB_TOKEN` do not trigger `pull_request` workflows. Write it down where a reader of the pull request would wonder. A checkless pull request in a repository that has checks looks broken.
-  **BLOCKED** Requires this workflow to run on GitHub and open its first release PR; the reason is documented in `docs/docs/development/conventions.md`.
+- [x] 4.3 Confirm the release pull request opens with no checks reported, and that this is because pull requests opened with `GITHUB_TOKEN` do not trigger `pull_request` workflows. Write it down where a reader of the pull request would wonder. A checkless pull request in a repository that has checks looks broken.
+  **PASSED** Release PR #4 opened with an empty `statusCheckRollup`; repository docs record that `GITHUB_TOKEN`-created pull requests do not trigger `pull_request` workflows. Later manual changelog editing triggered checks, confirming the distinction.
 
 ## 5. Cut the first release
 
-- [ ] 5.1 Merge the first release pull request and confirm the tag, the release, and the changelog all appear.
-  **BLOCKED** Requires a hosted release PR and owner merge.
-- [ ] 5.2 Confirm the released version matches `Cargo.toml` and `Cargo.lock`, and that the lockfile was updated by the bump. A workspace whose lockfile still names the old version is a broken release that builds fine.
-  **BLOCKED** Requires the first hosted release and its merged version bump.
-- [ ] 5.3 Confirm `openspec-doc --version` reports the released version. `doctor` compares versions between binaries and reads this string; a release that does not move it makes that comparison meaningless.
-  **BLOCKED** Requires installing the first hosted release.
-- [ ] 5.4 Confirm nothing was published to a registry.
-  **BLOCKED** Requires checking registry state after the first hosted release.
+- [x] 5.1 Merge the first release pull request and confirm the tag, the release, and the changelog all appear.
+  **PASSED** Merged release PR #4 at `30d9ae0`; tag `v0.1.0`, GitHub release, and reviewed `CHANGELOG.md` appeared.
+- [x] 5.2 Confirm the released version matches `Cargo.toml` and `Cargo.lock`, and that the lockfile was updated by the bump. A workspace whose lockfile still names the old version is a broken release that builds fine.
+  **PASSED** Tag `v0.1.0` checkout reports workspace version `0.1.0`; all three workspace packages in `Cargo.lock` also report `0.1.0`.
+- [x] 5.3 Confirm `openspec-doc --version` reports the released version. `doctor` compares versions between binaries and reads this string; a release that does not move it makes that comparison meaningless.
+  **PASSED** Built tag `v0.1.0` from a clean checkout; `cargo run --locked -p openspec-doc-cli -- --version` reported `openspec-doc 0.1.0`.
+- [x] 5.4 Confirm nothing was published to a registry.
+  **PASSED** Release-plz log reports all three packages released in `git-only` mode and contains no registry upload; the GitHub release has no registry assets.
 - [x] 5.5 Say in the release notes, or in the repository, that this release carries no binaries yet and `add-release-binaries-and-installers` is what makes one worth downloading. A first release that looks like a distribution and is not will otherwise generate exactly one confused issue.
 
 ## 6. The text this falsifies
