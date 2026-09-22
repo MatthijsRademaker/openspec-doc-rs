@@ -6,20 +6,17 @@ All notable changes to `openspec-doc` are documented here.
 
 ## [0.1.0](https://github.com/MatthijsRademaker/openspec-doc-rs/releases/tag/v0.1.0) - 2026-09-22
 
-### Bug Fixes
+### Added
 
-- *(cli)* never refuse a prompt over hook prompt's own arguments
+- Local review dashboard for OpenSpec projects, with anchored comments and phase verdicts.
+- Claude Code and pi.dev hook bridge for delivering review feedback at turn boundaries.
+- Versioned release automation driven by reviewed release pull requests.
+- MIT licensing and source-tag installation documentation.
 
-### Features
+### Fixed
 
-- add release automation
-- added explore support pi and fixed tests
-- approval gate and serve process control
-- add serve inventory
-- init and diagnostics added
-- dashboard lifecycle and animations and style
-- block model artifact
-- vue dashboard foundation
-- add-comment-thread-actions done
-- improvements to autonomy
-- close the dashboard review loop end to end
+- Hook prompt handling now treats malformed hook arguments as non-blocking feedback failures rather than rejecting the user's prompt.
+
+### Notes
+
+- This first release carries source and release metadata only. Prebuilt binaries and installers belong to `add-release-binaries-and-installers`.
