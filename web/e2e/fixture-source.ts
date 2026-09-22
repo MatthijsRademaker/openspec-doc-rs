@@ -32,6 +32,6 @@ export const diagramSource = [
 export const proposalSource =
   '# Observatory Design System Fixture\n\nBrowser lane must see this proposal.\n\n' +
   `${repeatedBlock}\n\nA bridge between repeated blocks.\n\n${repeatedBlock}\n\n` +
-  'Selection with **inline markup** crosses source.\n\n' +
+  'Selection with **inline markup** and `code syntax` crosses source.\n\n' +
   `${scrollFiller}\n\n` +
   'Final proposal sentence must stay fully legible at the document foot.\n'

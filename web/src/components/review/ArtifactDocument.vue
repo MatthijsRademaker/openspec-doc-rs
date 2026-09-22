@@ -5,6 +5,7 @@ import InstrumentLabel from '@/components/InstrumentLabel.vue'
 import { Button } from '@/components/ui/button'
 import { scopeRelativeArtifactPath } from '@/lib/artifact-path'
 import type { ReviewReceipt, TransmissionEvent, TriangulationEvent } from '@/lib/motion-events'
+import { sourceSelection } from '@/lib/markdown-selection'
 import type { Artifact, Block, NewComment, Thread } from '@/lib/scope-review'
 import { prefersReducedMotion } from '@/lib/view-transition'
 
@@ -51,6 +52,8 @@ interface CommentTarget {
   artifactPath: string
   block: Block
   selectedText: string
+  displayText: string
+  searchFrom: number
   selected: boolean
 }
 
@@ -158,6 +161,8 @@ function startBlockComment(block: Block) {
     artifactPath: props.artifact.path,
     block,
     selectedText: block.source,
+    displayText: block.source,
+    searchFrom: block.range.start,
     selected: false,
   }
   commentBody.value = ''
@@ -168,11 +173,20 @@ function startSelectionComment(event: MouseEvent, block: Block) {
   const container = event.currentTarget
   if (!(container instanceof HTMLElement)) return
   const selection = window.getSelection()
-  const selectedText = selection?.toString().trim() ?? ''
-  if (!selection || selection.isCollapsed || !selectedText) return
-  if (!container.contains(selection.anchorNode) || !container.contains(selection.focusNode)) return
+  if (!selection) return
+  const content = container.querySelector<HTMLElement>('.review-block__content')
+  if (!content) return
+  const mapped = sourceSelection(content, selection, block)
+  if (!mapped) return
 
-  target.value = { artifactPath: props.artifact.path, block, selectedText, selected: true }
+  target.value = {
+    artifactPath: props.artifact.path,
+    block,
+    selectedText: mapped.selectedText,
+    displayText: mapped.displayText,
+    searchFrom: mapped.searchFrom,
+    selected: true,
+  }
   commentBody.value = ''
 }
 
@@ -187,7 +201,7 @@ function submitComment() {
     kind: 'anchored',
     artifactPath: target.value.artifactPath,
     selectedText: target.value.selectedText,
-    searchFrom: target.value.block.range.start,
+    searchFrom: target.value.searchFrom,
     body: commentBody.value.trim(),
   })
 }
@@ -314,7 +328,7 @@ function submitComment() {
                 <label :for="`comment-${block.id}`">
                   {{ target.selected ? 'Comment on selected text' : 'Comment on block' }}
                 </label>
-                <blockquote>{{ target.selectedText }}</blockquote>
+                <blockquote>{{ target.displayText }}</blockquote>
                 <textarea
                   :id="`comment-${block.id}`"
                   v-model="commentBody"
