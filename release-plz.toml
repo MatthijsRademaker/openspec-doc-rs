@@ -1,0 +1,52 @@
+# Release automation: https://release-plz.dev/docs/config
+#
+# The CLI is the user-facing package. Core and server still move with the
+# workspace and receive internal tags, but only the CLI tag gets a GitHub
+# release; otherwise three assetless releases would compete for `latest`.
+
+[workspace]
+# Changelog and version updates happen in the release pull request.
+changelog_update = true
+# These crates are not on crates.io. Resolve versions from git tags instead.
+git_only = true
+# The release command creates tags and the CLI GitHub release after the PR merges.
+git_release_enable = true
+git_tag_enable = true
+# Registry publication is forbidden both here and in every crate manifest.
+publish = false
+# Never release every push; wait for the release pull request to be merged.
+release_always = false
+# Only conventional commits with releasable types produce a proposal.
+release_commits = "^(feat|fix|perf|refactor|revert)(\\([^)]*\\))?!?:"
+
+[[package]]
+name = "openspec-doc-core"
+publish = false
+changelog_update = false
+git_release_enable = false
+git_tag_name = "openspec-doc-core-v{{ version }}"
+
+[[package]]
+name = "openspec-doc-server"
+publish = false
+changelog_update = false
+git_release_enable = false
+git_tag_name = "openspec-doc-server-v{{ version }}"
+
+[[package]]
+name = "openspec-doc-cli"
+publish = false
+changelog_include = ["openspec-doc-core", "openspec-doc-server"]
+changelog_path = "CHANGELOG.md"
+git_tag_name = "v{{ version }}"
+
+[changelog]
+protect_breaking_commits = true
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Bug Fixes" },
+  { message = "^perf", group = "Performance" },
+  { message = "^refactor", group = "Refactors" },
+  { message = "^revert", group = "Reverts" },
+  { message = ".*", skip = true },
+]

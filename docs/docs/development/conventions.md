@@ -31,6 +31,21 @@ that says what it is.
 of that commit — which is the point, and also the cost: an old pin stays old until someone decides
 otherwise. That is a candidate for whatever automation eventually opens the release pull request.
 
+## Releases
+
+`release-plz` opens or updates one release pull request after releasable commits reach `main`. It derives
+the bump from commit types — `feat`, `fix`, `perf`, `refactor`, and `revert` — then updates the version and
+`CHANGELOG.md`. Merge that pull request to create the tag and GitHub release; do not edit versions or run
+`cargo publish` by hand.
+
+Commit typing is manual. No hook, commitlint job, or CI check verifies it. A mistyped subject can therefore
+produce the wrong version and public changelog entry. The release pull request is the correction point:
+review and edit its generated changelog before merging it. A release pull request opened with
+`GITHUB_TOKEN` does not trigger `pull_request` workflows, so it is expected to have no checks reported.
+
+This workspace never publishes crates to a registry. Releases currently carry no binaries; the
+`add-release-binaries-and-installers` change owns downloadable artifacts and installers.
+
 ## The gates
 
 `make check` and `make test` are the entry points, and `.github/workflows/rust.yml` invokes those same

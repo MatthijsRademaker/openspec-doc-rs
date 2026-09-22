@@ -98,11 +98,12 @@ everything was designed around — an agent refusing an injected directive as pr
 early on — has not recurred. Claim-forgetting, rated moderate and long unobserved, did not happen on the run
 that mattered.
 
-**Proven here, not packaged for elsewhere.** This is 0.1.0, installable only with `cargo install --path`
-from a clone. There is no release, and setup is lossy in a specific way: the hook configuration lives in
-gitignored local settings, so a fresh clone has no hooks and nothing says so. That is a deliberate boundary
-— the criterion asks whether the loop works, not whether a stranger can install it — but it means "the MVP
-is done" should be read as *the idea is proven*, not *the tool is distributable*.
+**Versioned here, not yet packaged as binaries.** This is 0.1.0, installable from a tagged source
+release after `make build` and `cargo install --path`. The release carries no prebuilt binaries yet;
+`add-release-binaries-and-installers` owns that remaining distribution step. Setup is still lossy in a
+specific way: hook configuration lives in gitignored local settings, so a fresh clone has no hooks and
+nothing says so. The MVP criterion asks whether the loop works, not whether a stranger can install it —
+so "the MVP is done" means *the idea is proven*, not *every install path is complete*.
 
 Three things still need a terminal or insider knowledge. Under this framing none are MVP-blocking; they are
 quality of life:

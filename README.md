@@ -31,11 +31,22 @@ Delivered exactly once across the two.
 
 ## Install
 
+Versioned releases currently carry source only. Install a released version from its tag:
+
 ```bash
+git clone --branch v0.1.0 https://github.com/matthijsrademaker/openspec-doc-rs openspec-doc-rs-0.1.0
+cd openspec-doc-rs-0.1.0
+make build
 cargo install --path crates/cli --locked
+openspec-doc --version
 openspec-doc serve          # discovers the project root by walking up from the cwd
 openspec-doc serve url      # this project's dashboard URL, and whether one is serving it
 ```
+
+For development from an existing checkout, run `make build` and then
+`cargo install --path crates/cli --locked`. The first release has no prebuilt binaries yet;
+`add-release-binaries-and-installers` adds downloadable binaries and installers.
+Version bumps and changelog text are handled in the [release process](docs/docs/development/conventions.md#releases).
 
 The `openspec` CLI must also be on `PATH` — promotion runs `openspec validate`.
 
@@ -56,6 +67,10 @@ stability and never correctness.
 
 Passing `--port` explicitly — as the frontend loop below does — gets you exactly that port, fails rather
 than falling back to another, and changes nothing about the project's assignment.
+
+## License
+
+Released under the [MIT License](LICENSE).
 
 ## Documentation
 
