@@ -841,7 +841,7 @@ test('links persistent conversation to exact repeated source occurrence', async 
   await expect(page.locator('#scope-conversation-body')).toBeVisible()
 })
 
-test('anchors new comment to second repeated block and refuses inline-markup mismatch', async ({
+test('anchors new comment to second repeated block and maps inline markup to source', async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== 'narrow', 'mutation runs once after shared assertions')
@@ -862,7 +862,7 @@ test('anchors new comment to second repeated block and refuses inline-markup mis
       if (!response.ok) throw new Error(`scope detail ${response.status}`)
       const detail = (await response.json()) as {
         comments: Array<{
-          comment: { body: string; anchor?: { startOffset: number } }
+          comment: { body: string; anchor?: { selectedText: string; startOffset: number } }
           anchorState: string
           blockId: string | null
         }>
@@ -878,7 +878,7 @@ test('anchors new comment to second repeated block and refuses inline-markup mis
 
   const inlineBlock = page
     .locator('.review-block')
-    .filter({ hasText: 'Selection with inline markup crosses source.' })
+    .filter({ hasText: 'Selection with inline markup and code syntax crosses source.' })
   await inlineBlock.locator('p').evaluate((paragraph) => {
     const range = document.createRange()
     range.selectNodeContents(paragraph)
@@ -892,8 +892,24 @@ test('anchors new comment to second repeated block and refuses inline-markup mis
     .getByLabel('Comment on selected text')
     .fill('Markup must be explicit.')
   await inlineBlock.locator('..').getByRole('button', { name: 'Record comment' }).click()
-  await expect(page.getByRole('alert')).toContainText('was not found')
-  await expect(page.getByRole('alert')).toContainText('Action not recorded')
+  await expect(inlineBlock.locator('.review-block__marker')).toHaveCount(1)
+
+  const inlineCreated = await page.evaluate(
+    async ({ change }) => {
+      const response = await fetch(`/api/changes/${change}`)
+      if (!response.ok) throw new Error(`scope detail ${response.status}`)
+      const detail = (await response.json()) as {
+        comments: Array<{
+          comment: { body: string; anchor?: { selectedText: string; startOffset: number } }
+        }>
+      }
+      return detail.comments.find((thread) => thread.comment.body === 'Markup must be explicit.')
+    },
+    { change: fixtureChange },
+  )
+  expect(inlineCreated?.comment.anchor?.selectedText).toBe(
+    'Selection with **inline markup** and `code syntax` crosses source.',
+  )
 })
 
 test('replies, resolves, and reopens while second tab reconciles selected thread', async ({

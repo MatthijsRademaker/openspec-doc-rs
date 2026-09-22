@@ -9,10 +9,18 @@ export interface SourceRange {
   end: number
 }
 
+export interface SourceSpan {
+  text: string
+  sourceStart: number
+  sourceEnd: number
+}
+
 export interface Block {
   id: string
   html: string
   source: string
+  /** Server-supplied map from rendered text back to absolute markdown offsets. */
+  sourceSpans?: SourceSpan[]
   range: SourceRange
 }
 

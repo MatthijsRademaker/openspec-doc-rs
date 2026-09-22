@@ -11,6 +11,17 @@ use pulldown_cmark::html::push_html;
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use serde::Serialize;
 
+/// A rendered text segment and the source bytes that produced it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceSpan {
+    /// Text as it appears in the rendered block.
+    pub text: String,
+    /// Absolute byte range in the artifact source.
+    pub source_start: usize,
+    pub source_end: usize,
+}
+
 /// One rendered, commentable region of an artifact.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,6 +32,8 @@ pub struct Block {
     pub html: String,
     /// Exact source bytes occupied by [`range`].
     pub source: String,
+    /// Rendered text segments mapped back to source ranges.
+    pub source_spans: Vec<SourceSpan>,
     /// Byte range of [`source`] in the artifact.
     pub range: Range<usize>,
 }
@@ -65,8 +78,10 @@ pub fn blocks(markdown: &str) -> Vec<Block> {
     candidates
         .into_iter()
         .map(|candidate| {
+            let block_events = &events[candidate.event_range];
             let source = source(markdown, &candidate.source_range);
-            let html = render(&events[candidate.event_range]);
+            let html = render(block_events);
+            let source_spans = source_spans(block_events);
 
             Block {
                 id: format!(
@@ -75,6 +90,7 @@ pub fn blocks(markdown: &str) -> Vec<Block> {
                 ),
                 html,
                 source,
+                source_spans,
                 range: candidate.source_range,
             }
         })
@@ -163,6 +179,45 @@ fn render(events: &[(Event<'_>, Range<usize>)]) -> String {
     let mut html = String::new();
     push_html(&mut html, events.iter().map(|(event, _)| safe_event(event)));
     html
+}
+
+/// Keep the text a reviewer can select tied to the source bytes that produced it.
+///
+/// Markdown syntax disappears from rendered text, so the browser cannot send its
+/// selection straight back as a source substring. These spans let the client
+/// recover the source range while keeping HTML rendering unchanged.
+fn source_spans(events: &[(Event<'_>, Range<usize>)]) -> Vec<SourceSpan> {
+    let mut footnote_number = 0;
+
+    events
+        .iter()
+        .filter_map(|(event, range)| {
+            let text = match event {
+                Event::Text(text)
+                | Event::Code(text)
+                | Event::InlineMath(text)
+                | Event::DisplayMath(text)
+                | Event::Html(text)
+                | Event::InlineHtml(text) => text.to_string(),
+                Event::FootnoteReference(_) => {
+                    footnote_number += 1;
+                    footnote_number.to_string()
+                }
+                // These events produce a newline in the HTML renderer. The
+                // source range still gives the client a valid anchor boundary.
+                Event::SoftBreak | Event::HardBreak | Event::Rule | Event::TaskListMarker(_) => {
+                    "\n".to_owned()
+                }
+                Event::Start(_) | Event::End(_) => return None,
+            };
+
+            (!text.is_empty()).then_some(SourceSpan {
+                text,
+                source_start: range.start,
+                source_end: range.end,
+            })
+        })
+        .collect()
 }
 
 /// Convert raw HTML into text before pulldown-cmark's HTML renderer sees it.
@@ -277,6 +332,29 @@ mod tests {
             "{heading:?}"
         );
         assert_sources_are_slices(markdown, &blocks);
+    }
+
+    #[test]
+    fn rendered_text_spans_keep_inline_markup_mapped_to_source() {
+        let markdown = "A **bold** and `code`.\n";
+        let parsed = blocks(markdown);
+        let block = parsed.first().expect("paragraph block");
+        let visible: String = block
+            .source_spans
+            .iter()
+            .map(|span| span.text.as_str())
+            .collect();
+
+        assert_eq!(visible, "A bold and code.");
+        let code = block
+            .source_spans
+            .iter()
+            .find(|span| span.text == "code")
+            .expect("inline code span");
+        assert_eq!(
+            markdown.get(code.source_start..code.source_end),
+            Some("`code`")
+        );
     }
 
     #[test]
