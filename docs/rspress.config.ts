@@ -33,7 +33,7 @@ const TAXONOMY: Section[] = [
 		pages: [
 			{
 				title: "Overview",
-				path: "/index.md",
+				path: "/overview.md",
 				desc: "What openspec-doc is: a local review dashboard for OpenSpec projects plus an agent hook bridge",
 			},
 			{
@@ -211,10 +211,10 @@ export default defineConfig({
 					return rootIndex();
 				},
 			},
-			exclude: ({ page }) => page.routePath === "/",
 		}),
 	],
 	themeConfig: {
+		llmsUI: true,
 		socialLinks: [
 			{
 				icon: "github",
