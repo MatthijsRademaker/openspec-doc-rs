@@ -39,6 +39,12 @@ publish = false
 changelog_include = ["openspec-doc-core", "openspec-doc-server"]
 changelog_path = "CHANGELOG.md"
 git_tag_name = "v{{ version }}"
+# Created as a draft so `/releases/latest/download/…` never resolves to a
+# release whose binaries are still building. The release workflow undrafts it,
+# and marks it latest, once every platform's asset is attached. A draft cannot
+# be marked latest, so that is not asked for here.
+git_release_draft = true
+git_release_latest = false
 
 [changelog]
 protect_breaking_commits = true
