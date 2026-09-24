@@ -32,12 +32,26 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Omitting `command` intentionally runs release-pr and release in sequence:
-      # open/update the proposal first, then release only after that proposal is
-      # merged. Downstream artifact jobs gate on the CLI tag below.
-      - name: Run release-plz
+      # Release before proposing. `release` does nothing unless this commit is a
+      # merged release pull request; on one, it tags. `release-pr` then has to
+      # see that tag — run the other way round, on the merge commit it still
+      # reads the previous tag as latest and re-proposes what was just released.
+      - name: Release a merged release pull request
         id: release-plz
         uses: release-plz/action@b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5 # v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # release-pr reads tags from this checkout, which does not have the ones
+      # `release` just created unless they were made locally.
+      - run: git fetch --tags --force origin
+
+      - name: Open or update the release pull request
+        uses: release-plz/action@b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5 # v0.5
+        with:
+          command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
