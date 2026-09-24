@@ -9,6 +9,8 @@ a directive it acts on — with your next prompt, or at the turn boundary if no 
 
 Everything is a plain file under `.openspec-doc/`. No database, no daemon, no cloud.
 
+**Documentation: <https://matthijsrademaker.github.io/openspec-doc-rs/>**
+
 ```text
    agent explores                              reviewer reads
         │                                             │
@@ -82,6 +84,8 @@ Released under the [MIT License](LICENSE).
 
 ## Documentation
 
+Published at <https://matthijsrademaker.github.io/openspec-doc-rs/>. To run it locally:
+
 ```bash
 cd docs && bun install && bun dev
 ```
@@ -89,6 +93,7 @@ cd docs && bun install && bun dev
 | | |
 | --- | --- |
 | **Quickstart** | `docs/docs/quickstart.md` — install, wire hooks, drive one loop |
+| **LLM quickstart** | `docs/docs/llm-quickstart.md` — a prompt that has a Claude Code or pi session install and wire it |
 | **Vision & MVP scope** | `docs/docs/vision.md` — what is in scope, what is not, when it is done |
 | **Roadmap** | `docs/docs/roadmap.md` — shipped capabilities and open changes |
 | **Concepts** | `docs/docs/concepts/` — the review loop, scoping, anchoring, pointer-not-embed |
