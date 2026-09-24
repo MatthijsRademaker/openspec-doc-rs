@@ -14,6 +14,9 @@ git_release_enable = true
 git_tag_enable = true
 # Registry publication is forbidden both here and in every crate manifest.
 publish = false
+# No crate is a library anyone depends on, so a semver check guards no one — and
+# it runs rustdoc on a clean clone with no web/dist, which cannot compile.
+semver_check = false
 # Never release every push; wait for the release pull request to be merged.
 release_always = false
 # Only conventional commits with releasable types produce a proposal.
