@@ -36,8 +36,11 @@ fails, stop and show me the exact output rather than working around it.
    promotion runs `openspec validate`. Ask me whether to install it with
    `npm install -g @fission-ai/openspec@latest`. Do not install it without my answer.
 
-4. OpenSpec project. If there is no `openspec/` directory here, ask me before running
-   `openspec init --tools claude` (in Claude Code) or `openspec init --tools pi` (in pi).
+4. OpenSpec project. openspec-doc finds the project by `openspec/config.yaml`. If that file
+   is missing, ask me before running `openspec init --tools claude` (in Claude Code) or
+   `openspec init --tools pi` (in pi). Without a terminal it skips the config file, so if
+   `openspec/config.yaml` still does not exist afterwards, create it containing the single
+   line `schema: spec-driven`, OpenSpec's default workflow.
 
 5. Wire the hooks. Use `--agent claude` if you are Claude Code, `--agent pi` if you are pi.
    First run `openspec-doc init --agent <agent>` — a dry run that writes nothing — and show me
@@ -45,8 +48,13 @@ fails, stop and show me the exact output rather than working around it.
    that no explore command exists, run the `openspec init --tools <agent>` it names, then
    re-run `openspec-doc init --agent <agent> --yes`.
 
-6. Verify. Run `openspec-doc doctor`. It executes each registered hook the way the agent
-   would and exits non-zero if any fails. If it fails, show me its output and stop.
+6. Verify. Run `openspec-doc doctor`. It executes each registered Claude Code hook the way
+   the agent would and exits non-zero if any fails.
+   - In Claude Code: if it fails, show me its output and stop.
+   - In pi: doctor does not examine pi's extension, and it fails the three Claude Code hook
+     checks because this project has no Claude Code hooks. Those three failures are
+     expected. Confirm instead that its `binary on PATH` line passes and that
+     `.pi/extensions/openspec-doc-hook.ts` exists; stop on anything else.
 
 7. Report. Run `openspec-doc serve url` and tell me, briefly:
    - the dashboard URL it printed (the dashboard starts itself at the first turn boundary
@@ -59,7 +67,9 @@ fails, stop and show me the exact output rather than working around it.
 
 ## What "ready" means afterwards
 
-- `openspec-doc` is on `PATH` and `openspec-doc doctor` passes.
+- `openspec-doc` is on `PATH`. In Claude Code, `openspec-doc doctor` passes. In pi it cannot: `doctor`
+  only probes Claude Code hooks, so a pi-only project fails those checks and its extension is reported
+  as not checked. The first real proof in pi is a directive arriving after your first verdict.
 - The project has the hook entries (`.claude/settings.json`) or the extension
   (`.pi/extensions/openspec-doc-hook.ts`), plus a block of standing instructions in `AGENTS.md`. Review them
   with `git diff` and commit them — the command strings hold nothing machine-specific.
