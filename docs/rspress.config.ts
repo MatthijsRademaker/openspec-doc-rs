@@ -51,6 +51,11 @@ const TAXONOMY: Section[] = [
 				path: "/quickstart.md",
 				desc: "Install, wire the agent hooks, start the dashboard, and drive one full review loop",
 			},
+			{
+				title: "LLM quickstart",
+				path: "/llm-quickstart.md",
+				desc: "A prompt to paste into a Claude Code or pi session that installs openspec-doc from the release and wires this project's hooks",
+			},
 		],
 	},
 	{

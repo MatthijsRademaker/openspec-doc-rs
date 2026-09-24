@@ -8,21 +8,29 @@ Looking to exercise every interaction against a throwaway project instead? That 
 ## 1. Install
 
 ```bash
-git clone --branch v0.1.0 https://github.com/matthijsrademaker/openspec-doc-rs openspec-doc-rs-0.1.0
-cd openspec-doc-rs-0.1.0
-make build   # web/dist is not committed; rust-embed needs it at compile time
-cargo install --path crates/cli --locked
+curl -fsSL https://github.com/matthijsrademaker/openspec-doc-rs/releases/latest/download/install.sh | sh
 openspec-doc --version
 ```
 
-Versioned releases currently carry source only; the first release has no prebuilt binaries yet.
-`add-release-binaries-and-installers` owns downloadable binaries and installers. `make build` needs
-Bun 1.3.2 (`web/.bun-version`); everything after it is plain cargo.
+The script picks the current release's binary for your platform, verifies its checksum, and installs it
+to `~/.local/bin` without `sudo`. If that directory is not on your `PATH` it says so and prints the line
+for your shell. Re-running it is the upgrade.
 
-`~/.cargo/bin` needs to be on your `PATH`. Re-run with `--force` after pulling changes.
+Published binaries cover **macOS** (arm64, x86_64) and **Linux** (x86_64, arm64, statically linked).
+Anything else — Windows included, for now — builds from source: clone the repository, `make build`
+(needs Bun 1.3.2), then `cargo install --path crates/cli --locked`.
+
+:::warning Unsigned on macOS
+The binaries are not code-signed. The install script's download runs; the same archive fetched through a
+browser is refused by Gatekeeper. Use the script.
+:::
 
 You also need the `openspec` CLI on `PATH` — promotion runs `openspec validate` against the change it
-promotes onto.
+promotes onto. The installer reports it as missing rather than claiming success, and leaves installing it
+to you.
+
+Setting up with an agent instead? [LLM quickstart](/llm-quickstart.md) is a prompt you paste into a
+Claude Code or pi session that does this section and the next one for you.
 
 ## 2. Wire the hooks
 

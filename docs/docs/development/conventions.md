@@ -43,8 +43,11 @@ produce the wrong version and public changelog entry. The release pull request i
 review and edit its generated changelog before merging it. A release pull request opened with
 `GITHUB_TOKEN` does not trigger `pull_request` workflows, so it is expected to have no checks reported.
 
-This workspace never publishes crates to a registry. Releases currently carry no binaries; the
-`add-release-binaries-and-installers` change owns downloadable artifacts and installers.
+This workspace never publishes crates to a registry. The same workflow run that creates the release
+builds its binaries: release-plz creates the release as a **draft**, one frontend build is fanned out to a
+leg per platform, each leg smoke-tests its binary and attaches an archive and checksum, and a final job
+attaches `install.sh` and undrafts. A failed leg leaves a draft nobody can install, so
+`/releases/latest/download/…` never resolves to a release with missing binaries.
 
 ## The gates
 
@@ -74,8 +77,8 @@ bun run dev                     # Vite dev server; pair with `openspec-doc serve
 `rust-embed`, so the binary serves the interface with no asset directory and no checked-out repository.
 The consequence for local development: rust-embed needs a dist present at compile time, a fresh clone
 has none, and cargo will not compile without one — `make build` builds the frontend first, then the
-binary. Distribution is headed for prebuilt binaries (a release workflow that builds the frontend,
-then the embedding binary, plus an install script), so user machines will need neither Bun nor cargo.
+binary. Releases ship prebuilt binaries that all embed one frontend build (see
+[Releases](#releases)), so user machines need neither Bun nor cargo.
 
 **CI proves a clean checkout builds and embeds** — `.github/workflows/frontend-assets.yml` does
 `bun install --frozen-lockfile && bun run build` from a clean checkout, then drives the embedded app in

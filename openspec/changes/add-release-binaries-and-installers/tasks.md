@@ -16,7 +16,7 @@
 - [x] 2.2 Upload every archive and checksum to that draft.
 - [x] 2.3 Undraft as the final job, after every leg has succeeded. This is the release's commit point: a failed leg must leave a draft nobody can install rather than a published release missing a platform.
 - [x] 2.4 Keep all of this in the same workflow run as the release step. A tag created by automation does not trigger a tag-keyed workflow, and the failure is silent — a tag, an empty release, no failed job.
-- [ ] 2.5 Confirm `/releases/latest/download/…` does not resolve to the draft while the matrix is running. This is the requirement's whole point and it is one `curl` to check.
+- [x] 2.5 Confirm `/releases/latest/download/…` does not resolve to the draft while the matrix is running. This is the requirement's whole point and it is one `curl` to check. Checked on v0.1.1: while the draft existed, `/releases/latest` redirected to v0.1.0 and `/releases/latest/download/install.sh` returned 404.
 
 ## 3. `install.sh`
 
@@ -40,7 +40,7 @@
 
 - [ ] 5.1 Upload `install.sh` and `install.ps1` as assets of every release. `install.sh` is uploaded by the `publish` job; `install.ps1` is blocked with section 4.
 - [x] 5.2 Document fetching them from the current release, never from `raw.githubusercontent.com` on a branch. A branch URL pins every future install to an unreviewed commit.
-- [ ] 5.3 Confirm the documented one-liner works end to end, from a machine with nothing installed, on at least one platform per operating system.
+- [ ] 5.3 Confirm the documented one-liner works end to end, from a machine with nothing installed, on at least one platform per operating system. Linux done (v0.1.1, Ubuntu 20.04 and WSL); macOS not yet run by hand, Windows blocked.
 
 ## 6. Say what is not signed and what is not supported
 
@@ -60,8 +60,8 @@
 The whole change is a claim about machines the maintainer does not have. Unit tests cannot reach any of it.
 
 - [ ] 8.1 Cut a real release and install it with the published one-liner on macOS.
-- [ ] 8.2 Install it on a Linux distribution deliberately older than the build runner. This is the single check that justifies the musl decision.
+- [x] 8.2 Install it on a Linux distribution deliberately older than the build runner. This is the single check that justifies the musl decision. v0.1.1 installed with the published one-liner on Ubuntu 20.04 (glibc 2.31; the runner has 2.39), and both musl binaries ran on Debian 10 in the release run.
 - [ ] 8.3 Install it on Windows and run `openspec-doc doctor`, which is the command that would have exposed the Windows defects the previous change fixed. **Blocked on `replace-hook-shell-form-with-exec-form`**, which is unapproved; the release carries the four POSIX targets until it lands.
-- [ ] 8.4 Verify every platform's binary serves the dashboard, which is what proves the embedded artifact survived the fan-out. A binary that runs but serves nothing is exactly what a broken dist handoff produces.
-- [ ] 8.5 Install on a machine without `openspec` and confirm the result names it rather than reporting an unqualified success.
+- [x] 8.4 Verify every platform's binary serves the dashboard, which is what proves the embedded artifact survived the fan-out. A binary that runs but serves nothing is exactly what a broken dist handoff produces. In the v0.1.1 release run every leg's smoke test served `/` and the same `/assets/index-C3T_OeuW.js` — one dashboard build, embedded four times.
+- [x] 8.5 Install on a machine without `openspec` and confirm the result names it rather than reporting an unqualified success. On Ubuntu 20.04 without `openspec`, the one-liner reported "installed … but it is NOT ready to use" and named promotion.
 - [ ] 8.6 Download an asset through a browser on macOS and confirm Gatekeeper refuses it, so the caveat in 6.1 is written from observation rather than from repute.

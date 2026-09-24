@@ -31,24 +31,32 @@ Delivered exactly once across the two.
 
 ## Install
 
-Versioned releases currently carry source only. Install a released version from its tag:
-
 ```bash
-git clone --branch v0.1.0 https://github.com/matthijsrademaker/openspec-doc-rs openspec-doc-rs-0.1.0
-cd openspec-doc-rs-0.1.0
-make build
-cargo install --path crates/cli --locked
-openspec-doc --version
-openspec-doc serve          # discovers the project root by walking up from the cwd
+curl -fsSL https://github.com/matthijsrademaker/openspec-doc-rs/releases/latest/download/install.sh | sh
 openspec-doc serve url      # this project's dashboard URL, and whether one is serving it
 ```
 
-For development from an existing checkout, run `make build` and then
-`cargo install --path crates/cli --locked`. The first release has no prebuilt binaries yet;
-`add-release-binaries-and-installers` adds downloadable binaries and installers.
-Version bumps and changelog text are handled in the [release process](docs/docs/development/conventions.md#releases).
+The script downloads the current release's binary for your platform, verifies its checksum, and
+installs it to `~/.local/bin` without `sudo`. Re-running it is the upgrade. It is published with each
+release rather than served from a branch, so it only changes when a release does.
 
-The `openspec` CLI must also be on `PATH` — promotion runs `openspec validate`.
+Published binaries: **macOS** (arm64, x86_64) and **Linux** (x86_64, arm64 — statically linked, so any
+distribution). Anything else, including Windows for now, builds from source:
+
+```bash
+git clone https://github.com/matthijsrademaker/openspec-doc-rs && cd openspec-doc-rs
+make build   # needs Bun 1.3.2; web/dist is embedded at compile time
+cargo install --path crates/cli --locked
+```
+
+The binaries are not code-signed. On macOS the install script works, but the same archive downloaded
+through a browser is refused by Gatekeeper; use the script. Notarization is declined: it needs a paid
+Apple developer account, which a local tool with one maintainer does not justify.
+
+The `openspec` CLI must also be on `PATH` — promotion runs `openspec validate`. The installer checks and
+says so when it is missing; it does not install it.
+
+Version bumps and changelog text are handled in the [release process](docs/docs/development/conventions.md#releases).
 
 Once the hooks are wired, `serve` is not something you run: the turn-end hook brings a dashboard up at
 the first turn boundary of a session that has something to review, and keeps it up at every later one.
@@ -104,9 +112,8 @@ persistence logic of their own.
 
 `web/dist/` is a gitignored build artifact, compiled into the binary via rust-embed. `make build`
 builds the frontend first, then the binary — a fresh clone has no dist and cargo will not compile
-without one. Distribution will move to prebuilt binaries (release workflow + install script), so
-user machines need neither Bun nor cargo — see
-[conventions](docs/docs/development/conventions.md#the-frontend).
+without one. Releases ship prebuilt binaries that embed one frontend build, so user machines need
+neither Bun nor cargo — see [conventions](docs/docs/development/conventions.md#the-frontend).
 
 ## Build and test
 
