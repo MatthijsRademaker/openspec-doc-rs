@@ -22,6 +22,9 @@ interface Section {
 	pages: PageEntry[];
 }
 
+const DOCS_BASE = process.env.DOCS_BASE ?? "/";
+const DOCS_BASE_PREFIX = DOCS_BASE === "/" ? "" : DOCS_BASE.replace(/\/$/, "");
+
 const TAXONOMY: Section[] = [
 	{
 		title: "Start here",
@@ -167,7 +170,9 @@ function sectionIndex(section: Section): string {
 	const lines = [`# ${section.title}`, section.highlight, ""];
 
 	for (const page of section.pages) {
-		lines.push(`- [${page.title}](${page.path}): ${page.desc}`);
+		lines.push(
+			`- [${page.title}](${DOCS_BASE_PREFIX}${page.path}): ${page.desc}`,
+		);
 	}
 	lines.push("");
 
@@ -193,6 +198,7 @@ function writeSectionFiles(): void {
 export default defineConfig({
 	root: path.join(__dirname, "docs"),
 	outDir: path.join(__dirname, "doc_build"),
+	base: DOCS_BASE,
 	title: "openspec-doc",
 	description:
 		"A local review dashboard for OpenSpec projects, plus an agent hook bridge",
