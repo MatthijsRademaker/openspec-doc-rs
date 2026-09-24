@@ -696,7 +696,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "openspec-doc-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "openspec-doc-core",
@@ -708,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "openspec-doc-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "dirs",
@@ -721,7 +721,7 @@ dependencies = [
 
 [[package]]
 name = "openspec-doc-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "chrono",

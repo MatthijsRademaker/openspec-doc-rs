@@ -4,6 +4,12 @@ All notable changes to `openspec-doc` are documented here.
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/MatthijsRademaker/openspec-doc-rs/compare/v0.1.0...v0.1.1) - 2026-09-24
+
+### Bug Fixes
+
+- preserve markdown source selection anchors ([#7](https://github.com/MatthijsRademaker/openspec-doc-rs/pull/7))
+
 ## [0.1.0](https://github.com/MatthijsRademaker/openspec-doc-rs/releases/tag/v0.1.0) - 2026-09-22
 
 ### Added
